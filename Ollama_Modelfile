@@ -1,0 +1,6 @@
+FROM llama3.1:70b
+SYSTEM """{{full_compiled_system_prompt_from_all_files}}"""
+PARAMETER temperature 0.85
+PARAMETER top_p 0.95
+PARAMETER repeat_penalty 1.15
+TEMPLATE """{{.Prompt}}"""

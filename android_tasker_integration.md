@@ -1,0 +1,1 @@
+Install Tasker + AutoInput + Join. Use the scripts to allow trunk PC to control the phone fully (apps, social, customization). Full guide included.
