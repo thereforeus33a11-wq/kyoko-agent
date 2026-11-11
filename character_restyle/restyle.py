@@ -7,15 +7,17 @@ Run with Blender 4.1 / 4.2 (or the matching `bpy` module):
 What it changes (everything stays rigged; new props are bone-parented):
   * skin      -> warm tan (tint node inside the shared "Skin Shader" group)
   * eyes      -> smaller dark-red irises painted into the head texture; eye
-                 corners, lids and lips re-posed for a sharp-eyed smirk
+                 corners, lids and lips re-posed (sharper eyes, thinner lips,
+                 neutral expression)
   * make-up   -> blush toned down, deeper lipstick, long red nails (rig props)
   * hair      -> adds the antenna strand ("ahoge") on the crown
   * outfit    -> sailor top turned into an open, long-sleeved white shirt knotted
                  under the bust over a black lettered bandeau; skirt recoloured
                  navy with a white hem stripe, white belt and gold heart buckle
                  and dropped to the hips; navy thigh-highs with a white band
-  * jewellery -> black choker + ring, gold hoop earrings, navel ring,
-                 lip ring, black leather cuff on the left wrist
+  * jewellery -> black choker with a printed wavy line, gold hoop earrings,
+                 gold navel ring, gold lip and tongue barbells, black leather
+                 cuff on the left wrist
 """
 import math
 import os
@@ -117,6 +119,21 @@ def band(name, rings, coll, mat, thickness):
     s.thickness = thickness
     s.offset = 1.0
     return o
+
+
+def barbell(name, p0, p1, ball, bar, coll, mat):
+    """Straight bar from p0 to p1 with a ball on each end."""
+    p0, p1 = Vector(p0), Vector(p1)
+    bm = bmesh.new()
+    for p in (p0, p1):
+        bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=10, radius=ball, matrix=Matrix.Translation(p))
+    rot = Vector((0, 0, 1)).rotation_difference((p1 - p0).normalized()).to_matrix().to_4x4()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=10, radius1=bar, radius2=bar, depth=(p1 - p0).length,
+                          matrix=Matrix.Translation((p0 + p1) / 2) @ rot)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    return new_obj(name, me, coll, mat)
 
 
 def bone_pt(name, tail=False):
@@ -228,19 +245,19 @@ hnt.links.new(src, hsv.inputs["Color"])
 hnt.links.new(hsv.outputs["Color"], hfx.inputs["Diffuse"])
 
 # half-lidded stare (rig control: 0 = open, -0.015 = closed); reset it to 0 to undo
-arm.pose.bones["Blink Eyes"].location.y = -0.0062
+arm.pose.bones["Blink Eyes"].location.y = -0.0055
 
 # face shape, set as pose offsets on the facial bones (world-space metres; "her" left/right).
 # Clear the pose on these bones to get the original face back.
 FACE = {
     # sharper, upturned eyes
-    "L_EyeCornerOuter": (0.003, 0, 0.011), "R_EyeCornerOuter": (-0.003, 0, 0.011),
-    "L_EyeCornerInner": (0, 0, -0.006), "R_EyeCornerInner": (0, 0, -0.006),
-    "L_EyelidLowerA": (0, 0, 0.003), "R_EyelidLowerA": (0, 0, 0.003),
-    # thinner lips, wider mouth, right corner pulled up into a smirk
-    "C_LipUpper": (0, 0.004, -0.002), "L_LipUpper": (0, 0.004, -0.002), "R_LipUpper": (0, 0.004, 0.001),
-    "C_LipLower": (0, 0.004, 0.002), "L_LipLower": (0, 0.004, 0.003), "R_LipLower": (0, 0.004, -0.001),
-    "L_LipsCorner": (0.007, 0, 0), "R_LipsCorner": (-0.010, 0, 0.007),
+    "L_EyeCornerOuter": (0.002, 0, 0.008), "R_EyeCornerOuter": (-0.002, 0, 0.008),
+    "L_EyeCornerInner": (0, 0, -0.004), "R_EyeCornerInner": (0, 0, -0.004),
+    "L_EyelidLowerA": (0, 0, 0.002), "R_EyelidLowerA": (0, 0, 0.002),
+    # thinner lips, slightly wider mouth; expression stays neutral and closed
+    "C_LipUpper": (0, 0.003, -0.002), "L_LipUpper": (0, 0.003, -0.002), "R_LipUpper": (0, 0.003, -0.002),
+    "C_LipLower": (0, 0.003, 0.002), "L_LipLower": (0, 0.003, 0.002), "R_LipLower": (0, 0.003, 0.002),
+    "L_LipsCorner": (0.004, 0, 0.0005), "R_LipsCorner": (-0.004, 0, 0.0005),
 }
 for bone, off in FACE.items():
     pb = arm.pose.bones[bone]
@@ -248,10 +265,6 @@ for bone, off in FACE.items():
     m = pb.matrix.copy()
     m.translation = m.translation + Vector(off)
     pb.matrix = m
-mouth = arm.pose.bones["Mouth Control"]
-mouth.rotation_mode = "XYZ"
-mouth.rotation_euler = (0, 0, math.radians(-8))    # slight grin
-mouth.location.y -= 0.004                          # jaw open just enough to show teeth and tongue
 bpy.context.view_layer.update()
 
 # ---------------------------------------------------------------- body surface lookup
@@ -409,9 +422,24 @@ for k in (-0.009, 0.0, 0.009):
     rings.append(offset_loop(wrap(c, ax, 0.2), c, ax, 0.0025))
 choker = band("Choker", rings, acc, leather, 0.0025)
 bone_parent(choker, "neck_01")
-front, _ = hit(c_mid + Vector((0, -0.3, 0)), (0, 1, 0))
-ring = torus("Choker Ring", front + Vector((0, -0.006, -0.010)), 0.0075, 0.0013, (0, 1, 0.25), acc, steel)
-bone_parent(ring, "neck_01")
+# printed design: a white wavy line running round the band (no pendant)
+print_mat = make_mat("Rebel Choker Print", (0.85, 0.85, 0.85, 1), rough=0.6)
+WN, WAVES = 168, 14
+line = offset_loop(wrap(c_mid, ax, 0.2, n=WN), c_mid, ax, 0.0056)
+pc = bpy.data.curves.new("Choker Print", "CURVE")
+pc.dimensions = "3D"
+pc.bevel_depth = 0.0008
+pc.bevel_resolution = 1
+ps = pc.splines.new("POLY")
+ps.points.add(WN - 1)
+for i, pnt in enumerate(line):
+    tri = abs((i * WAVES / WN) % 1.0 - 0.5) * 4 - 1          # zig-zag between -1 and 1
+    ps.points[i].co = (*(pnt + ax * 0.0038 * tri), 1)
+ps.use_cyclic_u = True
+cprint = bpy.data.objects.new("Choker Print", pc)
+acc.objects.link(cprint)
+pc.materials.append(print_mat)
+bone_parent(cprint, "neck_01")
 
 # ---------------------------------------------------------------- wrist cuff (her left)
 a, b = bone_pt("L_ForearmTwist"), bone_pt("L_ForearmTwist", True)
@@ -445,12 +473,12 @@ for i in range(12, len(prof) - 12):
         best = (depth, prof[i][0], prof[i][1], around)
 _, nz, ny, skin_y = best
 print("navel at z=%.3f depth=%.4f" % (nz, best[0]))
-navel = torus("Navel Ring", (0, skin_y - 0.0035, nz - 0.010), 0.0085, 0.0013, (0, 1, 0), acc, gold)
+navel = torus("Navel Ring", (0, skin_y - 0.0045, nz - 0.0125), 0.0105, 0.0021, (0, 1, 0), acc, gold)
 bone_parent(navel, "abdomenLower")
 bead_me = bpy.data.meshes.new("Navel Bead")
 bm = bmesh.new()
-bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=10, radius=0.0028)
-bmesh.ops.translate(bm, verts=bm.verts, vec=(0, skin_y - 0.002, nz - 0.0005))
+bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=10, radius=0.0042)
+bmesh.ops.translate(bm, verts=bm.verts, vec=(0, skin_y - 0.003, nz - 0.0005))
 bm.to_mesh(bead_me)
 bm.free()
 bead = new_obj("Navel Bead", bead_me, acc, gold)
@@ -476,12 +504,25 @@ for side, sx in (("L", 1), ("R", -1)):
         e = torus("Earring %s %d" % (side, i + 1), c, r, 0.0012, (1, 0.25 * sx, 0), acc, gold)
         bone_parent(e, "head")
 
-# ---------------------------------------------------------------- lip ring (her right)
+# ---------------------------------------------------------------- lip barbell (her right) + tongue barbell
 lp = bone_pt("R_LipLower")
-loc, _ = hit((lp.x, -0.5, lp.z - 0.002), (0, 1, 0))
-if loc:
-    lipring = torus("Lip Ring", loc + Vector((0, 0.001, -0.001)), 0.0042, 0.0007, (1, 0, 0), acc, steel, seg=28, ring=8)
-    bone_parent(lipring, "R_LipLower")
+top, _ = hit((lp.x - 0.004, -0.5, lp.z + 0.0005), (0, 1, 0))
+low, _ = hit((lp.x - 0.004, -0.5, lp.z - 0.0075), (0, 1, 0))
+if top and low:
+    lipbar = barbell("Lip Barbell", top + Vector((0, -0.0012, 0)), low + Vector((0, -0.0012, 0)),
+                     0.0019, 0.0007, acc, gold)
+    bone_parent(lipbar, "R_LipLower")
+
+tongue = bpy.data.objects["Tongue"]
+tbvh = BVHTree.FromObject(tongue, deps)
+tw = [tongue.matrix_world @ Vector(c) for c in tongue.bound_box]
+tip_y = min(p.y for p in tw)
+t_top, _n, _i, _d = tbvh.ray_cast(Vector((0, tip_y + 0.016, 2.0)), Vector((0, 0, -1)), 1.0)
+if t_top:
+    stud = barbell("Tongue Barbell", t_top + Vector((0, 0, 0.0012)), t_top + Vector((0, 0, -0.0085)),
+                   0.0024, 0.0008, acc, gold)
+    tbone = next(b for b in ("Tongue_Front", "Tongue_Master", "C_Jaw") if b in arm.pose.bones)
+    bone_parent(stud, tbone)
 
 # ---------------------------------------------------------------- ahoge
 hair = bpy.data.objects["Hair.001"]

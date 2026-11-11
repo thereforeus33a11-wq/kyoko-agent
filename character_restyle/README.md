@@ -14,9 +14,9 @@ reference look. The `.blend` itself is ~100 MB and is not stored in the repo.
 | ![before](previews/before.png) | ![after](previews/full.png) |
 
 What changes: warm tan skin, small dark-red irises, upturned half-lidded eyes,
-thinner lips posed in a smirk, vivid red hair, toned-down blush,
+thinner lips with a neutral expression, vivid red hair, toned-down blush,
 long red nails, ahoge strand, open long-sleeved white shirt knotted over a
 black lettered bandeau, navy pleated skirt with white hem stripe, white belt
 and gold heart buckle, navy thigh-highs with a white band, choker, gold hoop
-earrings, navel ring, lip ring and a black leather cuff on the left wrist.
+earrings, navel ring, gold lip and tongue barbells and a black leather cuff on the left wrist.
 All new pieces are skinned or bone-parented to the existing rig.
