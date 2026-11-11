@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 FONT = sys.argv[1] if len(sys.argv) > 1 else "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
 W, H = 2048, 560   # one tile; restyle.py keeps this aspect ratio on the garment
-img = Image.new("RGB", (W, H), (5, 6, 9))
+img = Image.new("RGB", (W, H), (22, 34, 66))
 draw = ImageDraw.Draw(img)
 font = ImageFont.truetype(FONT, 300)
 text = "ビッチ"

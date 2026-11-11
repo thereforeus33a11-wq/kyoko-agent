@@ -138,6 +138,25 @@ def barbell(name, p0, p1, ball, bar, coll, mat):
     return new_obj(name, me, coll, mat)
 
 
+def keep_outside(o, offset, group=None):
+    """Hold a garment at least `offset` off the skin, in any pose (only vertices that sink in move)."""
+    m = o.modifiers.new("Rebel Keep Outside Body", "SHRINKWRAP")
+    m.target = body
+    m.wrap_method = "NEAREST_SURFACEPOINT"
+    m.wrap_mode = "OUTSIDE"
+    m.offset = offset
+    if group:
+        m.vertex_group = group
+    # must run on the posed shape but before any thickness is added
+    idx = len(o.modifiers) - 1
+    for i, other in enumerate(o.modifiers):
+        if other.type == "SOLIDIFY":
+            idx = i
+            break
+    o.modifiers.move(len(o.modifiers) - 1, idx)
+    return m
+
+
 def bone_pt(name, tail=False):
     """Bone end in world space, as posed (the rig's default pose is not its rest pose)."""
     b = arm.pose.bones[name]
@@ -406,6 +425,7 @@ bm.free()
 bandeau = new_obj("Bandeau", me, bpy.data.collections["Top"], band_mat)
 tex.extension = "CLIP"
 skin_to_body(bandeau)
+keep_outside(bandeau, 0.002)
 sol = bandeau.modifiers.new("Solidify", "SOLIDIFY")
 sol.thickness = 0.0012
 sol.offset = 1.0
@@ -428,6 +448,7 @@ for side, sx in (("L", 1), ("R", -1)):
         rings.append(offset_loop(wrap(c, ax, 0.085, n=24), c, ax, ease))
     sleeve = band("Shirt Sleeve " + side, rings, uniform, cotton, 0.0012)
     skin_to_body(sleeve)
+    keep_outside(sleeve, 0.003)
     sleeve.modifiers.new("Subdivision", "SUBSURF").levels = 1
 
 # ---------------------------------------------------------------- choker
@@ -440,6 +461,7 @@ for k in (-0.009, 0.0, 0.009):
     rings.append(offset_loop(wrap(c, ax, 0.2), c, ax, 0.0025))
 choker = band("Choker", rings, acc, leather, 0.0025)
 bone_parent(choker, "neck_01")
+keep_outside(choker, 0.002)
 # printed design: a white wavy line running round the band (no pendant)
 print_mat = make_mat("Rebel Choker Print", (0.85, 0.85, 0.85, 1), rough=0.6)
 WN, WAVES = 168, 14
@@ -459,21 +481,24 @@ acc.objects.link(cprint)
 pc.materials.append(print_mat)
 bone_parent(cprint, "neck_01")
 
-# ---------------------------------------------------------------- wrist cuff (her left)
-a, b = bone_pt("L_ForearmTwist"), bone_pt("L_ForearmTwist", True)
-ax = (b - a).normalized()
-c_mid = a.lerp(b, 0.74)
-rings = []
-for k in (-0.024, -0.008, 0.008, 0.024):
-    c = c_mid + ax * k
-    rings.append(offset_loop(wrap(c, ax, 0.12), c, ax, 0.003))
-cuff = band("Wrist Cuff", rings, acc, leather, 0.0035)
-bone_parent(cuff, "L_ForearmTwist")
-for k in (-0.012, 0.012):   # two stitched seams / straps
-    c = c_mid + ax * k
-    strap = band("Wrist Cuff Strap", [offset_loop(wrap(c + ax * s, ax, 0.12), c, ax, 0.0068) for s in (-0.0035, 0.0035)],
-                 acc, leather, 0.0015)
-    bone_parent(strap, "L_ForearmTwist")
+# ---------------------------------------------------------------- black leather cuffs, both wrists
+for side in ("L", "R"):
+    bone = side + "_ForearmTwist"
+    a, b = bone_pt(bone), bone_pt(bone, True)
+    ax = (b - a).normalized()
+    c_mid = a.lerp(b, 0.74)
+    rings = []
+    for k in (-0.024, -0.008, 0.008, 0.024):
+        c = c_mid + ax * k
+        rings.append(offset_loop(wrap(c, ax, 0.12), c, ax, 0.003))
+    cuff = band("Wrist Cuff " + side, rings, acc, leather, 0.0035)
+    bone_parent(cuff, bone)
+    for k in (-0.012, 0.012):   # two stitched seams / straps
+        c = c_mid + ax * k
+        strap = band("Wrist Cuff Strap " + side,
+                     [offset_loop(wrap(c + ax * s, ax, 0.12), c, ax, 0.0068) for s in (-0.0035, 0.0035)],
+                     acc, leather, 0.0015)
+        bone_parent(strap, bone)
 
 # ---------------------------------------------------------------- navel ring
 prof = []
@@ -713,30 +738,40 @@ knot.modifiers.new("Subdivision", "SUBSURF").levels = 1
 bone_parent(knot, "chestLower")
 
 # ---------------------------------------------------------------- skirt: navy pleats, white belt, heart buckle
-def striped(name, lo, hi):
-    """Navy cloth with a white stripe between two heights (0..1 of the rest-pose bounding box)."""
+def striped(name, bands):
+    """Navy cloth with white stripes; `bands` are (low, high) heights in 0..1 of the rest bounding box."""
     m = make_mat(name, NAVY, rough=0.75)
     nt = m.node_tree
     co = nt.nodes.new("ShaderNodeTexCoord")
     sep = nt.nodes.new("ShaderNodeSeparateXYZ")
-    above = nt.nodes.new("ShaderNodeMath")
-    above.operation = "GREATER_THAN"
-    above.inputs[1].default_value = lo
-    below = nt.nodes.new("ShaderNodeMath")
-    below.operation = "LESS_THAN"
-    below.inputs[1].default_value = hi
-    both = nt.nodes.new("ShaderNodeMath")
-    both.operation = "MULTIPLY"
+    nt.links.new(co.outputs["Generated"], sep.inputs[0])
+    total = None
+    for lo, hi in bands:
+        above = nt.nodes.new("ShaderNodeMath")
+        above.operation = "GREATER_THAN"
+        above.inputs[1].default_value = lo
+        below = nt.nodes.new("ShaderNodeMath")
+        below.operation = "LESS_THAN"
+        below.inputs[1].default_value = hi
+        both = nt.nodes.new("ShaderNodeMath")
+        both.operation = "MULTIPLY"
+        nt.links.new(sep.outputs["Z"], above.inputs[0])
+        nt.links.new(sep.outputs["Z"], below.inputs[0])
+        nt.links.new(above.outputs[0], both.inputs[0])
+        nt.links.new(below.outputs[0], both.inputs[1])
+        if total is None:
+            total = both
+        else:
+            add = nt.nodes.new("ShaderNodeMath")
+            add.operation = "MAXIMUM"
+            nt.links.new(total.outputs[0], add.inputs[0])
+            nt.links.new(both.outputs[0], add.inputs[1])
+            total = add
     mix = nt.nodes.new("ShaderNodeMix")
     mix.data_type = "RGBA"
     mix.inputs[6].default_value = NAVY
     mix.inputs[7].default_value = WHITE
-    nt.links.new(co.outputs["Generated"], sep.inputs[0])
-    nt.links.new(sep.outputs["Z"], above.inputs[0])
-    nt.links.new(sep.outputs["Z"], below.inputs[0])
-    nt.links.new(above.outputs[0], both.inputs[0])
-    nt.links.new(below.outputs[0], both.inputs[1])
-    nt.links.new(both.outputs[0], mix.inputs[0])
+    nt.links.new(total.outputs[0], mix.inputs[0])
     nt.links.new(mix.outputs[2], nt.nodes["Principled BSDF"].inputs["Base Color"])
     return m
 
@@ -786,10 +821,16 @@ for v in bm.verts:
     k = max(0.0, min(1.0, (v.co.z - 0.93) / 0.12))   # ease the waistband open so it clears the hips
     v.co.x *= 1 + 0.045 * k
     v.co.y = (v.co.y - 0.01) * (1 + 0.06 * k) + 0.01
+bm.verts.index_update()
+belt_idx = [v.index for v in belt]
 bm.to_mesh(skirt.data)
 bm.free()
+belt_vg = skirt.vertex_groups.new(name="Rebel Belt")
+belt_vg.add(belt_idx, 1.0, "REPLACE")
+keep_outside(skirt, 0.004)                 # pleats clear the hips...
+keep_outside(skirt, 0.008, belt_vg.name)   # ...and the belt rides on top of them
 white_belt = make_mat("Rebel White Belt", WHITE, rough=0.45)
-skirt.data.materials[0] = striped("Rebel Navy Skirt", 0.09, 0.16)
+skirt.data.materials[0] = striped("Rebel Navy Skirt", [(0.06, 0.10), (0.135, 0.18)])
 for i in range(1, len(skirt.data.materials)):
     skirt.data.materials[i] = white_belt
 
@@ -835,10 +876,13 @@ for i in range(SN):
         strap_loops[k].append(loc + d * 0.0025)
 straps = band("Thong Straps", strap_loops, bpy.data.collections["Bottom"], strap_mat, 0.0015)
 skin_to_body(straps)
+keep_outside(straps, 0.002)
+keep_outside(bpy.data.objects["Thong_01"], 0.0015)
 
 # ---------------------------------------------------------------- thigh-highs: navy with a white band
 socks = bpy.data.objects["Socks"]
-sock_mat = striped("Rebel Navy Thigh-highs", 0.875, 0.925)
+sock_mat = striped("Rebel Navy Thigh-highs", [(0.875, 0.925)])
+keep_outside(socks, 0.002)
 for i in range(len(socks.data.materials)):
     socks.data.materials[i] = sock_mat
 

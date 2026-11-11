@@ -27,6 +27,9 @@ SHOTS = {  # name: (look-at point, distance, resolution, orbit angle in degrees)
     "side": ((0, 0, 1.50), 2.1, (760, 760), 55),
     "cuff": ((0.45, 0, 1.26), 0.9, (600, 600), 0),
     "waist": ((0, 0, 1.22), 0.9, (600, 600), 0),
+    "back": ((0, 0, 1.30), 2.6, (760, 760), 180),
+    "hip": ((0, 0, 1.12), 1.3, (700, 700), 70),
+    "legs": ((0, 0, 0.75), 1.9, (600, 760), 35),
 }
 for name in wanted or SHOTS:
     target, dist, res, deg = SHOTS[name]
