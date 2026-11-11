@@ -37,6 +37,8 @@ LIP_PINK = (0.75, 0.25, 0.25, 1.0)
 IRIS_DARK = (0.20, 0.0, 0.01)
 IRIS_LIGHT = (0.70, 0.03, 0.04)
 SKIRT_DROP = 0.055                   # metres
+SKIRT_LENGTH = 0.78                  # fraction of the original pleat length
+PLEATS = 12
 NAVY = (0.018, 0.030, 0.075, 1.0)
 WHITE = (0.80, 0.80, 0.82, 1.0)
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -194,7 +196,15 @@ setp("2. Lipstick Color", LIP_PINK)
 wardrobe = arm.pose.bones["Clothes 2"]
 wardrobe["1. Bra"] = 4                    # no optional top (0-2 pick one), the bandeau replaces it
 wardrobe["3. Stockings"] = 4              # no optional stockings (0-2 pick one of the three sets)
-wardrobe["4. Color Base"] = list(WHITE)   # white hip straps showing above the belt
+wardrobe["4. Color Base"] = list(WHITE)
+# swap the bikini bottom for the thong: read which value of the switch shows it
+import re
+for fc in bpy.data.objects["Thong_01"].animation_data.drivers:
+    if fc.data_path == "hide_render":
+        found = re.search(r"==\s*(\d+)", fc.driver.expression)
+        print("thong driver:", fc.driver.expression)
+        if found:
+            wardrobe["3. Bottom"] = int(found.group(1))
 
 # ---------------------------------------------------------------- eyes
 img = bpy.data.images["T_F_Std_Head_D.png"]
@@ -288,8 +298,10 @@ def wrap(center, axis, radius_from, n=48):
         a = 2 * math.pi * i / n
         d = u * math.cos(a) + v * math.sin(a)
         loc, _ = hit(Vector(center) + d * radius_from, -d, radius_from)
-        pts.append(loc if loc else Vector(center))
-    return pts
+        pts.append((loc, d))
+    found = [(p - Vector(center)).length for p, _d in pts if p]
+    mean = sum(found) / len(found) if found else 0.03
+    return [p if p else Vector(center) + d * mean for p, d in pts]
 
 
 def offset_loop(loop, center, axis, amount):
@@ -356,7 +368,8 @@ bsdf = band_mat.node_tree.nodes["Principled BSDF"]
 bsdf.inputs["Roughness"].default_value = 0.7
 band_mat.node_tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
 N = 72
-levels = [1.378 + 0.0155 * k for k in range(7)]
+bust_z = (bone_pt("L_Nipple").z + bone_pt("R_Nipple").z) / 2      # centre the band on the bust
+levels = [bust_z - 0.040 + 0.016 * k for k in range(6)]
 loops = []
 for z in levels:
     c = Vector((0, 0.03, z))
@@ -365,7 +378,7 @@ for z in levels:
         a = 2 * math.pi * (i / N - 0.5)          # a = 0 is straight ahead
         d = Vector((math.sin(a), -math.cos(a), 0))
         loc, _ = hit(c, d, 0.6)
-        loop.append(loc + d * 0.004)
+        loop.append(loc + d * 0.002)
     # stretch flat across the cleavage instead of dipping into it
     left = min((p for p in loop if p.x > 0.02), key=lambda p: p.y)
     right = min((p for p in loop if p.x < -0.02), key=lambda p: p.y)
@@ -374,6 +387,9 @@ for z in levels:
             t = (p.x - right.x) / (left.x - right.x)
             p.y = min(p.y, right.y + (left.y - right.y) * t)
     loops.append(loop)
+# keep the lettering undistorted: one image tile is as wide as (band height x image aspect)
+girth = sum((loops[2][i] - loops[2][(i + 1) % N]).length for i in range(N))
+tiles = girth / ((levels[-1] - levels[0]) * label.size[0] / label.size[1])
 bm = bmesh.new()
 uvl = bm.loops.layers.uv.new("UVMap")
 vs = [[bm.verts.new(p) for p in loop] for loop in loops]
@@ -382,9 +398,8 @@ for r in range(len(loops) - 1):
         j = (i + 1) % N
         f = bm.faces.new((vs[r][i], vs[r][j], vs[r + 1][j], vs[r + 1][i]))
         f.smooth = True
-        # the label image is tiled 3x around the chest; lettering sits on the front tile
         for lp, (uu, vv) in zip(f.loops, ((i, r), (i + 1, r), (i + 1, r + 1), (i, r + 1))):
-            lp[uvl].uv = ((uu / N - 0.5) * 3.2 + 0.5, vv / (len(loops) - 1))
+            lp[uvl].uv = ((uu / N - 0.5) * tiles + 0.5, vv / (len(loops) - 1))
 me = bpy.data.meshes.new("Bandeau")
 bm.to_mesh(me)
 bm.free()
@@ -392,23 +407,26 @@ bandeau = new_obj("Bandeau", me, bpy.data.collections["Top"], band_mat)
 tex.extension = "CLIP"
 skin_to_body(bandeau)
 sol = bandeau.modifiers.new("Solidify", "SOLIDIFY")
-sol.thickness = 0.002
+sol.thickness = 0.0012
 sol.offset = 1.0
 
 # ---------------------------------------------------------------- long sleeves, pushed up the forearm
 for side, sx in (("L", 1), ("R", -1)):
-    chain = [bone_pt(side + "_ShldrTwist"), bone_pt(side + "_ShldrTwist", True),
+    chain = [bone_pt(side + "_ShldrBend"), bone_pt(side + "_ShldrBend", True),
+             bone_pt(side + "_ShldrTwist", True),
              bone_pt(side + "_ForearmBend"), bone_pt(side + "_ForearmBend", True),
              bone_pt(side + "_ForearmTwist", True)]
-    stops = [(0, 1, 0.15), (0, 1, 0.55), (0, 1, 0.95), (2, 3, 0.25), (2, 3, 0.65), (3, 4, 0.05),
-             (3, 4, 0.25), (3, 4, 0.36), (3, 4, 0.37), (3, 4, 0.47)]
+    stops = [(0, 1, 0.50), (0, 1, 0.80), (1, 2, 0.15), (1, 2, 0.55), (1, 2, 0.95), (3, 4, 0.25), (3, 4, 0.65),
+             (4, 5, 0.05), (4, 5, 0.25), (4, 5, 0.36), (4, 5, 0.37), (4, 5, 0.47)]
     rings = []
     for k, (i0, i1, t) in enumerate(stops):
         c = chain[i0].lerp(chain[i1], t)
         ax = (chain[i1] - chain[i0]).normalized()
-        puff = 0.011 if k < len(stops) - 2 else 0.017      # last two rings = turned-back cuff
-        rings.append(offset_loop(wrap(c, ax, 0.085, n=24), c, ax, puff))
-    sleeve = band("Shirt Sleeve " + side, rings, uniform, cotton, 0.003)
+        ease = 0.003 if k < 2 else 0.0045                 # tucks under the shirt body at the shoulder
+        if k >= len(stops) - 2:
+            ease = 0.008                                   # last two rings = turned-back cuff
+        rings.append(offset_loop(wrap(c, ax, 0.085, n=24), c, ax, ease))
+    sleeve = band("Shirt Sleeve " + side, rings, uniform, cotton, 0.0012)
     skin_to_body(sleeve)
     sleeve.modifiers.new("Subdivision", "SUBSURF").levels = 1
 
@@ -586,7 +604,7 @@ islands.sort(key=len, reverse=True)
 scarf = min(islands, key=lambda isl: sum(v.co.y for v in isl) / len(isl))   # the red neckerchief hangs in front
 bmesh.ops.delete(bm, geom=list(scarf), context="VERTS")
 # below the bust the old top sits inside the torso, so the shirt is cropped there
-KNOT_W = 1.365                            # knot height in world space
+KNOT_W = 1.385                            # knot height in world space
 SC = shirt.scale.z                        # the uniform objects carry an object scale
 KNOT_Z, TOP_Z, HEM_Z = KNOT_W / SC, (KNOT_W + 0.225) / SC, (KNOT_W - 0.04) / SC
 front_y = min(v.co.y for v in bm.verts if abs(v.co.x) < 0.03 and KNOT_Z - 0.02 < v.co.z < KNOT_Z + 0.02)
@@ -609,12 +627,27 @@ def bisect(co, no, pred):
 planes = []
 for sx in (1, -1):
     # open front: a V from the knot up to the collar
-    planes.append(("v", sx, Vector((sx * 0.012, 0, KNOT_Z)), Vector((sx * (TOP_Z - KNOT_Z), 0, -0.085)).normalized()))
+    planes.append(("v", sx, Vector((sx * 0.012, 0, KNOT_Z)), Vector((sx * 0.15, 0, -0.085)).normalized()))
     # hem: rises from the hips to the knot
     planes.append(("hem", sx, Vector((sx * 0.02, 0, KNOT_Z)), Vector((sx * (KNOT_Z - HEM_Z), 0, 0.14)).normalized()))
 for kind, sx, co, no in planes:
     bisect(co, no, lambda f, sx=sx: is_front(f) and f.calc_center_median().x * sx > -0.005)
 bisect(Vector((0, 0, HEM_Z)), Vector((0, 0, 1)), lambda f: not is_front(f))
+# drop the puffy short sleeves at the shoulder; the long sleeves take over from there
+def near_arm(c, cut):
+    """True for points beyond the cut plane that belong to the sleeve, not the side of the torso."""
+    rel = c - cut[0]
+    along = rel.dot(cut[1])
+    return along > -0.02 and (rel - cut[1] * along).length < 0.085
+
+
+arm_cuts = []
+for side, sx in (("L", 1), ("R", -1)):
+    a0, a1 = bone_pt(side + "_ShldrBend") / SC, bone_pt(side + "_ShldrBend", True) / SC
+    cut = (a0.lerp(a1, 0.72), (a1 - a0).normalized())
+    arm_cuts.append((sx, cut))
+    bisect(cut[0], cut[1], lambda f, sx=sx, cut=cut: f.calc_center_median().x * sx > 0.10
+           and near_arm(f.calc_center_median(), cut))
 bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
 
 kill = []
@@ -623,7 +656,11 @@ for f in bm.faces:
     sx = 1 if c.x >= 0 else -1
     v_co, v_no = next((co, no) for k, s, co, no in planes if k == "v" and s == sx)
     h_co, h_no = next((co, no) for k, s, co, no in planes if k == "hem" and s == sx)
-    if abs(c.x) > 0.21:                      # sleeves stay
+    a_co, a_no = next(cut for s, cut in arm_cuts if s == sx)
+    if abs(c.x) > 0.10 and (c - a_co).dot(a_no) > 0 and near_arm(c, (a_co, a_no)):
+        kill.append(f)
+        continue
+    if abs(c.x) > 0.21:
         continue
     if is_front(f):
         if (c - v_co).dot(v_no) < 0 and c.z > KNOT_Z - 0.03:
@@ -634,8 +671,6 @@ for f in bm.faces:
         kill.append(f)
 bmesh.ops.delete(bm, geom=kill, context="FACES")
 bm.normal_update()
-for v in bm.verts:                           # ease the cloth off the body so nothing pokes through
-    v.co += v.normal * 0.004
 for f in bm.faces:
     f.material_index = 0
     f.smooth = True
@@ -650,23 +685,23 @@ wrapm = shirt.modifiers.new("Rebel Keep Outside Body", "SHRINKWRAP")   # the old
 wrapm.target = body
 wrapm.wrap_method = "NEAREST_SURFACEPOINT"
 wrapm.wrap_mode = "OUTSIDE"
-wrapm.offset = 0.009
+wrapm.offset = 0.0065
 sol = shirt.modifiers.new("Rebel Thickness", "SOLIDIFY")
-sol.thickness = 0.004
+sol.thickness = 0.0012
 sol.offset = 1.0
 
 # knot + two tails, riding the lower chest bone
 bm = bmesh.new()
 skin, _ = hit((0, -1, KNOT_W - 0.012), (0, 1, 0))
-ky = min(skin.y - 0.016, front_y * SC + 0.004)
+ky = skin.y - 0.011
 kz = KNOT_W - 0.012
 bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=10, radius=0.5,
-                          matrix=Matrix.Translation((0, ky, kz)) @ Matrix.Diagonal((0.046, 0.030, 0.036, 1)))
+                          matrix=Matrix.Translation((0, ky, kz)) @ Matrix.Diagonal((0.034, 0.020, 0.026, 1)))
 for sx in (1, -1):
-    tail = bmesh.ops.create_cone(bm, cap_ends=True, segments=4, radius1=0.007, radius2=0.030, depth=0.075)
-    mat_t = (Matrix.Translation((sx * 0.034, ky + 0.002, kz - 0.040))
-             @ Matrix.Rotation(sx * math.radians(-38), 4, "Y")
-             @ Matrix.Diagonal((1.0, 0.22, 1.0, 1))
+    tail = bmesh.ops.create_cone(bm, cap_ends=True, segments=4, radius1=0.005, radius2=0.024, depth=0.085)
+    mat_t = (Matrix.Translation((sx * 0.026, ky + 0.003, kz - 0.044))
+             @ Matrix.Rotation(sx * math.radians(-26), 4, "Y")
+             @ Matrix.Diagonal((1.0, 0.12, 1.0, 1))
              @ Matrix.Rotation(math.pi, 4, "X")
              @ Matrix.Rotation(math.radians(45), 4, "Z"))
     bmesh.ops.transform(bm, matrix=mat_t, verts=tail["verts"])
@@ -733,6 +768,19 @@ for v in belt:
 bz = (sum(v.co.z for v in buckle) / len(buckle) - SKIRT_DROP) * skirt.scale.z
 by = min(v.co.y for v in buckle) * skirt.scale.y
 bmesh.ops.delete(bm, geom=list(buckle), context="VERTS")
+# micro length, flared hem and deep box pleats
+p_top = max(v.co.z for v in pleats)
+p_low = min(v.co.z for v in pleats)
+cy = sum(v.co.y for v in pleats) / len(pleats)
+for v in pleats:
+    h = (p_top - v.co.z) / (p_top - p_low)             # 0 at the waist, 1 at the hem
+    v.co.z = p_top - (p_top - v.co.z) * SKIRT_LENGTH
+    ang = math.atan2(v.co.x, -(v.co.y - cy))
+    wave = math.sin(ang * PLEATS)
+    wave = math.copysign(abs(wave) ** 0.45, wave)      # squared-off folds rather than ripples
+    grow = 1 + h * (0.16 + 0.085 * wave)
+    v.co.x *= grow
+    v.co.y = cy + (v.co.y - cy) * grow
 for v in bm.verts:
     v.co.z -= SKIRT_DROP
     k = max(0.0, min(1.0, (v.co.z - 0.93) / 0.12))   # ease the waistband open so it clears the hips
@@ -741,7 +789,7 @@ for v in bm.verts:
 bm.to_mesh(skirt.data)
 bm.free()
 white_belt = make_mat("Rebel White Belt", WHITE, rough=0.45)
-skirt.data.materials[0] = striped("Rebel Navy Skirt", 0.14, 0.20)
+skirt.data.materials[0] = striped("Rebel Navy Skirt", 0.09, 0.16)
 for i in range(1, len(skirt.data.materials)):
     skirt.data.materials[i] = white_belt
 
@@ -762,6 +810,31 @@ heart = bpy.data.objects.new("Heart Buckle", hc)
 uniform.objects.link(heart)
 hc.materials.append(gold)
 bone_parent(heart, "pelvis")
+
+# ---------------------------------------------------------------- thong + high-rise white hip straps
+strap_mat = make_mat("Rebel White Strap", WHITE, rough=0.6)
+for name in ("Thong_01",):
+    th = bpy.data.objects[name]
+    for i in range(len(th.data.materials)):
+        th.data.materials[i] = strap_mat
+    # only the part below the belt line is wanted; the tall straps are built separately
+    vg = th.vertex_groups.new(name="Rebel Under Belt")
+    vg.add([v.index for v in th.data.vertices if (th.matrix_world @ v.co).z < 1.15], 1.0, "REPLACE")
+    mask = th.modifiers.new("Rebel Under Belt", "MASK")
+    mask.vertex_group = vg.name
+SN = 96
+Z_FRONT, Z_SIDE, Z_BACK = 1.085, 1.285, 1.15
+strap_loops = [[], []]
+for i in range(SN):
+    a = 2 * math.pi * i / SN                          # 0 = straight ahead
+    d = Vector((math.sin(a), -math.cos(a), 0))
+    low = Z_FRONT if math.cos(a) > 0 else Z_BACK
+    z = low + (Z_SIDE - low) * abs(math.sin(a)) ** 0.8
+    for k, dz in enumerate((-0.0055, 0.0055)):
+        loc, _ = hit(Vector((0, 0.0, z + dz)), d, 0.6)
+        strap_loops[k].append(loc + d * 0.0025)
+straps = band("Thong Straps", strap_loops, bpy.data.collections["Bottom"], strap_mat, 0.0015)
+skin_to_body(straps)
 
 # ---------------------------------------------------------------- thigh-highs: navy with a white band
 socks = bpy.data.objects["Socks"]
