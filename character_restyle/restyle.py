@@ -6,7 +6,8 @@ Run with Blender 4.1 / 4.2 (or the matching `bpy` module):
 
 What it changes (everything stays rigged; new props are bone-parented):
   * skin      -> warm tan (tint node inside the shared "Skin Shader" group)
-  * eyes      -> dark red irises painted into the head texture
+  * eyes      -> smaller dark-red irises painted into the head texture; eye
+                 corners, lids and lips re-posed for a sharp-eyed smirk
   * make-up   -> blush toned down, deeper lipstick, long red nails (rig props)
   * hair      -> adds the antenna strand ("ahoge") on the crown
   * outfit    -> sailor top turned into an open, long-sleeved white shirt knotted
@@ -28,11 +29,11 @@ from mathutils.bvhtree import BVHTree
 
 OUT = sys.argv[sys.argv.index("--") + 1] if "--" in sys.argv else None
 
-TAN = (0.60, 0.43, 0.33, 1.0)        # multiplied over the skin albedo
+TAN = (0.88, 0.64, 0.44, 1.0)        # multiplied over the skin albedo
 NAIL_RED = (0.55, 0.0, 0.01, 1.0)
-LIP_RED = (0.35, 0.02, 0.04, 1.0)
-IRIS_DARK = (0.22, 0.0, 0.01)
-IRIS_LIGHT = (0.85, 0.04, 0.05)
+LIP_PINK = (0.75, 0.25, 0.25, 1.0)
+IRIS_DARK = (0.20, 0.0, 0.01)
+IRIS_LIGHT = (0.70, 0.03, 0.04)
 SKIRT_DROP = 0.055                   # metres
 NAVY = (0.018, 0.030, 0.075, 1.0)
 WHITE = (0.80, 0.80, 0.82, 1.0)
@@ -170,8 +171,8 @@ setp("2. Nails Length", 1.0)
 setp("2. Nails Color", NAIL_RED)
 setp("2. Nails Color Opacity", 1.0)
 setp("2. Blush", 0.12)
-setp("2. Lipstick", 0.45)
-setp("2. Lipstick Color", LIP_RED)
+setp("2. Lipstick", 0.22)
+setp("2. Lipstick Color", LIP_PINK)
 
 wardrobe = arm.pose.bones["Clothes 2"]
 wardrobe["1. Bra"] = 4                    # no optional top (0-2 pick one), the bandeau replaces it
@@ -195,13 +196,15 @@ for sel in (ys < mid, ys >= mid):
     rad = math.sqrt(sel.sum() / math.pi)
     yy, xx = np.mgrid[0:sub.shape[0], 0:sub.shape[1]]
     d = np.hypot(yy - cy, xx - cx) / rad
-    iris = (d > 0.40) & (d < 0.97)
-    t = np.clip((d - 0.40) / 0.57, 0, 1)[..., None]
-    # radial streaks so the iris is not flat
-    ang = np.arctan2(yy - cy, xx - cx)
-    streak = (0.85 + 0.15 * np.sin(ang * 36))[..., None]
-    col = (np.array(IRIS_LIGHT) * (1 - t) + np.array(IRIS_DARK) * t) * streak
-    col = np.where(t > 0.86, np.array(IRIS_DARK) * 0.4, col)  # limbal ring
+    # smaller, darker iris: black pupil, maroon ring brightening toward the lower rim, dark outline
+    IR = 0.80
+    sclera = np.array((0.80, 0.79, 0.76))
+    ring = (d >= IR) & (d < 1.05)
+    sub[ring] = sclera
+    iris = (d > 0.34) & (d < IR)
+    t = np.clip((d - 0.34) / (IR - 0.34), 0, 1)[..., None]
+    col = np.array(IRIS_DARK) * (1 - t) + np.array(IRIS_LIGHT) * t
+    col = np.where(t > 0.88, np.array(IRIS_DARK), col)
     sub[iris] = col[iris]
 img.pixels.foreach_set(px.ravel())
 img.update()
@@ -212,8 +215,44 @@ for node in bpy.data.materials["MI_Base_Eyes"].node_tree.nodes:
     if node.type == "GROUP" and "Rough Min" in node.inputs:
         node.inputs["Rough Min"].default_value = 0.45
 
+# hair: push the red toward the vivid reference colour
+hmat = bpy.data.materials["头发"]
+hnt = hmat.node_tree
+hfx = next(n for n in hnt.nodes if n.type == "GROUP" and "Diffuse" in n.inputs)
+src = hfx.inputs["Diffuse"].links[0].from_socket
+hsv = hnt.nodes.new("ShaderNodeHueSaturation")
+hsv.name = "Rebel Hair Boost"
+hsv.inputs["Saturation"].default_value = 1.2
+hsv.inputs["Value"].default_value = 1.35
+hnt.links.new(src, hsv.inputs["Color"])
+hnt.links.new(hsv.outputs["Color"], hfx.inputs["Diffuse"])
+
 # half-lidded stare (rig control: 0 = open, -0.015 = closed); reset it to 0 to undo
-arm.pose.bones["Blink Eyes"].location.y = -0.0055
+arm.pose.bones["Blink Eyes"].location.y = -0.0062
+
+# face shape, set as pose offsets on the facial bones (world-space metres; "her" left/right).
+# Clear the pose on these bones to get the original face back.
+FACE = {
+    # sharper, upturned eyes
+    "L_EyeCornerOuter": (0.003, 0, 0.011), "R_EyeCornerOuter": (-0.003, 0, 0.011),
+    "L_EyeCornerInner": (0, 0, -0.006), "R_EyeCornerInner": (0, 0, -0.006),
+    "L_EyelidLowerA": (0, 0, 0.003), "R_EyelidLowerA": (0, 0, 0.003),
+    # thinner lips, wider mouth, right corner pulled up into a smirk
+    "C_LipUpper": (0, 0.004, -0.002), "L_LipUpper": (0, 0.004, -0.002), "R_LipUpper": (0, 0.004, 0.001),
+    "C_LipLower": (0, 0.004, 0.002), "L_LipLower": (0, 0.004, 0.003), "R_LipLower": (0, 0.004, -0.001),
+    "L_LipsCorner": (0.007, 0, 0), "R_LipsCorner": (-0.010, 0, 0.007),
+}
+for bone, off in FACE.items():
+    pb = arm.pose.bones[bone]
+    bpy.context.view_layer.update()
+    m = pb.matrix.copy()
+    m.translation = m.translation + Vector(off)
+    pb.matrix = m
+mouth = arm.pose.bones["Mouth Control"]
+mouth.rotation_mode = "XYZ"
+mouth.rotation_euler = (0, 0, math.radians(-8))    # slight grin
+mouth.location.y -= 0.004                          # jaw open just enough to show teeth and tongue
+bpy.context.view_layer.update()
 
 # ---------------------------------------------------------------- body surface lookup
 deps = bpy.context.evaluated_depsgraph_get()

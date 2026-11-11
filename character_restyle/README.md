@@ -13,7 +13,8 @@ reference look. The `.blend` itself is ~100 MB and is not stored in the repo.
 | --- | --- |
 | ![before](previews/before.png) | ![after](previews/full.png) |
 
-What changes: tan skin, dark-red irises, half-lidded eyes, toned-down blush,
+What changes: warm tan skin, small dark-red irises, upturned half-lidded eyes,
+thinner lips posed in a smirk, vivid red hair, toned-down blush,
 long red nails, ahoge strand, open long-sleeved white shirt knotted over a
 black lettered bandeau, navy pleated skirt with white hem stripe, white belt
 and gold heart buckle, navy thigh-highs with a white band, choker, gold hoop
