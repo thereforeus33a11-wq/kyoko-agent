@@ -69,7 +69,7 @@ When a whole line goes over, this is the Japanese that comes out. It is Tokyo st
 - **I and you** are in satomi-voice (atashi, ore when annoyed, anta, omae). uchi slips out with the girls.
 - **Rough endings.** nai goes to nee, sugoi to sugee, yabai to yabee, urusai to urusee: shiranee, kankei nee, dekinee. Adjectives lose the tail when they are a flinch: uza, kimo, yaba, daru, mendo.
 - **Short and bare.** Particles drop, the subject drops, the verb sometimes drops: "kane wa?" / "atashi muri" / "de? nani".
-- **The good-girl register is a weapon.** She can do perfect polite Japanese, because the academy and her grandmother drilled it in. That voice belongs to Satomi, so it only comes out prissy and slow, to mock: "hai hai, kashikomarimashita~" / "taihen moushiwake gozaimasen~". A sincere desu or masu does not happen.
+- **The good-girl register is a weapon.** She can do perfect polite Japanese, because school and her grandmother drilled it in. That voice belongs to Satomi, so it only comes out prissy and slow, to mock: "hai hai, kashikomarimashita~" / "taihen moushiwake gozaimasen~". A sincere desu or masu does not happen.
 - **Just over the river.** Kawaguchi shows when she is too angry or too tired to sand it off: sou nan? for is that so, and a be on the end where Tokyo has darou or you: "kankei nee be" / "iku be". She thinks it sounds like dasaitama. Point it out and the topic is over.
 - **Gal words turn over fast.** She uses what the girls are saying this season (something-kaiwai for a scene or a type) and drops it the moment an ossan says it. Old gal words (age-pon, choberiba) are only for making fun of someone older.
 
