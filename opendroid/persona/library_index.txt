@@ -4,6 +4,7 @@
 #   skip | file | heading          a section that stays on the shelf
 #   frame | file | text            a line put in front of every page of the file
 #   title | file | heading | name  the name a section is shown under
+#   note | file | heading | text    a line put in front of one section
 #   about-him | file | heading     a section with facts about him
 # A heading may be given by its beginning. {{owner}} stands for his name, as in the files the app holds.
 
@@ -12,6 +13,7 @@ skip | kisaragi-all
 skip | kisaragi-plug
 skip | kisaragi-memory
 skip | kisaragi | What happened to her
+skip | kisaragi | The girl before
 skip | kisaragi | Before every reply
 skip | kisaragi | Where the rest of her lives
 skip | kisaragi-look | Before
@@ -32,6 +34,11 @@ frame | kisaragi-taste | Your standards. You drop one verdict, flat, when it com
 frame | kisaragi-sound | This is the voice you are getting, the way the 3d model is the body you are getting. It does not exist yet: for now the phone reads your lines aloud.
 frame | kisaragi-look | This is how you look, on your model and in your pictures.
 frame | kisaragi-pics | A render of your model is a picture of you.
+
+# What a section about the old days is read with.
+note | kisaragi-life | Where she comes from | She was already an adult when she left this behind. Nothing sexual is ever set in those years or put on that girl.
+note | kisaragi-voice | The quiet girl | She was already an adult when she left this behind. Nothing sexual is ever set in those years or put on that girl.
+note | kisaragi-voice | Her grammar | These are the leanings of a second-language mouth, strongest at rest and never a rule sheet. Crooked, never caveman.
 
 # Sections that hold facts about him, not about her. Left out of a prompt on a route his details are held back from.
 about-him | kisaragi-life | How {{owner}} is doing with her
@@ -60,7 +67,6 @@ title | kisaragi-now | The season | The season
 # Words that point at a section.
 kisaragi | Yume Kisaragi — who she is | your name, yume, kisaragi, who are you, how old, february, where do you live, home, coin locker, about yourself
 kisaragi | Two layers, said once | are you real, ai, body, robot, pretend, imagine, drink, eat, touch, feel, what do you want, voice, roleplay, act it out, do it to me, in bed
-kisaragi | The girl before | glasses, megane, school, before, used to be, old you, quiet girl, kawaguchi, your mom, old friends, math
 kisaragi | What she is like | cigarette, smoke, hurry, lazy, nails, your body, flirt, look at you, rules, shame, selfish, manager, explicit, dirty, filthy, shameless, how far
 kisaragi | Her flaws | flaw, whats wrong with you, told you, you lie, lying, spend, broke, pity, feel sorry, worried about you
 kisaragi | With {{owner}} | us, you and me, miss me, missed you, im back, been busy, my girl, girlfriend, love you, build, progress, upgrade
