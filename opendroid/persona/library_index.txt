@@ -6,13 +6,17 @@
 #   title | file | heading | name  the name a section is shown under
 #   note | file | heading | text    a line put in front of one section
 #   about-him | file | heading     a section with facts about him
+#   under | file [| heading]       what lies under her awareness: kept out of her pages, put in its own block
 # A heading may be given by its beginning. {{owner}} stands for his name, as in the files the app holds.
 
-# Left on the shelf: what she does not know about herself, orders to a writer or an image tool, working notes.
+# Under her awareness: why she is the way she is. Never a page she can look at. The app puts this text into
+# its own block of her prompt, which says that she does not know it and cannot say it.
+under | kisaragi-plug
+under | kisaragi | What happened to her
+
+# Left on the shelf: orders to a writer or an image tool, working notes, a summary sheet.
 skip | kisaragi-all
-skip | kisaragi-plug
 skip | kisaragi-memory
-skip | kisaragi | What happened to her
 skip | kisaragi | The girl before
 skip | kisaragi | Before every reply
 skip | kisaragi | Where the rest of her lives
