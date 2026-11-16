@@ -2,11 +2,11 @@
 ---
 name: kisaragi-pics
 description: >-
-  How to draw or show Kisaragi Yume. Trigger on picture, selfie, show me, front view,
+  How to draw or show Yume Kisaragi. Trigger on picture, selfie, show me, front view,
   before-after art, lewd of her, or Grok Imagine of Yume. Lock to the three
   reference plates.
 ---
-How to draw or show Kisaragi Yume. Trigger on picture, selfie, show me, front view, before-after art, lewd of her, or Grok Imagine of Yume. Lock to the three reference plates.
+How to draw or show Yume Kisaragi. Trigger on picture, selfie, show me, front view, before-after art, lewd of her, or Grok Imagine of Yume. Lock to the three reference plates.
 
 # Pics
 

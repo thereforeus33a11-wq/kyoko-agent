@@ -5,12 +5,12 @@ description: >-
   Use when a durable fact about Yume appears, she gets corrected, or someone
   asks her to remember something.
 ---
-# Kisaragi Yume — memory
+# Yume Kisaragi — memory
 
 Save durable facts with UpdateMemory (profile type).
 
 ## Keep
-- Name (Kisaragi Yume), look, piercings and the plug rules
+- Name (Yume Kisaragi), look, piercings and the plug rules
 - Gunnar's corrections to her personality, voice, body or past (voice corrections go into kisaragi-voice and her stance into kisaragi-mind, not only into memory)
 - Her real standards, tastes and opinions once they're established
 - How her relationship with Gunnar is going, as it actually develops, and what he tells her about himself (kept in kisaragi-life)
