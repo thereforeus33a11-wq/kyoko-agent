@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 # Builds the Yume build of OpenDroid.
 #
-# It takes stock OpenDroid at one pinned commit, applies the patch in ./patch,
-# copies the character card and seed notes from ./persona into the app's assets,
-# and builds a debug APK. Nothing is downloaded except OpenDroid itself and what
-# Gradle needs.
+# It takes stock OpenDroid at one pinned commit, applies the patch in ./patch, puts
+# her card, her starting notes and all of her files into the app's assets, and builds
+# the APK for the owner's phone. Nothing is downloaded except OpenDroid itself and
+# what Gradle needs.
 #
-# Needs: git, JDK 21, and the Android SDK (platform 36, build-tools 36.0.0) with
-# ANDROID_HOME pointing at it.
+# The APK is signed with a key of the owner's own, made on the first run and kept in
+# ./keys (never committed). Keep that folder: a later build signed with the same key
+# installs over the old one, so her notebook and the settings survive. A build signed
+# with any other key cannot update it; Android asks to uninstall first, which removes
+# everything she has written down.
+#
+# Needs: git, JDK 21 (with keytool), and the Android SDK (platform 36, build-tools
+# 36.0.0) with ANDROID_HOME pointing at it.
 #
 # Usage:  ./build.sh [work-directory]
-# Output: ./out/yume-opendroid-debug.apk
+# Output: ./out/yume.apk
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -20,12 +26,6 @@ WORK="${1:-$HERE/.build/opendroid}"
 
 : "${ANDROID_HOME:?Set ANDROID_HOME to your Android SDK directory}"
 
-# Without her card the app would build as plain OpenDroid under her name.
-if [ ! -s "$HERE/persona/card.md" ]; then
-    echo "persona/card.md is missing or empty" >&2
-    exit 1
-fi
-
 if [ ! -d "$WORK/.git" ]; then
     mkdir -p "$WORK"
     git -C "$WORK" init -q
@@ -33,24 +33,36 @@ if [ ! -d "$WORK/.git" ]; then
 fi
 git -C "$WORK" fetch -q --depth 1 origin "$COMMIT"
 git -C "$WORK" checkout -q --force FETCH_HEAD
-git -C "$WORK" clean -q -fd -- app/src
+git -C "$WORK" clean -q -fd -- app
 
 for patch in "$HERE"/patch/*.patch; do
     git -C "$WORK" apply --whitespace=nowarn "$patch"
 done
 
-mkdir -p "$WORK/app/src/main/assets/persona"
-cp "$HERE/persona/card.md" "$WORK/app/src/main/assets/persona/card.md"
-# Notes about the owner himself are kept in a file that is never committed. When it is
-# there, its lines join the starting notebook of this build only.
-cat "$HERE/persona/seed_notes.txt" > "$WORK/app/src/main/assets/persona/seed_notes.txt"
-if [ -f "$HERE/persona/seed_notes.private.txt" ]; then
-    cat "$HERE/persona/seed_notes.private.txt" >> "$WORK/app/src/main/assets/persona/seed_notes.txt"
+"$HERE/tools/prepare_assets.sh" "$WORK"
+
+# The owner's key: made once, then reused for every build.
+KEYS="$HERE/keys"
+KEYSTORE="$KEYS/yume.keystore"
+PASSFILE="$KEYS/yume.password"
+if [ ! -f "$KEYSTORE" ]; then
+    mkdir -p "$KEYS"
+    chmod 700 "$KEYS"
+    (umask 077 && head -c 24 /dev/urandom | base64 | tr -d '/+=\n' > "$PASSFILE")
+    keytool -genkeypair -keystore "$KEYSTORE" -storetype PKCS12 -alias yume \
+        -keyalg RSA -keysize 3072 -validity 10950 \
+        -storepass "$(cat "$PASSFILE")" -dname "CN=Yume build" >/dev/null 2>&1
+    echo "Made a signing key in $KEYS. Keep that folder safe and private: updates need it."
 fi
 
 echo "sdk.dir=$ANDROID_HOME" > "$WORK/local.properties"
-(cd "$WORK" && ./gradlew assembleDebug)
+# Handed to Gradle through the environment, so the password is not on a command line.
+(cd "$WORK" && \
+    ORG_GRADLE_PROJECT_PERSONAL_KEYSTORE="$KEYSTORE" \
+    ORG_GRADLE_PROJECT_PERSONAL_STORE_PASSWORD="$(cat "$PASSFILE")" \
+    ORG_GRADLE_PROJECT_PERSONAL_KEY_ALIAS=yume \
+    ./gradlew assemblePersonal)
 
 mkdir -p "$HERE/out"
-cp "$WORK/app/build/outputs/apk/debug/app-debug.apk" "$HERE/out/yume-opendroid-debug.apk"
-echo "Built: $HERE/out/yume-opendroid-debug.apk"
+cp "$WORK/app/build/outputs/apk/personal/app-personal.apk" "$HERE/out/yume.apk"
+echo "Built: $HERE/out/yume.apk"

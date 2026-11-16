@@ -24,10 +24,12 @@ mkdir -p "$DEST/library"
 
 cp "$HERE/persona/card.md" "$DEST/card.md"
 
-# Notes about the owner himself are kept in a file that is never committed. When it is
-# there, its lines join the starting notebook of this build only.
+# Notes about the owner himself are kept in a file that is never committed, and they
+# are not put into the APK either: an APK is a file that can be copied and unpacked.
+# He hands them to her on the phone (Settings, Persona, Character card, "Give her notes").
+# Only with YUME_BAKE_PRIVATE_NOTES=1 do they join the starting notebook of this build.
 cat "$HERE/persona/seed_notes.txt" > "$DEST/seed_notes.txt"
-if [ -f "$HERE/persona/seed_notes.private.txt" ]; then
+if [ "${YUME_BAKE_PRIVATE_NOTES:-0}" = "1" ] && [ -f "$HERE/persona/seed_notes.private.txt" ]; then
     cat "$HERE/persona/seed_notes.private.txt" >> "$DEST/seed_notes.txt"
 fi
 

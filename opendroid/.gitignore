@@ -1,4 +1,6 @@
 .build/
 out/
-# Notes about the owner himself: built into the APK, never committed.
+# Notes about the owner himself: handed to her on the phone, never committed.
 persona/*.private.txt
+# The key the phone build is signed with, and its password. Keep them; never commit them.
+keys/
