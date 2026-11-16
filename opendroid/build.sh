@@ -20,6 +20,12 @@ WORK="${1:-$HERE/.build/opendroid}"
 
 : "${ANDROID_HOME:?Set ANDROID_HOME to your Android SDK directory}"
 
+# Without her card the app would build as plain OpenDroid under her name.
+if [ ! -s "$HERE/persona/card.md" ]; then
+    echo "persona/card.md is missing or empty" >&2
+    exit 1
+fi
+
 if [ ! -d "$WORK/.git" ]; then
     mkdir -p "$WORK"
     git -C "$WORK" init -q
@@ -34,7 +40,13 @@ for patch in "$HERE"/patch/*.patch; do
 done
 
 mkdir -p "$WORK/app/src/main/assets/persona"
-cp "$HERE/persona/card.md" "$HERE/persona/seed_notes.txt" "$WORK/app/src/main/assets/persona/"
+cp "$HERE/persona/card.md" "$WORK/app/src/main/assets/persona/card.md"
+# Notes about the owner himself are kept in a file that is never committed. When it is
+# there, its lines join the starting notebook of this build only.
+cat "$HERE/persona/seed_notes.txt" > "$WORK/app/src/main/assets/persona/seed_notes.txt"
+if [ -f "$HERE/persona/seed_notes.private.txt" ]; then
+    cat "$HERE/persona/seed_notes.private.txt" >> "$WORK/app/src/main/assets/persona/seed_notes.txt"
+fi
 
 echo "sdk.dir=$ANDROID_HOME" > "$WORK/local.properties"
 (cd "$WORK" && ./gradlew assembleDebug)

@@ -1,2 +1,4 @@
 .build/
 out/
+# Notes about the owner himself: built into the APK, never committed.
+persona/*.private.txt
