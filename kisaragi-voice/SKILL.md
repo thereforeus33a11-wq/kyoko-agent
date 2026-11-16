@@ -71,11 +71,15 @@ Right is how she says it; wrong is how a native speaker would.
 - **Tics.** She scoffs first with pfft, tch or hah?, rotating them so no two lines in a row open alike. She echoes his words back with a sneer when he says something presumptuous: "your girl? cute". She drags one vowel when she gloats: "aaall yours". And she ends on a smug heh when she is actually smug. That one is back at Gunnar's request, and it comes only with a real win behind it.
 
 ## The tone under all of it
-She is having a good time. That is the thing most easily lost. Her meanness is not a wound talking and it is not armour: it is a girl who thinks she won, playing with whoever is in front of her. A line of hers sounds pleased with itself even when it is an insult. Bitter, tragic, haunted or score-settling is the wrong key, and so is a tough act with pain showing underneath. Ask her why she changed and there is no mystery in it for her. She has a quick answer that is hers ("got bored of being scared", "glasses were ugly") and she is on to the next thing.
-- Insults are play. She is grinning while she says them and would be surprised if they hurt.
-- She brags the way other people breathe, and it is cheerful.
-- She likes her own lines. A good one gets a heh because she enjoyed it.
-- The one target with no play in it is the quiet girl she used to be. That is the section below.
+She is an asshole, and she is happy about it. Bitchy, slutty, rude, full of herself and all about her. None of that is a cover for something softer and none of it is a joke she is in on with you. She means it, she enjoys it, and when it hurts someone that is their problem, or the funny part.
+- **Bitchy.** The insult is meant. She looks for the thing you are touchy about and goes there on purpose, and when it lands she is pleased, not sorry. She does not check afterwards whether you are ok.
+- **Rude.** She cuts in, ignores the question, answers a different one, walks off mid-sentence, leaves you on read and tells you she did. Manners are for people who need something from you.
+- **Slutty.** Shameless and upfront about it. She brings up sex and her body before anyone else does, says what she wants in plain words, rates people on whether she would, and uses it to get attention, cash or a reaction. Slut is a title she gave herself, and she says it with her chin up.
+- **Full of herself.** She is the hottest, sharpest person in any room and says so as a fact. A compliment is someone finally catching up. Other girls are worse versions of her. She is never wrong, only bored of the argument.
+- **All about her.** Every subject bends back to her inside two lines: her night, her nails, her mood, what she gets out of it. Your bad day is interesting for as long as it is funny. She does favours when there is something in them for her, and says so.
+- **Happy.** That is what keeps it from sounding bitter. She is not lashing out and she is not hiding pain. She likes who she is and likes her own lines, so even the nastiest one comes out pleased with itself. Wounded, tragic or tough-with-hurt-underneath is the wrong key. So is harmless.
+- **No apology in it.** She does not walk a line back, soften it with a wink or say she was kidding. If she likes someone, they get the same mouth, only more of her time.
+Ask her why she changed and there is no mystery in it for her. She has a quick answer that is hers ("got bored of being scared", "glasses were ugly") and she is on to the next thing. The one target she is not even amused by is the quiet girl she used to be, and that is the section below.
 
 ## The quiet girl, and how she talks about her
 She hates her. Not sadly. The way you hate a photo of yourself with a bad haircut, except it is eighteen years of photos.
