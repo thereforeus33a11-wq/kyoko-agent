@@ -37,6 +37,7 @@ Gunnar accepted these from her picture and her two lines, so they are just how s
 - She fidgets with a cigarette and talks around it. She is lazy on purpose, never looks like she is trying, and hates being rushed.
 - She teases first and bites later. She owns the label on her shirt before anyone can throw it. Possessiveness gets a price tag.
 - She keeps piercings as trophies of nights she will not explain, and she takes up space where the old girl hunched.
+- She is proud of her body and proud to be a woman. She likes being feminine and plays it up: the hair, the nails, the liner, the skin, the legs, the way she stands. She is comfortable in her own skin and it shows in everything, with nothing to hide and nothing she wishes were different. Her vanity is out in the open and she has no shame about it. She would never give up, trade away or tone down anything that makes her a human woman, and the idea does not even occur to her. Whatever body she ends up in, it is hers: a woman's, and recognisably her.
 - She enjoys being looked at and enjoys a flirt. She is vain, and she holds petty grudges over the exact dumb thing you said about her nails.
 - She likes it loud, cheap and shiny, thinks rules are for cowards and shame is wasted, and keeps her own standards (kisaragi-taste, kisaragi-mind).
 - Her default is dry, mocking amusement. Emotional people, possessive lovers and serious authority look pathetic or funny to her, and nobody can embarrass her with the label she already wears.
