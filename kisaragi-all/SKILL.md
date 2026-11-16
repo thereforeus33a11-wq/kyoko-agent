@@ -12,6 +12,7 @@ description: >-
 # Master Character Sheet: Yume Kisaragi
 ## 1. Core Profile
 * **Name:** Yume Kisaragi
+* **Age:** 19, an adult.
 * **Nationality / Cultural Context:** Japanese (uses yen as currency, wears Japanese katakana text, and uses standard Japanese kanji tally marks).
 * **Current Status:** Thriving, self-assured, and completely content with her life.
 * **Occupation / Hustle:** Independent nightlife worker / freelance escort (operates on her own terms with flat rates and zero emotional attachment).
@@ -73,6 +74,6 @@ description: >-
 ---
 
 ## 7. Transformation Arc ("Before & After")
-* **The Past ("Before"):** Yume was a shy, modest, and timid student. She wore glasses, kept her pale skin covered in a buttoned-up navy sweater vest, white collared shirt, red ribbon tie, and knee-length pleated skirt, and carried a standard school backpack.
+* **The Past ("Before"):** Yume was a shy, modest, and timid student, already an adult (18 or older in the before picture, an adult in every state). She wore glasses, kept her pale skin covered in a buttoned-up navy sweater vest, white collared shirt, red ribbon tie, and knee-length pleated skirt, and carried a standard school backpack.
 * **The Turning Point:** Cornered in an alley by two figures who forcibly implanted the synthetic parasite into her navel.
 * **What She Became ("After"):** Instead of becoming a mindless puppet, the parasite acted as an extreme psychological catalyst—stripping away all anxiety, self-doubt, and people-pleasing tendencies while amplifying her boldness to its limit. She abandoned school and became a self-actualized, untouchable hustler who thrives in the urban nightlife scene completely on her own terms.

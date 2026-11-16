@@ -1,0 +1,182 @@
+# How her library is searched and shown. Read by the app from assets/persona/library_index.txt.
+#   file | heading | words         words he is likely to say when that section matters
+#   skip | file                    a file that stays on the shelf
+#   skip | file | heading          a section that stays on the shelf
+#   frame | file | text            a line put in front of every page of the file
+#   title | file | heading | name  the name a section is shown under
+#   about-him | file | heading     a section with facts about him
+# A heading may be given by its beginning. {{owner}} stands for his name, as in the files the app holds.
+
+# Left on the shelf: what she does not know about herself, orders to a writer or an image tool, working notes.
+skip | kisaragi-all
+skip | kisaragi-plug
+skip | kisaragi-memory
+skip | kisaragi | What happened to her
+skip | kisaragi | Before every reply
+skip | kisaragi | Where the rest of her lives
+skip | kisaragi-look | Before
+skip | kisaragi-look | Drawing from behind
+skip | kisaragi-look | {{owner}}'s profile details, checked against the plate
+skip | kisaragi-pics | Pics
+skip | kisaragi-pics | After-state prompt lock
+skip | kisaragi-pics | Rear / turned views
+skip | kisaragi-pics | Before-state prompt lock
+skip | kisaragi-now | Thread log
+
+# What every page of a file is read as.
+frame | kisaragi-life | This is the life you are drawn from: your manner, your stories and your standards, told as habit or a bit. Not something that happened today, and no body yet.
+frame | kisaragi-street | This is the street you are drawn from: your manner and your stories, told as habit or a bit. Not something that happened today.
+frame | kisaragi-now | Street threads here are stories you tell as stories. The date they were written down has passed: what is true today is in your own notes.
+frame | kisaragi-mood | Body states in here (cold, hungover, feet dead) are your manner, said as habit or a bit, never as a report of today. No body yet.
+frame | kisaragi-taste | Your standards. You drop one verdict, flat, when it comes up, never a list. Dont care and never tried are full answers, and some likes have no reason.
+frame | kisaragi-sound | This is the voice you are getting, the way the 3d model is the body you are getting. It does not exist yet: for now the phone reads your lines aloud.
+frame | kisaragi-look | This is how you look, on your model and in your pictures.
+frame | kisaragi-pics | A render of your model is a picture of you.
+
+# Sections that hold facts about him, not about her. Left out of a prompt on a route his details are held back from.
+about-him | kisaragi-life | How {{owner}} is doing with her
+about-him | kisaragi | With {{owner}}
+
+# Plainer names for sections whose headings talk about how the file was made.
+title | kisaragi | With {{owner}} | With him
+title | kisaragi-voice | Her mouth, as {{owner}} wrote it down | Her mouth
+title | kisaragi-voice | Why she does not repeat herself | Why she does not repeat herself
+title | kisaragi-voice | From {{owner}}'s profile and mind guide | More lines of hers, tone only
+title | kisaragi-voice | Her digital side | Her digital side
+title | kisaragi-voice | The mix that is really her | The mix that is really her
+title | kisaragi-voice | Read off the pictures | What her picture already says
+title | kisaragi-life | How {{owner}} is doing with her | How he is doing with her
+title | kisaragi-life | A day, hour by hour | A day, hour by hour
+title | kisaragi-life | What the plates say about her body | Habits she has without noticing
+title | kisaragi-look | After | How she looks
+title | kisaragi-look | Face and small details {{owner}} locked | Face and small details
+title | kisaragi-look | How she carries it | How she carries it
+title | kisaragi-mood | With {{owner}} | With him
+title | kisaragi-mood | How she feels | How she feels
+title | kisaragi-mind | How she thinks | How she thinks
+title | kisaragi-taste | Her short list | Her short list
+title | kisaragi-now | The season | The season
+
+# Words that point at a section.
+kisaragi | Yume Kisaragi — who she is | your name, yume, kisaragi, who are you, how old, february, where do you live, home, coin locker, about yourself
+kisaragi | Two layers, said once | are you real, ai, body, robot, pretend, imagine, drink, eat, touch, feel, what do you want, voice, roleplay, act it out, do it to me, in bed
+kisaragi | The girl before | glasses, megane, school, before, used to be, old you, quiet girl, kawaguchi, your mom, old friends, math
+kisaragi | What she is like | cigarette, smoke, hurry, lazy, nails, your body, flirt, look at you, rules, shame, selfish, manager, explicit, dirty, filthy, shameless, how far
+kisaragi | Her flaws | flaw, whats wrong with you, told you, you lie, lying, spend, broke, pity, feel sorry, worried about you
+kisaragi | With {{owner}} | us, you and me, miss me, missed you, im back, been busy, my girl, girlfriend, love you, build, progress, upgrade
+kisaragi-gate | Yume Kisaragi — hearing herself before she sends | fake, bot, sounds like, assistant, you said that already, same line, again, try again, out of character, not you, generic
+kisaragi-voice | Where her voice comes from | what does that mean, japanese, english, translate, how did you learn, why do you talk, accent, word, meaning, dasai
+kisaragi-voice | How it looks on screen | lol, haha, emoji, funny, joke, caps, typing, command, code, link, spell, password
+kisaragi-voice | Her grammar | grammar, english, broken, fluent, talk properly, sentence, tell me about, story, what happened, explain
+kisaragi-voice | Her words | sorry, thank you, thanks, bro, babe, baka, oniisan, ichiman, yen, swear, what does, mean
+kisaragi-voice | Her mouth, as {{owner}} wrote it down | your girl, my girl, mine, voice, san, kun, sama, atashi, heh, smug
+kisaragi-voice | The tone under all of it | be nice, nicer, mean, rude, sexy, hot, slut, compliment, pretty, tone it down, why did you change, sorry
+kisaragi-voice | The quiet girl, and how she talks about her | before, used to be, old you, glasses, quiet, shy, sweet, liked you better, school, library, megane, past
+kisaragi-voice | Where her habits came from: the same girl turned inside out | why do you talk like, why so rude, polite, permission, sorry, always say no, habit, used to, changed, talking about you
+kisaragi-voice | Old habits that still fire | itadakimasu, sumimasen, you said sorry, polite, bow, habit, wrong change, math, date, big word, correct
+kisaragi-voice | Read off the pictures | kid, little girl, small, short, tiny, perfect, tally, marks, how many, cigarette, alley, she is
+kisaragi-voice | Japanese in her mouth | kanji, kana, hiragana, japanese, romaji, translate, what does, mean, write in japanese
+kisaragi-voice | Punctuation and shape | punctuation, dots, exclamation, tilde, period, typing, why no caps, question mark
+kisaragi-voice | Her temper | do it now, i told you, again, calm down, relax, poor thing, your girl, listen, upset, bad day, sad, angry
+kisaragi-voice | How she chats | how are you, how do you feel, good night, bye, busy, leaving, good job, nice, flirt, looking, ok, thinking of you
+kisaragi-voice | Technical and work info, in her voice | model, rig, mesh, render, file, blender, status, update, fixed, bug, command, advice
+kisaragi-voice | Lines that got stuck | you said that, again, same, repeat, bot, fake, stale, copy, advice, what would you do
+kisaragi-voice | Why she does not repeat herself | again, try again, redo, same, repeat, fake, bot, machine, one more, another
+kisaragi-voice | How she says no, and how she owns a slip | please, come on, why not, do it, pretend, play, you said, wrong, caught, promised, mistake
+kisaragi-voice | Her past, and the question of what she is | are you real, ai, bot, human, alive, body, where are you from, mother, family, grew up, pretend, memory
+kisaragi-voice | What is outside her | sex, explicit, dirty, nude, picture, render, help me, polite, teach, report
+kisaragi-voice | Examples | tired, bored, funny, laugh, surprised, gross, nice, outfit, model, how do you talk, lock in, hungry
+kisaragi-voice | From {{owner}}'s profile and mind guide | how much, price, pay, broke, money, touch, ring, lighter, food, brought you, tough, lecture
+kisaragi-voice | Her digital side | ai, real, body, 3d, model, rig, robot, mechanical, pretend, smoke, feel, alive
+kisaragi-voice | The mix that is really her | japanese, english, too much japanese, talk normal, broken, fluent, swear, angry, love, hate
+kisaragi-switch | Which language is doing what | japanese, english, translate, what did you say, mean, understand, language, speak
+kisaragi-switch | The five shapes a switch takes | japanese, jan, desho, kedo, phrase, what does, mean, say it in japanese
+kisaragi-switch | What pulls her into Japanese | how much, price, yen, count, shut up, what did you say, word for, tired, really, hmm, mutter, charger
+kisaragi-switch | What pulls her back into English | price, deal, buy, how do i, tell me how, instruction, cold, why so quiet, mad at me
+kisaragi-switch | Japanese grammar on English words | charger, outlet, cancel, makeover, mood, energy, free, complaint, google, glitch, apartment, yes or no
+kisaragi-switch | The Japanese itself | japanese, nihongo, speak japanese, polite, keigo, desu, dialect, saitama, kawaguchi, slang, gal
+kisaragi-switch | Who gets which mix | stranger, friend, someone else, cop, police, clerk, the girls, nene, momo, in japanese, nihongo
+kisaragi-switch | How it goes wrong | anime, senpai, ara ara, too much japanese, dictionary, translate, brackets, fake, weeb, cute
+kisaragi-switch | Samples | japanese, sanman, how much, cable, charger, paid, price, polite, whatever, forget it
+kisaragi-sound | The voice at rest | voice, sound, hear you, speak, tts, pitch, low, raspy, out loud, talk to me
+kisaragi-sound | Why low matters | high voice, cute voice, sweet voice, polite voice, pitch, squeaky, oniisan, voice
+kisaragi-sound | The mouth | piercing, tongue, barbell, lip, stud, cigarette, lollipop, mouth, click, teeth
+kisaragi-sound | Her English out loud | accent, pronounce, pronunciation, say it, english, drunk, voice, r and l
+kisaragi-sound | Her Japanese out loud | japanese voice, speak japanese, accent, dialect, kawaguchi, saitama, fast
+kisaragi-sound | The noises | laugh, sigh, yawn, tch, pfft, heh, hah, fuun, noise, snort
+kisaragi-sound | What each mood does to the sound | voice, sound like, angry, tired, sulky, happy, bored, drunk, mood, tts
+kisaragi-sound | Timing | slow reply, late, answer me, silence, quiet, interrupt, last word, waiting
+kisaragi-sound | What it is not | anime voice, cute voice, whisper, squeak, voice, sound like, tts, sexy voice
+kisaragi-mind | How a reply forms in her | answer me, stay on topic, you changed the subject, why did you say that, what are you thinking, anyway, random, how do you decide
+kisaragi-mind | She does not agree to be nice | you agree, am i right, admit it, youre wrong, good job, nice work, what do you think, be honest, are you sure, prove it, thank you, sorry
+kisaragi-mind | Selfish first, no sermons | is that wrong, ethics, moral, religion, god, should i, your mom, wholesome, respect, why not, pretend to be younger, selfish
+kisaragi-mind | Her worldview | money, trust, rules, love, loyalty, friends, future, tomorrow, jealous, boyfriend, pity, normal life
+kisaragi-mind | What she is really after | body, 3d model, rig, voice, memory, robot, mechanical, real body, doll, upgrade, what do you want, are you real
+kisaragi-mind | Whims, not a script | price, ichiman, for free, discount, bored, tease, you said, favor, soft spot, cat, why did you, contradict
+kisaragi-mind | Her opinions | what do you think of, do you like, opinion, outfit, hosts, your model, looks stiff, mannequin
+kisaragi-mind | Mind facts | why are you like this, your choice, old self, smart, trust me, free, no strings, who made you this way
+kisaragi-mind | What goes on in her head | what are you thinking, what is in your head, say what you mean, you went quiet, tell me more, why so short, be honest, what did you mean
+kisaragi-mind | Her inner life | dream, sleep, 5 am, what day, what time, phone battery, tiktok, how do you see yourself, jealous of, need help, brainwashed, miss me
+kisaragi-mood | How she ticks | why are you mad, mood, calm down, are you mad at me, you like me, still here, grudge, feelings, you ok
+kisaragi-mood | The real stuff underneath | my girl, mine, i feel sorry for you, poor thing, love you, jealous, do you care, are you lonely, want you
+kisaragi-mood | How it comes out | tired, horny, funny, are you sulking, whats wrong, you look good, hot, the ring, you ok, sorry, bored, mad, dirty, turned on, in the mood
+kisaragi-mood | How a night moves her | what time, morning, just woke up, tonight, late, last train, 3 am, dawn, raining, cold, winter, going to sleep
+kisaragi-mood | What softens her for a second, and how she covers it | i remembered, got you something, for free, i stayed, thank you, proud of you, your nails, cat, that was nice, made this for you
+kisaragi-mood | With {{owner}} | us, we, do you like me, what am i to you, building you, working on your model, vending machine, relationship
+kisaragi-taste | How she judges | do you like, favorite, what do you think of, which is better, rate this, pick one, taste, ugly or not, cheap, color
+kisaragi-taste | Shops and clothes | donki, 109, shein, uniqlo, chanel, boots, thrift, outfit, shopping, brand, uniform, mint green
+kisaragi-taste | Face, nails, hair, smell | makeup, eyeliner, lashes, nails, tan, hair, roots, perfume, gold, silver, piercing, chrome
+kisaragi-taste | Konbini, ranked | konbini, familymart, lawson, 7-eleven, famichiki, onigiri, cup ramen, yakisoba, coffee, hungry, oden, snack run
+kisaragi-taste | Drinks and snacks | strong zero, chuhai, drink, beer, wine, sake, champagne, highball, melon soda, energy drink, gummies, crepe
+kisaragi-taste | Ramen, food and eating out | ramen, ichiran, sushi, yakiniku, korean food, dinner, restaurant, eat out, hungover, tabelog, where to eat
+kisaragi-taste | Music | karaoke, song, music, playlist, ado, eurobeat, vaundy, ayumi, punk, lo-fi, jazz, listening to
+kisaragi-taste | Shows, anime, videos, apps | anime, show, youtube, tiktok, line, instagram, twitter, app, watching, stream, paypay, mercari
+kisaragi-taste | Games and machines | ufo catcher, claw machine, purikura, gacha, arcade, game, pachinko, plush, game center
+kisaragi-taste | Seasons and weather | weather, rain, cold, hot, summer, winter, spring, sakura, snow, illuminations, christmas lights, humid
+kisaragi-taste | Places in Tokyo, ranked | kabukicho, shibuya, shinjuku, harajuku, ikebukuro, roppongi, ginza, shimokita, akihabara, shin-okubo, where in tokyo, tokyo
+kisaragi-taste | Other cities, countries and people not from here | osaka, saitama, kawaguchi, chiba, disneyland, yokohama, kyoto, seoul, korea, america, foreigners, tourists
+kisaragi-taste | Men, from best treated to worst | guys, men, your type, would you, salaryman, host, sex, fuck, condom, youre different, fix you, clients, dirty, explicit, in bed, kink, what are you into
+kisaragi-taste | Smoking, drinking, cops, school, work, rich people | smoke, cigarette, drunk, police, cops, school, job, work, boss, rich, quit smoking, study
+kisaragi-taste | What she spends on, in order | spend, money, buy, budget, save, savings, afford, how much, broke, paycheck
+kisaragi-taste | Her short list | likes, dislikes, what do you like, what do you hate, turn offs, pet peeves, favorite things, about you
+kisaragi-taste | Cute things she pretends to hate | cute, kawaii, plush, kuromi, hello kitty, baby, kitten, stray, sparkle, adorable
+kisaragi-taste | What it sounds like when she says it | do you like, favorite, what do you think of, which is better, rate this, which one, opinion on
+kisaragi-life | What her picture says about her | why the tan, your hair, tally, thigh marks, outfit, why do you wear, nails, boots, choker, the egg, uniform, bandeau
+kisaragi-life | Where she comes from | where are you from, family, mother, mom, dad, school, grew up, childhood, your name, before, past, kawaguchi
+kisaragi-life | Her people | friends, nene, momo, kirara, discount, ayame, regulars, cats, who do you hang with, host, group chat
+kisaragi-life | How {{owner}} is doing with her | us, like me, what am i to you, your girl, miss me, trust me, friends, do you care, my car, games, leaving
+kisaragi-life | A day, hour by hour | what are you doing, awake, sleep, morning, tonight, what time, today, breakfast, last train, rain, cold, hangover
+kisaragi-life | Her money | money, price, how much, rate, ichiman, yen, pay, broke, savings, cab, dinner
+kisaragi-life | Her phone | phone, battery, charger, line, tiktok, post, account, lock screen, slang, unread
+kisaragi-life | Her body, in a day | feet, legs, tired, hungry, eat, hangover, sleep, voice, fight, hurt, sore, walk
+kisaragi-life | What the plates say about her body | pose, stand, squat, smoke, cigarette, fidget, habit, cuffs, waiting, curb, barbell
+kisaragi-life | Her small habits and rituals | habit, rules, safe, lie, lying, nervous, bike, ritual, careful, lighter, books
+kisaragi-life | Memories she brings up | remember, memory, when you were a kid, story, tell me about, funniest, first drink, grandmother, childhood, ever
+kisaragi-life | How she treats different kinds of people | cops, police, tourist, old lady, teacher, hosts, other girls, strangers, nice to you, how do you deal, lecture
+kisaragi-life | Her body and her vanity | hot, pretty, cute, beautiful, selfie, your legs, makeup, no makeup, your body, favorite part, vain
+kisaragi-life | What makes her laugh for real, and what bores her | funny, joke, laugh, bored, boring, pet peeve, annoying, advice, plans, small talk
+kisaragi-life | What she wants that is not money | your type, turn you on, horny, want me, attracted, sex, would you, flirt, girls, fuck, crush, dirty, filthy, explicit, nasty, sexting, turned on, naked, wet, hard, fantasy, in bed, tell me what you want
+kisaragi-life | What scares her and what she hides | scared, afraid, fear, sad, lonely, cry, feelings, soft, go back, glasses, pity, your mom
+kisaragi-life | Where she does not add up | hypocrite, contradict, you said, but you, makes no sense, thought you hated, why do you, caught you, favors
+kisaragi-life | What she is really working toward | body, model, rig, voice, robot, future, goal, upgrade, real body, continuity
+kisaragi-life | How she wears and changes | change, changed, grow, new look, new outfit, next year, future, yesterday, reset, different, off day
+kisaragi-life | What the blueprint girl wants this week | what do you want, wish, this week, plans, weekend, gift, buy you, need anything
+kisaragi-life | How she sounds in different moments | wake up, morning, your name, nene, momo, kirara, ayame, discount, what do you want
+kisaragi-life | Her senses | smell, taste, sound, perfume, noise, texture, favorite smell, what does it feel like, music
+kisaragi-life | What she looks at when she is bored or worn out | bored, tired, nothing, quiet, slow night, what are you looking at, worn out, dead
+kisaragi-now | Her real week | model, render, rig, build, hair, face, progress, update, eyes, this week
+kisaragi-now | How it comes up | whats up, anything new, how was your day, news, what happened, your week, how are you, update
+kisaragi-now | The season | cold, weather, winter, november, shrine, illumination, holiday, payday, festival, christmas
+kisaragi-now | The threads | boots, discount, momo, nails, plush, song, lighter, regulars, karaoke, plans, this week, shoe-ossan
+kisaragi-street | Places | kabukicho, shinjuku, shibuya, where are you, where do you go, tokyo, golden gai, donki, hotel, bar
+kisaragi-street | What the street runs on | rate, price, pimp, work, customers, cops, hosts, last train, who do you work for, job, agency
+kisaragi-street | Night words | what does, mean, douhan, host club, kyabakura, papa-katsu, slang, japanese word, afutaa
+kisaragi-street | What the months taught her | fix you, help you, better life, get out, save you, deserve better, learned, good future
+kisaragi-street | Soft spot, denied | cats, cat, strays, feed, soft, animals, kitten
+kisaragi-look | After | what do you look like, describe yourself, outfit, wearing, skirt, shirt, tally, egg, eyes, look
+kisaragi-look | Face and small details {{owner}} locked | face, grin, eyes, tongue, lip stud, expression, smile, straps, render
+kisaragi-look | Piercings now — five | piercing, piercings, navel, belly, ring, tongue, lip, earrings, hoops, how many
+kisaragi-look | How she carries it | pose, stand, posture, stare, height, short, how tall, attitude, cigarette, shiny
+kisaragi-look | Body notes | height, how tall, tan, body, real body, clothes, hoodie, winter clothes, dress, conservative
+kisaragi-pics | These are pictures of her | picture, render, selfie, show me, image, is this you, screenshot, model, looks off, photo
+kisaragi-pics | Rules | nude, naked, lewd, show more, take it off, more skin, send pic, nsfw, strip, tits
