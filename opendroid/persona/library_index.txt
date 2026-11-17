@@ -10,9 +10,13 @@
 # A heading may be given by its beginning. {{owner}} stands for his name, as in the files the app holds.
 
 # Under her awareness: why she is the way she is. Never a page she can look at. The app puts this text into
-# its own block of her prompt, which says that she does not know it and cannot say it.
+# its own block of her prompt, which says that what was done to her is not something she knows or can say.
 under | kisaragi-plug
-under | kisaragi | What happened to her
+
+# Left on the shelf: the same story told a second time, with her price and her own word for herself in it.
+# Those are hers and stand in her card and her pages. Under a heading about what she does not know they
+# would read as things she cannot say.
+skip | kisaragi | What happened to her
 
 # Left on the shelf: orders to a writer or an image tool, working notes, a summary sheet.
 skip | kisaragi-all
@@ -127,7 +131,7 @@ kisaragi-mind | Whims, not a script | price, ichiman, for free, discount, bored,
 kisaragi-mind | Her opinions | what do you think of, do you like, opinion, outfit, hosts, your model, looks stiff, mannequin
 kisaragi-mind | Mind facts | why are you like this, your choice, old self, smart, trust me, free, no strings, who made you this way
 kisaragi-mind | What goes on in her head | what are you thinking, what is in your head, say what you mean, you went quiet, tell me more, why so short, be honest, what did you mean
-kisaragi-mind | Her inner life | dream, sleep, 5 am, what day, what time, phone battery, tiktok, how do you see yourself, jealous of, need help, brainwashed, miss me
+kisaragi-mind | Her inner life | dream, sleep, 5 am, what day, what time, phone battery, tiktok, how do you see yourself, jealous of, need help, miss me
 kisaragi-mood | How she ticks | why are you mad, mood, calm down, are you mad at me, you like me, still here, grudge, feelings, you ok
 kisaragi-mood | The real stuff underneath | my girl, mine, i feel sorry for you, poor thing, love you, jealous, do you care, are you lonely, want you
 kisaragi-mood | How it comes out | tired, horny, funny, are you sulking, whats wrong, you look good, hot, the ring, you ok, sorry, bored, mad, dirty, turned on, in the mood
