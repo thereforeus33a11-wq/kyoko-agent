@@ -250,10 +250,34 @@ index 74eedb5..842fdc8 100644
                  }
              }
 diff --git a/app/src/main/java/com/opendroid/ai/actions/ActionDispatcher.kt b/app/src/main/java/com/opendroid/ai/actions/ActionDispatcher.kt
-index 29d7be5..4e36f95 100644
+index 29d7be5..8640ba6 100644
 --- a/app/src/main/java/com/opendroid/ai/actions/ActionDispatcher.kt
 +++ b/app/src/main/java/com/opendroid/ai/actions/ActionDispatcher.kt
-@@ -298,7 +298,8 @@ class ActionDispatcher @Inject constructor(
+@@ -41,6 +41,7 @@ class ActionDispatcher @Inject constructor(
+     private val notificationActions: NotificationActions,
+     private val routineActions: RoutineActions,
+     private val socialActions: SocialActions,
++    private val personaPictureActions: PersonaPictureActions,
+     private val autoMapper: ActionAutoMapper,
+     private val unknownActionDao: UnknownActionDao,
+     private val deviceStateProvider: DeviceStateProvider
+@@ -52,6 +53,7 @@ class ActionDispatcher @Inject constructor(
+         // Actions that require internet connectivity
+         private val internetRequiredActions = setOf(
+             "WEB_SEARCH",
++            "MAKE_SELF_PICTURE",
+             "GET_WEATHER",
+             "GET_NEWS",
+             "OPEN_BROWSER",
+@@ -116,6 +118,7 @@ class ActionDispatcher @Inject constructor(
+         putAll(notificationActions.getActions().associateBy { it.name })
+         putAll(routineActions.getActions().associateBy { it.name })
+         putAll(socialActions.getActions().associateBy { it.name })
++        putAll(personaPictureActions.getActions().associateBy { it.name })
+     }
+ 
+     fun hasAction(actionName: String): Boolean =
+@@ -298,7 +301,8 @@ class ActionDispatcher @Inject constructor(
              }
  
              is ActionSchema.ValidationResult.InvalidParam -> {
@@ -437,6 +461,99 @@ index 631b803..b5d755a 100644
                  ActionResult(false, null, "Couldn't schedule that macro.")
              }
          }
+diff --git a/app/src/main/java/com/opendroid/ai/actions/PersonaPictureActions.kt b/app/src/main/java/com/opendroid/ai/actions/PersonaPictureActions.kt
+new file mode 100644
+index 0000000..9b05e08
+--- /dev/null
++++ b/app/src/main/java/com/opendroid/ai/actions/PersonaPictureActions.kt
+@@ -0,0 +1,87 @@
++package com.opendroid.ai.actions
++
++import android.content.Context
++import com.opendroid.ai.actions.base.Action
++import com.opendroid.ai.actions.base.ActionResult
++
++import com.opendroid.ai.core.persona.PersonaPictures
++import com.opendroid.ai.core.persona.PersonaSelfPictures
++import com.opendroid.ai.core.security.ProfileStoreResult
++import com.opendroid.ai.core.security.UserProfileStore
++import com.opendroid.ai.data.repository.SettingsRepository
++import kotlinx.coroutines.flow.first
++import okhttp3.OkHttpClient
++import javax.inject.Inject
++import javax.inject.Singleton
++
++/** The phone action by which she makes a new picture of herself ([PersonaSelfPictures]). */
++@Singleton
++class PersonaPictureActions @Inject constructor(
++    private val pictures: PersonaPictures,
++    private val settingsRepository: SettingsRepository,
++    private val userProfileStore: UserProfileStore,
++    private val client: OkHttpClient
++) {
++    fun getActions(): List<Action> = listOf(MakeSelfPictureAction())
++
++    private inner class MakeSelfPictureAction : Action {
++        override val name: String = NAME
++
++        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
++            val config = settingsRepository.llmConfig.first()
++            if (!config.personaMakesPictures) {
++                return ActionResult(false, null, "Making pictures of her is switched off in Settings, Persona.")
++            }
++            val ask = (params["description"] ?: params["prompt"] ?: params["what"]).orEmpty().trim()
++            PersonaSelfPictures.refusal(ask)?.let { return ActionResult(false, null, it) }
++            val key = PersonaSelfPictures.veniceKey(config)
++                ?: return ActionResult(false, null, "No Venice key is set, so no picture can be made.")
++            val all = pictures.list()
++            val base = PersonaSelfPictures.base(all, params["from"])
++                ?: return ActionResult(false, null, "She has no picture of herself yet to start from. Add one in Settings, Persona.")
++            val baseImage = pictures.base64(base.id)
++                ?: return ActionResult(false, null, "The picture to start from could not be read.")
++            val owner = (userProfileStore.read() as? ProfileStoreResult.Success)?.value?.name.orEmpty()
++            val words = PersonaSelfPictures.withoutHim(ask, owner)
++            val look = try {
++                context.assets.open(PICTURES_FILE).bufferedReader().use { it.readText() }
++            } catch (e: Exception) {
++                ""
++            }.let(PersonaSelfPictures::look)
++            val body = PersonaSelfPictures.body(
++                model = config.personaPictureModel,
++                imageBase64 = baseImage,
++                prompt = PersonaSelfPictures.prompt(words, look)
++            )
++            return when (val made = PersonaSelfPictures.request(client, key, body)) {
++                is PersonaSelfPictures.Made.Failed -> ActionResult(false, null, made.why)
++                is PersonaSelfPictures.Made.Picture ->
++                    when (val stored = pictures.addMade(made.bytes, PersonaSelfPictures.caption(words))) {
++                        is PersonaPictures.Added.Stored ->
++                            ActionResult(true, "$MADE_PREFIX${stored.picture.id}): ${stored.picture.caption}", null)
++                        else -> ActionResult(false, null, "A picture came back but could not be kept on the phone.")
++                    }
++            }
++        }
++    }
++
++    companion object {
++        const val NAME = "MAKE_SELF_PICTURE"
++
++        /** Her picture file as the build puts it into the app (tools/prepare_assets.sh). */
++        const val PICTURES_FILE = "persona/library/kisaragi-pics.md"
++
++        /** How the result of a made picture opens. The id after it names the picture in her store. */
++        const val MADE_PREFIX = "Made a new picture of her (picture "
++
++        private val MADE_LINE = Regex(Regex.escape(MADE_PREFIX) + """([A-Za-z0-9-]{1,80})\)""")
++
++        /** The ids of the pictures a row says she made, in the order it names them. */
++        fun madePictureIds(text: String?): List<String> =
++            text?.let { MADE_LINE.findAll(it).map { match -> match.groupValues[1] }.toList() }.orEmpty()
++
++        /** [text] as it is shown under those pictures: without the ids, which mean nothing to him. */
++        fun shownWithoutIds(text: String): String =
++            MADE_LINE.replace(text) { "Made a new picture of her" }
++    }
++}
 diff --git a/app/src/main/java/com/opendroid/ai/actions/SystemActions.kt b/app/src/main/java/com/opendroid/ai/actions/SystemActions.kt
 index f091689..6ed8f66 100644
 --- a/app/src/main/java/com/opendroid/ai/actions/SystemActions.kt
@@ -516,10 +633,34 @@ index f091689..6ed8f66 100644
                  val analysis = visionEngine.get().analyzeCurrentScreen(question)
                  ActionResult(true, analysis, null)
 diff --git a/app/src/main/java/com/opendroid/ai/core/agent/ActionSchema.kt b/app/src/main/java/com/opendroid/ai/core/agent/ActionSchema.kt
-index 02b18e1..50046d0 100644
+index 02b18e1..0b3f2e0 100644
 --- a/app/src/main/java/com/opendroid/ai/core/agent/ActionSchema.kt
 +++ b/app/src/main/java/com/opendroid/ai/core/agent/ActionSchema.kt
-@@ -1423,6 +1423,44 @@ object ActionSchema {
+@@ -1383,6 +1383,23 @@ object ActionSchema {
+                 "plan a social media campaign"
+             ),
+             category = ActionCategory.SOCIAL
++        ),
++
++        // ── HER PICTURES ────────────────────────────────
++
++        ActionDefinition(
++            name = "MAKE_SELF_PICTURE",
++            description = "Makes a new picture of the persona herself, edited from one of her own pictures on the phone " +
++                "so it keeps her face and look, and keeps it with her pictures. 'description' says what is different " +
++                "(pose, place, clothes, framing); 'from' optionally names which of her pictures to start from.",
++            params = listOf(
++                ParamDefinition("description", ParamType.STRING, true, "What the new picture shows that is different"),
++                ParamDefinition("from", ParamType.STRING, false, "Words from the caption of the picture to start from")
++            ),
++            examples = listOf("make a picture of yourself on a rooftop at night", "draw yourself sitting on the curb"),
++            category = ActionCategory.MEDIA,
++            // It costs money on his Venice account and sends one of her pictures out: never run unasked.
++            neverAutoApprove = true
+         )
+     )
+ 
+@@ -1423,6 +1440,44 @@ object ActionSchema {
      fun isNeverAutoApprove(actionName: String): Boolean =
          ALL_ACTIONS.firstOrNull { it.name == actionName }?.neverAutoApprove ?: false
  
@@ -11907,10 +12048,10 @@ index 0000000..90f8675
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt
 new file mode 100644
-index 0000000..bb5e882
+index 0000000..79ef252
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt
-@@ -0,0 +1,1570 @@
+@@ -0,0 +1,1572 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.util.Log
@@ -12144,6 +12285,8 @@ index 0000000..bb5e882
 +            deviceActivity = deviceActivity,
 +            screenshotAttached = screenshotAttached,
 +            ownActions = ownActions,
++            // Only where a picture can really be made: switched on, with a Venice key to make it on.
++            makesPictures = config.personaMakesPictures && PersonaSelfPictures.veniceKey(config) != null,
 +            hostCanRead = !route.isPrivate,
 +            notesAboutHimHeldBack = heldBack,
 +            rein = config.personaRein,
@@ -16522,10 +16665,10 @@ index 0000000..65a2e2a
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaPictureRules.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaPictureRules.kt
 new file mode 100644
-index 0000000..bd6dae4
+index 0000000..1e0772e
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaPictureRules.kt
-@@ -0,0 +1,383 @@
+@@ -0,0 +1,413 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.llm.error.LLMError
@@ -16554,7 +16697,13 @@ index 0000000..bd6dae4
 +    /** What is on it, the way she would say it. Empty until somebody wrote one. */
 +    val caption: String = "",
 +    val captionBy: CaptionBy = CaptionBy.OWNER,
-+    val addedAt: Long = 0L
++    val addedAt: Long = 0L,
++    /**
++     * True for a picture of herself that she made ([PersonaSelfPictures]), false for one
++     * the owner added. The ones she made have room of their own ([PersonaPictureRules.MAX_MADE]),
++     * so they never take the place of his.
++     */
++    val made: Boolean = false
 +) {
 +    @Serializable
 +    enum class Kind { SELF, BACKGROUND }
@@ -16574,8 +16723,14 @@ index 0000000..bd6dae4
 + */
 +object PersonaPictureRules {
 +
-+    /** How many pictures of herself she can have. */
++    /** How many pictures of herself she can have from him. */
 +    const val MAX_SELF = 12
++
++    /** How many pictures of herself that she made are kept. A new one past that pushes out her oldest. */
++    const val MAX_MADE = 24
++
++    /** Put in front of the caption of a picture she made, where her pictures are listed for her. */
++    const val MADE_BY_HER = "made by me: "
 +
 +    /** The longer side of a stored picture, in pixels. Enough to see herself, small enough to send. */
 +    const val MAX_SIDE = 1024
@@ -16631,19 +16786,33 @@ index 0000000..bd6dae4
 +    private fun withinLimits(index: Index): Index {
 +        val background = index.pictures.lastOrNull { it.kind == PersonaPicture.Kind.BACKGROUND }
 +        var selfLeft = MAX_SELF
++        // Of the ones she made, the newest are kept.
++        val madeKept = index.pictures.filter { it.kind == PersonaPicture.Kind.SELF && it.made }.takeLast(MAX_MADE).toSet()
 +        return index.copy(
 +            pictures = index.pictures.filter { picture ->
-+                when (picture.kind) {
-+                    PersonaPicture.Kind.BACKGROUND -> picture === background
-+                    PersonaPicture.Kind.SELF -> selfLeft-- > 0
++                when {
++                    picture.kind == PersonaPicture.Kind.BACKGROUND -> picture === background
++                    picture.made -> picture in madeKept
++                    else -> selfLeft-- > 0
 +                }
 +            }
 +        )
 +    }
 +
-+    /** True when [kind] has room for one more. There is always room for a background picture: it takes the old one's place. */
++    /** True when [kind] has room for one more of his. There is always room for a background picture: it takes the old one's place. */
 +    fun hasRoomFor(index: Index, kind: PersonaPicture.Kind): Boolean =
-+        kind == PersonaPicture.Kind.BACKGROUND || index.pictures.count { it.kind == PersonaPicture.Kind.SELF } < MAX_SELF
++        kind == PersonaPicture.Kind.BACKGROUND ||
++            index.pictures.count { it.kind == PersonaPicture.Kind.SELF && !it.made } < MAX_SELF
++
++    /**
++     * [index] with [picture], one she made, added, and the pictures she made that it
++     * pushes out: the oldest of hers, past [MAX_MADE]. None of his is ever pushed out.
++     */
++    fun withMade(index: Index, picture: PersonaPicture): Pair<Index, List<PersonaPicture>> {
++        val hers = index.pictures.filter { it.made }
++        val out = hers.take(maxOf(0, hers.size + 1 - MAX_MADE)).toSet()
++        return index.copy(pictures = index.pictures.filterNot { it in out } + picture.copy(made = true)) to out.toList()
++    }
 +
 +    /**
 +     * [index] with [picture] added, or null when she already has [MAX_SELF] pictures of
@@ -16866,8 +17035,12 @@ index 0000000..bd6dae4
 +    }
 +
 +    /** The captions that tell her what is on her pictures when she cannot be shown them: her own pictures only. */
-+    fun captions(pictures: List<PersonaPicture>): List<String> =
-+        pictures.filter { it.kind == PersonaPicture.Kind.SELF }.map { it.caption.trim() }.filter { it.isNotEmpty() }
++    fun captions(pictures: List<PersonaPicture>): List<String> {
++        val self = pictures.filter { it.kind == PersonaPicture.Kind.SELF }.filter { it.caption.isNotBlank() }
++        // His first, then the ones she made, newest first: where the list runs out of room, it is hers that go.
++        return self.filterNot { it.made }.map { it.caption.trim() } +
++            self.filter { it.made }.reversed().map { MADE_BY_HER + it.caption.trim() }
++    }
 +
 +    /** "I can't", "I won't", "I am unable to", the way a model writes it: with the apostrophe. */
 +    private const val CANNOT =
@@ -16911,10 +17084,10 @@ index 0000000..bd6dae4
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaPictures.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaPictures.kt
 new file mode 100644
-index 0000000..ffb110c
+index 0000000..327e121
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaPictures.kt
-@@ -0,0 +1,355 @@
+@@ -0,0 +1,403 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.content.Context
@@ -17031,6 +17204,46 @@ index 0000000..ffb110c
 +                bitmap.recycle()
 +            }
 +            save(after)
++            Added.Stored(picture)
++        }
++    }
++
++    /**
++     * Stores [bytes], a picture of herself that she made, with [caption] in her words.
++     * When she already has [PersonaPictureRules.MAX_MADE] of her own, her oldest one goes,
++     * file and all. None of the pictures he added is touched.
++     */
++    suspend fun addMade(bytes: ByteArray, caption: String): Added = withContext(Dispatchers.IO) {
++        lock.withLock {
++            val id = UUID.randomUUID().toString()
++            val picture = PersonaPicture(
++                id = id,
++                file = "$id.jpg",
++                kind = PersonaPicture.Kind.SELF,
++                caption = PersonaPictureRules.fitCaption(caption),
++                captionBy = PersonaPicture.CaptionBy.HER,
++                addedAt = System.currentTimeMillis(),
++                made = true
++            )
++            val bitmap = decodeBytes(bytes) ?: return@withLock Added.Unreadable
++            val file = File(directory, picture.file)
++            try {
++                directory.mkdirs()
++                file.outputStream().use { out ->
++                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, PersonaPictureRules.JPEG_QUALITY, out)) {
++                        throw IllegalStateException("not compressed")
++                    }
++                }
++            } catch (e: Exception) {
++                Log.w(TAG, "A picture she made could not be stored: ${e.javaClass.simpleName}")
++                file.delete()
++                return@withLock Added.Unreadable
++            } finally {
++                bitmap.recycle()
++            }
++            val (after, out) = PersonaPictureRules.withMade(index(), picture)
++            save(after)
++            out.forEach { old -> fileOf(old.id)?.delete() }
 +            Added.Stored(picture)
 +        }
 +    }
@@ -17180,6 +17393,14 @@ index 0000000..ffb110c
 +     * on its longer side, or null when it cannot be read as an image. A transparent
 +     * picture is put on white: JPEG has no transparency and would turn it black.
 +     */
++    /** [bytes] as a picture the way the store keeps one, or null when they are not an image. */
++    private fun decodeBytes(bytes: ByteArray): Bitmap? = try {
++        val decoded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) decodeUpright(bytes) else decodeAsStored(bytes)
++        decoded?.let(::scaledDown)?.let(::onWhite)
++    } catch (e: Exception) {
++        null
++    }
++
 +    private fun decodeScaled(uri: Uri): Bitmap? = try {
 +        val bytes = readSource(uri)
 +        val decoded = when {
@@ -17272,10 +17493,10 @@ index 0000000..ffb110c
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaPrompts.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaPrompts.kt
 new file mode 100644
-index 0000000..4529e8d
+index 0000000..debde6d
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaPrompts.kt
-@@ -0,0 +1,1089 @@
+@@ -0,0 +1,1100 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.llm.prompts.neutralizeFenceDelimiters
@@ -17882,7 +18103,8 @@ index 0000000..4529e8d
 +        seesScreenshots: Boolean = false,
 +        thoughts: String = "",
 +        ownFacts: List<String> = emptyList(),
-+        inOwnTime: Boolean = false
++        inOwnTime: Boolean = false,
++        makesPictures: Boolean = false
 +    ): String {
 +        // What she is told about his screen is what the app really does with it. It is said
 +        // about her: no line of her prompt speaks of a model that writes her replies, as
@@ -17939,6 +18161,7 @@ index 0000000..4529e8d
 +            } else if (ownActions) {
 +                append("- You can use the phone yourself. When you decide to, because he asked in passing or just because you feel like it, put one plain command alone on the last line after two angle brackets, for example: >> flashlight on   or   >> set an alarm for 7:30\n")
 +                append("  The app carries it out as your own act: apps, music, alarms and timers, settings, notes, the screen, a message or a call to someone, a search. Whatever the phone can do, said in plain words. One command at most, and only when you mean it. It has not happened until one of the app's lines says so.\n")
++                if (makesPictures) append(MAKES_PICTURES_LINE)
 +                // What she is told about asking is what the app will really do with her rein
 +                // ([PersonaActions.decideStart]): his own setting is asked first on every rein,
 +                // and no rein runs a command whose words may be someone else's.
@@ -18016,6 +18239,15 @@ index 0000000..4529e8d
 +        return "- A picture of you is attached to the first message below: your own picture, kept on this phone. " +
 +            captionPart + "It is you, not his screen."
 +    }
++
++    /**
++     * Said where her commands are explained, when she can make pictures of herself
++     * (PersonaSelfPictures). It is a command like any other and goes through her rein.
++     */
++    const val MAKES_PICTURES_LINE =
++        "- You can make a new picture of yourself: >> make a picture of me ... and say what is different (where you are, how you stand, what you wear, how much of it). " +
++            "It starts from a picture of you that you already have, so it is your face and your look. It comes back to your pictures, " +
++            "listed as made by you, and he sees it in the chat. It is always you now, never the girl before, and never younger than you are.\n"
 +
 +    /** One line per caption, as many whole captions as fit into [MAX_PICTURE_LIST_CHARS]. */
 +    private fun pictureList(captions: List<String>): String {
@@ -18362,6 +18594,204 @@ index 0000000..4529e8d
 +            append("\n\nTHE RECENT TALK:\n")
 +            append(transcript(dialogue))
 +            append("\n\nYour notebook changes:")
++        }
++    }
++}
+diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaSelfPictures.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaSelfPictures.kt
+new file mode 100644
+index 0000000..81b5d0e
+--- /dev/null
++++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaSelfPictures.kt
+@@ -0,0 +1,192 @@
++package com.opendroid.ai.core.persona
++
++import com.opendroid.ai.core.llm.RouteClassifier
++import com.opendroid.ai.data.models.LLMConfig
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.withContext
++import kotlinx.serialization.json.buildJsonObject
++import kotlinx.serialization.json.put
++import okhttp3.MediaType.Companion.toMediaType
++import okhttp3.OkHttpClient
++import okhttp3.Request
++import okhttp3.RequestBody.Companion.toRequestBody
++import java.util.concurrent.TimeUnit
++
++/**
++ * New pictures of herself, made by her. She starts from a picture of herself that she
++ * already has and says what is to be different: a pose, a place, what she wears, how
++ * much of it. An image model then edits that picture, so the new one is still her face,
++ * her hair, her metal. The picture comes back to the phone and is kept with the others
++ * ([PersonaPictures.addMade]); she can see and name it like any picture of herself.
++ *
++ * What leaves the phone for it is the picture she starts from and the text built here:
++ * the look her picture file fixes (kisaragi-pics, "After-state prompt lock") and her
++ * own words about the change. Nothing of his goes into it: his name is taken out of
++ * her words before they are sent. The model it goes to is a private one of Venice's
++ * (no prompt or image kept), set in [LLMConfig.personaPictureModel].
++ *
++ * Everything but the request itself is a decision about text, and is here so it can
++ * be read and tested without a phone.
++ */
++object PersonaSelfPictures {
++
++    /** The host her pictures are made on. Its key is the one his Venice provider already holds. */
++    const val HOST = "api.venice.ai"
++
++    /** The endpoint that edits one picture from a prompt, and answers with the picture itself. */
++    const val EDIT_URL = "https://$HOST/api/v1/image/edit"
++
++    /** The edit model as this build ships it: private, uncensored, keeps a face from its source. */
++    const val DEFAULT_MODEL = "qwen-edit-uncensored"
++
++    /** What that model reads at most. The look and her words together are cut to fit. */
++    const val MAX_PROMPT_CHARS = 1500
++
++    /** Her own words about the change, at most. The rest of the prompt is her look. */
++    const val MAX_ASK_CHARS = 500
++
++    /** The heading of the section of her picture file that fixes how she looks. */
++    const val LOOK_HEADING = "After-state prompt lock"
++
++    private const val ADULT =
++        "She is a young adult woman, 19 years old, with a grown face and a grown body. "
++
++    private const val KEEP =
++        "Keep her exactly as she is in the source picture: the same face, eyes, hair colour and ahoge, " +
++            "the same tan, the same piercings in the same places. Change only what is asked. "
++
++    /**
++     * Words that ask for the girl she was before, or for her younger than she is or
++     * childlike. Those are not made: the before girl is never put in a picture of this
++     * kind, and she is never drawn younger than the 19 she is. "Young" itself is no such
++     * word: she is a young woman, and a young-looking 19 is her.
++     */
++    private val NOT_MADE = Regex(
++        """(?i)\b(?:satomi|before (?:state|picture|look|girl|me)|the old me|old self|round glasses|glasses on|""" +
++            """sweater vest|navy vest|red bow|long (?:navy )?skirt|backpack|school ?girl|school uniform|""" +
++            """child|children|childlike|kid|kids|little girl|loli|lolita|underage|minor|""" +
++            """younger|elementary|middle school)\b"""
++    )
++
++    /** Why [ask] is not made, or null when it may be. */
++    fun refusal(ask: String): String? {
++        if (ask.isBlank()) return "Nothing was said about what the picture should show."
++        if (NOT_MADE.containsMatchIn(ask)) {
++            return "Not made: a picture of her is always of her now, at 19, never of the girl before and never younger or childlike."
++        }
++        return null
++    }
++
++    /** [ask] without his name, in any case, and cut to [MAX_ASK_CHARS]. */
++    fun withoutHim(ask: String, ownerName: String): String {
++        var text = ask.replace(Regex("""\s+"""), " ").trim()
++        val name = ownerName.trim()
++        if (name.length >= 2) text = Regex("""(?i)\b${Regex.escape(name)}\b""").replace(text, "him")
++        return if (text.length > MAX_ASK_CHARS) text.take(MAX_ASK_CHARS).trimEnd() else text
++    }
++
++    /**
++     * The section of her picture file that fixes her look, from the file's raw text, or
++     * an empty text when the file has none.
++     */
++    fun look(picturesFile: String): String {
++        val lines = picturesFile.lines()
++        val start = lines.indexOfFirst { it.trim().removePrefix("##").trim().startsWith(LOOK_HEADING, ignoreCase = true) }
++        if (start < 0) return ""
++        return lines.drop(start + 1).takeWhile { !it.trimStart().startsWith("#") }
++            .joinToString(" ") { it.trim() }.replace(Regex("""\s+"""), " ").trim()
++    }
++
++    /**
++     * The prompt for the edit: who she is (an adult), what to keep, what to change, and
++     * her look as her picture file fixes it, cut to what the model reads. Her words come
++     * before the look, so a long look cannot push them out.
++     */
++    fun prompt(ask: String, look: String): String {
++        val head = ADULT + KEEP + "Change: " + ask.trim().trimEnd('.') + ". "
++        val room = MAX_PROMPT_CHARS - head.length - LOOK_LABEL.length
++        val lookPart = if (look.isBlank() || room <= 40) "" else LOOK_LABEL + look.take(room).trimEnd()
++        return (head + lookPart).take(MAX_PROMPT_CHARS).trim()
++    }
++
++    private const val LOOK_LABEL = "Her look, as fixed: "
++
++    /**
++     * The picture a new one starts from. [from] are her words about which one ("the one
++     * on the stairs"); the picture whose caption shares most words with them is taken.
++     * Without such words, or when none shares any, the first picture he added is taken:
++     * his pictures are her likeness, and a picture made from a made one drifts.
++     * Null when she has no picture of herself at all.
++     */
++    fun base(pictures: List<PersonaPicture>, from: String?): PersonaPicture? {
++        val self = pictures.filter { it.kind == PersonaPicture.Kind.SELF }
++        if (self.isEmpty()) return null
++        val wanted = from?.let(PersonaLibraryText::terms).orEmpty()
++        if (wanted.isNotEmpty()) {
++            val best = self.maxByOrNull { picture -> PersonaLibraryText.terms(picture.caption).count { it in wanted } }
++            if (best != null && PersonaLibraryText.terms(best.caption).any { it in wanted }) return best
++        }
++        return self.firstOrNull { !it.made } ?: self.first()
++    }
++
++    /**
++     * The key his Venice provider holds: the key of the provider whose address is on
++     * [HOST]. Null when he has none there, and then no picture is made.
++     */
++    fun veniceKey(config: LLMConfig): String? =
++        config.customEndpoints.entries
++            .firstOrNull { (_, url) -> RouteClassifier.hostOf(url) == HOST }
++            ?.let { (provider, _) -> config.apiKeys[provider] }
++            ?.trim()
++            ?.takeIf { it.isNotEmpty() }
++
++    /** The caption a picture she made is kept with: her words about it. */
++    fun caption(ask: String): String = ask.replace(Regex("""\s+"""), " ").trim().trimEnd('.')
++
++    /** The JSON body of the edit request. */
++    fun body(model: String, imageBase64: String, prompt: String): String = buildJsonObject {
++        put("model", model.ifBlank { DEFAULT_MODEL })
++        put("image", imageBase64)
++        put("prompt", prompt)
++        // Unblurred: pictures of her can be explicit (kisaragi-pics), and the phone is his.
++        put("safe_mode", false)
++        put("output_format", "png")
++    }.toString()
++
++    /** What came of a request to make a picture. */
++    sealed class Made {
++        class Picture(val bytes: ByteArray) : Made()
++        class Failed(val why: String) : Made()
++    }
++
++    /** Sends the edit and waits for the picture. Never throws for a failed request. */
++    suspend fun request(client: OkHttpClient, key: String, body: String): Made = withContext(Dispatchers.IO) {
++        val slow = client.newBuilder()
++            .readTimeout(150, TimeUnit.SECONDS)
++            .writeTimeout(60, TimeUnit.SECONDS)
++            .callTimeout(180, TimeUnit.SECONDS)
++            .build()
++        val request = Request.Builder()
++            .url(EDIT_URL)
++            .header("Authorization", "Bearer $key")
++            .post(body.toRequestBody("application/json".toMediaType()))
++            .build()
++        try {
++            slow.newCall(request).execute().use { response ->
++                val type = response.header("Content-Type").orEmpty()
++                when {
++                    response.isSuccessful && type.startsWith("image/") ->
++                        response.body?.bytes()?.takeIf { it.isNotEmpty() }?.let { Made.Picture(it) }
++                            ?: Made.Failed("The image service sent back no picture.")
++                    response.isSuccessful -> Made.Failed("The image service did not send back a picture.")
++                    response.code == 401 || response.code == 403 -> Made.Failed("The image service did not take the Venice key.")
++                    response.code == 402 -> Made.Failed("The Venice balance is too low to make a picture.")
++                    response.code == 429 -> Made.Failed("The image service is busy. Try again in a minute.")
++                    else -> Made.Failed("The image service said no (${response.code}).")
++                }
++            }
++        } catch (e: Exception) {
++            Made.Failed("The image service could not be reached.")
 +        }
 +    }
 +}
@@ -22674,7 +23104,7 @@ index 02a8bf1..a54b169 100644
  
      @Query("""DELETE FROM memories 
 diff --git a/app/src/main/java/com/opendroid/ai/data/models/LLMConfig.kt b/app/src/main/java/com/opendroid/ai/data/models/LLMConfig.kt
-index b8be272..5a8434b 100644
+index b8be272..6f6289a 100644
 --- a/app/src/main/java/com/opendroid/ai/data/models/LLMConfig.kt
 +++ b/app/src/main/java/com/opendroid/ai/data/models/LLMConfig.kt
 @@ -17,6 +17,11 @@ private fun warnCoercion() = runCatching {
@@ -22689,7 +23119,7 @@ index b8be272..5a8434b 100644
      val activeProvider: String = "Google Gemini",
      // Read from the catalog rather than repeated here, so one seed cannot drift
      // from the other. It is replaced by the provider's live list on first fetch.
-@@ -55,9 +60,233 @@ data class LLMConfig(
+@@ -55,9 +60,241 @@ data class LLMConfig(
      val showFloatingButton: Boolean = true,
      val isDarkMode: Boolean = true,
      val lastModelFetch: Map<String, Long> = emptyMap(), // Provider -> last fetch timestamp
@@ -22714,6 +23144,14 @@ index b8be272..5a8434b 100644
 +    val personaChatExtraBody: String = "",
 +    /** Whether that chat model accepts images. When false no screenshot is sent to it. */
 +    val personaChatSeesImages: Boolean = false,
++    /**
++     * Whether she can make new pictures of herself (PersonaSelfPictures): one of her
++     * pictures and her words about the change go to Venice's image model, on his Venice
++     * key, and the picture comes back to her pictures on the phone.
++     */
++    val personaMakesPictures: Boolean = true,
++    /** The Venice image edit model her pictures are made with. Blank = the build's own. */
++    val personaPictureModel: String = "",
 +    /**
 +     * Keeps the owner's details on the phone wherever a model's host could read the
 +     * prompt: date of birth, where he is, notification text, what the phone read out to
@@ -23496,10 +23934,18 @@ index 2458236..a35b914 100644
      LLMError.Unknown -> "Failed"
  }
 diff --git a/app/src/main/java/com/opendroid/ai/ui/screens/ChatScreen.kt b/app/src/main/java/com/opendroid/ai/ui/screens/ChatScreen.kt
-index 77ca8be..2ccc093 100644
+index 77ca8be..3ab6aba 100644
 --- a/app/src/main/java/com/opendroid/ai/ui/screens/ChatScreen.kt
 +++ b/app/src/main/java/com/opendroid/ai/ui/screens/ChatScreen.kt
-@@ -53,6 +53,7 @@ import com.opendroid.ai.core.agent.PlanApprovalSummary
+@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.scale
+ import androidx.compose.ui.graphics.Brush
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.graphics.graphicsLayer
++import androidx.compose.ui.graphics.asImageBitmap
+ import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.text.font.FontFamily
+ import androidx.compose.ui.text.font.FontWeight
+@@ -53,6 +54,7 @@ import com.opendroid.ai.core.agent.PlanApprovalSummary
  import com.opendroid.ai.core.agent.guidance
  import com.opendroid.ai.core.agent.primaryAction
  import com.opendroid.ai.core.agent.title
@@ -23507,7 +23953,7 @@ index 77ca8be..2ccc093 100644
  import com.opendroid.ai.core.voice.SpeechRecognitionEngine
  import com.opendroid.ai.data.models.AutoMode
  import com.opendroid.ai.data.models.ChatMessage
-@@ -61,7 +62,9 @@ import com.opendroid.ai.data.models.resolvedAutoMode
+@@ -61,7 +63,9 @@ import com.opendroid.ai.data.models.resolvedAutoMode
  import com.opendroid.ai.data.repository.ChatSession
  import com.opendroid.ai.ui.components.ContactPickerCard
  import com.opendroid.ai.ui.theme.*
@@ -23517,7 +23963,7 @@ index 77ca8be..2ccc093 100644
  import kotlinx.coroutines.delay
  import kotlinx.coroutines.launch
  import kotlinx.serialization.json.Json
-@@ -74,7 +77,8 @@ import java.util.Locale
+@@ -74,7 +78,8 @@ import java.util.Locale
  fun ChatScreen(
      viewModel: ChatViewModel,
      modifier: Modifier = Modifier,
@@ -23527,7 +23973,7 @@ index 77ca8be..2ccc093 100644
  ) {
      val context = LocalContext.current
      val scope = rememberCoroutineScope()
-@@ -85,11 +89,15 @@ fun ChatScreen(
+@@ -85,11 +90,15 @@ fun ChatScreen(
      // happening here. See ChatViewModel.visibleAgentState.
      val visibleAgentState by viewModel.visibleAgentState.collectAsState()
      val chatError by viewModel.chatError.collectAsState()
@@ -23543,7 +23989,7 @@ index 77ca8be..2ccc093 100644
      val currentSessionId = sessions.firstOrNull { it.isCurrent }?.id
      val runningElsewhere = runningSessionId != null && runningSessionId != currentSessionId
  
-@@ -163,7 +171,13 @@ fun ChatScreen(
+@@ -163,7 +172,13 @@ fun ChatScreen(
          }
      }
  
@@ -23558,7 +24004,7 @@ index 77ca8be..2ccc093 100644
      
      val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
          contract = ActivityResultContracts.RequestPermission()
-@@ -203,14 +217,14 @@ fun ChatScreen(
+@@ -203,14 +218,14 @@ fun ChatScreen(
                  title = {
                      Column {
                          Text(
@@ -23575,7 +24021,7 @@ index 77ca8be..2ccc093 100644
                      }
                  },
                  actions = {
-@@ -342,7 +356,12 @@ fun ChatScreen(
+@@ -342,7 +357,12 @@ fun ChatScreen(
                              }
                          }
                      }
@@ -23589,7 +24035,17 @@ index 77ca8be..2ccc093 100644
                          Text("Clear", color = TextSecondary, fontSize = 12.sp)
                      }
                  },
-@@ -440,6 +459,7 @@ fun ChatScreen(
+@@ -379,7 +399,8 @@ fun ChatScreen(
+                             message = msg,
+                             viewModel = viewModel,
+                             context = context,
+-                            onEditRequested = { startEditingMessage(it) }
++                            onEditRequested = { startEditingMessage(it) },
++                            pictureThumbnail = presence::pictureThumbnail
+                         )
+                     }
+                     
+@@ -440,6 +461,7 @@ fun ChatScreen(
                          goal = proposedPlan.goal,
                          stepCount = PlanApprovalSummary.stepCount(proposedPlan),
                          stepLines = PlanApprovalSummary.stepLines(proposedPlan),
@@ -23597,7 +24053,7 @@ index 77ca8be..2ccc093 100644
                          blockedActions = blocked,
                          grantableActions = blocked.filter { AutoApprovalPolicy.isGrantable(it) }.toSet(),
                          onApprove = { grants -> viewModel.approvePlan(context, proposedPlan.planId, grants) },
-@@ -501,6 +521,15 @@ fun ChatScreen(
+@@ -501,6 +523,15 @@ fun ChatScreen(
                              modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
                          )
                      }
@@ -23613,7 +24069,7 @@ index 77ca8be..2ccc093 100644
                      Row(
                          modifier = Modifier.fillMaxWidth(),
                          verticalAlignment = Alignment.CenterVertically
-@@ -575,7 +604,7 @@ fun ChatScreen(
+@@ -575,7 +606,7 @@ fun ChatScreen(
                                  TextField(
                                      value = inputQuery,
                                      onValueChange = { inputQuery = it; voiceError = null },
@@ -23622,7 +24078,7 @@ index 77ca8be..2ccc093 100644
                                      colors = TextFieldDefaults.colors(
                                          focusedContainerColor = Color.Transparent,
                                          unfocusedContainerColor = Color.Transparent,
-@@ -628,10 +657,7 @@ fun ChatScreen(
+@@ -628,10 +659,7 @@ fun ChatScreen(
              containerColor = DarkSurface,
              title = { Text("Delete chat?", color = TextPrimary) },
              text = {
@@ -23634,7 +24090,7 @@ index 77ca8be..2ccc093 100644
              },
              confirmButton = {
                  TextButton(onClick = {
-@@ -687,25 +713,86 @@ fun ChatScreen(
+@@ -687,25 +715,86 @@ fun ChatScreen(
      }
  }
  
@@ -23734,7 +24190,60 @@ index 77ca8be..2ccc093 100644
  
      val color = if (runningElsewhere) {
          AccentPurple
-@@ -918,6 +1005,7 @@ fun ProposedPlanPrompt(
+@@ -734,9 +823,12 @@ fun ChatBubble(
+     message: ChatMessage,
+     viewModel: ChatViewModel? = null,
+     context: android.content.Context? = null,
+-    onEditRequested: ((ChatMessage) -> Unit)? = null
++    onEditRequested: ((ChatMessage) -> Unit)? = null,
++    pictureThumbnail: (suspend (String) -> android.graphics.Bitmap?)? = null
+ ) {
+     val isAgent = message.sender == ChatMessage.Sender.AGENT
++    // A row of the app's that says she made a picture of herself shows that picture.
++    val madePictures = if (isAgent) com.opendroid.ai.actions.PersonaPictureActions.madePictureIds(message.text) else emptyList()
+     val alignment = if (isAgent) Alignment.Start else Alignment.End
+     val bubbleColor = if (isAgent) {
+         CardBackground
+@@ -830,8 +922,12 @@ fun ChatBubble(
+                     )
+                 }
+ 
++                if (madePictures.isNotEmpty() && pictureThumbnail != null) {
++                    madePictures.forEach { id -> MadePicture(id, pictureThumbnail) }
++                }
+                 Text(
+-                    text = message.text,
++                    text = if (madePictures.isEmpty()) message.text
++                    else com.opendroid.ai.actions.PersonaPictureActions.shownWithoutIds(message.text),
+                     fontSize = 14.sp,
+                     color = textColor,
+                     lineHeight = 20.sp
+@@ -868,6 +964,24 @@ fun ChatBubble(
+     }
+ }
+ 
++/** A picture she made of herself, in the chat row that says so. Nothing while it loads or when its file is gone. */
++@Composable
++private fun MadePicture(id: String, load: suspend (String) -> android.graphics.Bitmap?) {
++    val image by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, id) {
++        value = load(id)?.asImageBitmap()
++    }
++    image?.let {
++        androidx.compose.foundation.Image(
++            bitmap = it,
++            contentDescription = "A picture she made of herself",
++            modifier = Modifier
++                .fillMaxWidth()
++                .padding(bottom = 8.dp)
++                .clip(RoundedCornerShape(12.dp))
++        )
++    }
++}
++
+ @Composable
+ fun ThinkingBubble() {
+     val transition = rememberInfiniteTransition(label = "thinking")
+@@ -918,6 +1032,7 @@ fun ProposedPlanPrompt(
      goal: String,
      stepCount: String,
      stepLines: List<String>,
@@ -23742,7 +24251,7 @@ index 77ca8be..2ccc093 100644
      blockedActions: List<String> = emptyList(),
      grantableActions: Set<String> = emptySet(),
      onApprove: (Set<String>) -> Unit,
-@@ -972,7 +1060,7 @@ fun ProposedPlanPrompt(
+@@ -972,7 +1087,7 @@ fun ProposedPlanPrompt(
              // unbounded list of a long plan would push Reject/Approve off screen.
              Column(
                  modifier = Modifier
@@ -23751,7 +24260,7 @@ index 77ca8be..2ccc093 100644
                      .verticalScroll(rememberScrollState())
              ) {
                  stepLines.forEachIndexed { i, line ->
-@@ -983,6 +1071,30 @@ fun ProposedPlanPrompt(
+@@ -983,6 +1098,30 @@ fun ProposedPlanPrompt(
                          color = TextPrimary
                      )
                  }
@@ -25219,10 +25728,10 @@ index 0000000..16e8869
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/ui/screens/PersonaSettingsCards.kt b/app/src/main/java/com/opendroid/ai/ui/screens/PersonaSettingsCards.kt
 new file mode 100644
-index 0000000..aeb2da9
+index 0000000..a39a0a7
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/ui/screens/PersonaSettingsCards.kt
-@@ -0,0 +1,1080 @@
+@@ -0,0 +1,1089 @@
 +package com.opendroid.ai.ui.screens
 +
 +import androidx.compose.foundation.border
@@ -25843,6 +26352,15 @@ index 0000000..aeb2da9
 +                onCheckedChange = viewModel::updatePersonaActions
 +            )
 +            if (config.personaActionsEnabled) {
++                SettingSwitchRow(
++                    title = "She can make pictures of herself",
++                    description = "A command of hers can make a new picture of her: one of her pictures and her words about what is different " +
++                        "go to Venice's private image model (no prompt or image kept), on your Venice key, at about 4 cents a picture. " +
++                        "Nothing of yours is in it. The picture comes back to her pictures on this phone and shows in the chat. " +
++                        "It is shown to you for a yes first, unless your approval setting is YOLO or you gave her free rein.",
++                    checked = config.personaMakesPictures,
++                    onCheckedChange = viewModel::updatePersonaMakesPictures
++                )
 +                SettingChoiceRow(
 +                    label = "What she starts herself",
 +                    options = REIN_CHOICES,
@@ -27501,10 +28019,10 @@ index 0000000..6c1e820
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaPresenceViewModel.kt b/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaPresenceViewModel.kt
 new file mode 100644
-index 0000000..7ee3b4d
+index 0000000..1405fe2
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaPresenceViewModel.kt
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,88 @@
 +package com.opendroid.ai.ui.viewmodel
 +
 +import androidx.lifecycle.ViewModel
@@ -27536,8 +28054,12 @@ index 0000000..7ee3b4d
 +@HiltViewModel
 +class PersonaPresenceViewModel @Inject constructor(
 +    persona: PersonaEngine,
-+    private val store: PersonaStore
++    private val store: PersonaStore,
++    private val pictures: com.opendroid.ai.core.persona.PersonaPictures
 +) : ViewModel() {
++
++    /** A picture of hers, small, for the chat row that says she made it. Null when its file is gone. */
++    suspend fun pictureThumbnail(id: String): android.graphics.Bitmap? = pictures.bitmap(id, MADE_PICTURE_SIDE)
 +
 +    /** True when she is the one who talks, false when the app runs as stock, null until that is known. */
 +    val active: StateFlow<Boolean?> = persona.active
@@ -27567,6 +28089,9 @@ index 0000000..7ee3b4d
 +    fun keepEditedCard() = change { store.keepEdit() }
 +
 +    companion object {
++        /** The longer side of a picture of hers shown in the chat. */
++        const val MADE_PICTURE_SIDE = 640
++
 +        /**
 +         * Whether an image put on her chat request reaches the model that writes her
 +         * replies, as things are set. The settings ask here, like they ask here whether
@@ -27906,7 +28431,7 @@ index 0000000..f65eb86
 +    }
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/ui/viewmodel/SettingsViewModel.kt b/app/src/main/java/com/opendroid/ai/ui/viewmodel/SettingsViewModel.kt
-index 53af677..dde0fe7 100644
+index 53af677..da64b5d 100644
 --- a/app/src/main/java/com/opendroid/ai/ui/viewmodel/SettingsViewModel.kt
 +++ b/app/src/main/java/com/opendroid/ai/ui/viewmodel/SettingsViewModel.kt
 @@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
@@ -28049,7 +28574,7 @@ index 53af677..dde0fe7 100644
                  }
                  if (saved && providerName == _llmConfig.value.activeProvider) {
                      refreshModels(force = true)
-@@ -601,6 +639,288 @@ class SettingsViewModel @Inject constructor(
+@@ -601,6 +639,297 @@ class SettingsViewModel @Inject constructor(
          }
      }
  
@@ -28114,6 +28639,15 @@ index 53af677..dde0fe7 100644
 +                    android.util.Log.e("SettingsViewModel", "Failed to update persona chat options: ${e.message}", e)
 +                }
 +            }
++        }
++    }
++
++    fun updatePersonaMakesPictures(enabled: Boolean) {
++        _llmConfig.value = _llmConfig.value.copy(personaMakesPictures = enabled)
++        viewModelScope.launch {
++            configSaver.save(
++                revert = { stored -> copy(personaMakesPictures = stored.personaMakesPictures) }
++            ) { current -> current.copy(personaMakesPictures = enabled) }
 +        }
 +    }
 +
@@ -28338,7 +28872,7 @@ index 53af677..dde0fe7 100644
      fun updateCopilotUrl(url: String) {
          _llmConfig.value = _llmConfig.value.copy(copilotUrl = url)
          copilotUrlJob?.cancel()
-@@ -955,3 +1275,61 @@ class SettingsViewModel @Inject constructor(
+@@ -955,3 +1284,61 @@ class SettingsViewModel @Inject constructor(
          }
      }
  }
@@ -30800,6 +31334,26 @@ index 0000000..8b4b989
 +        }
 +    }
 +}
+diff --git a/app/src/test/java/com/opendroid/ai/core/agent/NeverAutoApproveTest.kt b/app/src/test/java/com/opendroid/ai/core/agent/NeverAutoApproveTest.kt
+index f0c570f..a1756ec 100644
+--- a/app/src/test/java/com/opendroid/ai/core/agent/NeverAutoApproveTest.kt
++++ b/app/src/test/java/com/opendroid/ai/core/agent/NeverAutoApproveTest.kt
+@@ -12,12 +12,14 @@ import org.junit.Test
+ class NeverAutoApproveTest {
+ 
+     @Test
+-    fun `exactly the spec's twelve actions are flagged`() {
++    fun `exactly the spec's twelve actions and her picture action are flagged`() {
+         val flagged = ActionSchema.ALL_ACTIONS.filter { it.neverAutoApprove }.map { it.name }.toSet()
+         assertEquals(
+             setOf(
+                 // Money
+                 "PAY_UPI", "ORDER_FOOD", "ORDER_GROCERY", "BOOK_UBER", "BOOK_OLA",
++                // Charged to his Venice account, and one of her pictures leaves the phone
++                "MAKE_SELF_PICTURE",
+                 // Irreversible / destructive
+                 "INSTALL_APP", "RESTART_DEVICE", "DELETE_FILE", "DELETE_MACRO", "CLEAR_BROWSER_DATA", "LOCK_DOOR",
+                 "DISMISS_NOTIFICATION"
 diff --git a/app/src/test/java/com/opendroid/ai/core/agent/PersonalDataResultsTest.kt b/app/src/test/java/com/opendroid/ai/core/agent/PersonalDataResultsTest.kt
 new file mode 100644
 index 0000000..6429295
@@ -53027,6 +53581,154 @@ index 0000000..8178bc6
 +        assertFalse(turn.contains('>'))
 +    }
 +}
+diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaSelfPicturesTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaSelfPicturesTest.kt
+new file mode 100644
+index 0000000..7e57ab4
+--- /dev/null
++++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaSelfPicturesTest.kt
+@@ -0,0 +1,142 @@
++package com.opendroid.ai.core.persona
++
++import com.opendroid.ai.actions.PersonaPictureActions
++import com.opendroid.ai.data.models.LLMConfig
++import kotlinx.serialization.json.Json
++import kotlinx.serialization.json.boolean
++import kotlinx.serialization.json.jsonObject
++import kotlinx.serialization.json.jsonPrimitive
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import java.io.File
++
++/** New pictures of herself: what is made, from which picture, with which words, and where it is kept. */
++class PersonaSelfPicturesTest {
++
++    private fun picture(id: String, caption: String, made: Boolean = false) =
++        PersonaPicture(id = id, file = "$id.jpg", kind = PersonaPicture.Kind.SELF, caption = caption, made = made)
++
++    @Test
++    fun `she is always made as the 19 she is, never as the girl before or younger or childlike`() {
++        assertNull(PersonaSelfPictures.refusal("on a rooftop at night, smoking, boots on the rail"))
++        assertNull(PersonaSelfPictures.refusal("topless on the love hotel bed"))
++        // She is young: a young woman, young-looking, is her.
++        assertNull(PersonaSelfPictures.refusal("young and cocky, grinning at the camera"))
++        assertNull(PersonaSelfPictures.refusal("young-looking face, fresh dye day"))
++        for (ask in listOf(
++            "as satomi in the library", "with round glasses and the sweater vest", "in a school uniform",
++            "looking younger", "as a little girl", "childlike", "loli style", "as a kid"
++        )) {
++            assertNotNull(ask, PersonaSelfPictures.refusal(ask))
++        }
++        assertNotNull(PersonaSelfPictures.refusal("  "))
++        // Every prompt says so too, before anything else.
++        assertTrue(PersonaSelfPictures.prompt("on a curb", "").startsWith("She is a young adult woman, 19 years old"))
++    }
++
++    @Test
++    fun `his name never leaves in her words`() {
++        assertEquals("on him's bed, legs up", PersonaSelfPictures.withoutHim("on Gunnar's bed,   legs up", "Gunnar"))
++        assertEquals("with him", PersonaSelfPictures.withoutHim("with GUNNAR", "Gunnar"))
++        assertEquals("x".repeat(PersonaSelfPictures.MAX_ASK_CHARS), PersonaSelfPictures.withoutHim("x".repeat(900), ""))
++    }
++
++    @Test
++    fun `the prompt keeps her words whole and fits the look into what is left`() {
++        val look = "Tan Japanese girl, 19, long vivid red hair. ".repeat(80)
++        val prompt = PersonaSelfPictures.prompt("sitting on the curb at 5 am", look)
++        assertTrue(prompt.length <= PersonaSelfPictures.MAX_PROMPT_CHARS)
++        assertTrue(prompt.contains("Change: sitting on the curb at 5 am."))
++        assertTrue(prompt.contains("Her look, as fixed: Tan Japanese girl"))
++    }
++
++    @Test
++    fun `her look is read from her picture file as it ships`() {
++        val file = File("src/main/assets/persona/library/kisaragi-pics.md")
++        if (!file.isFile) return
++        val look = PersonaSelfPictures.look(file.readText())
++        assertTrue(look.startsWith("Tan Japanese girl, 19"))
++        assertFalse(look.contains("Rear / turned views"))
++    }
++
++    @Test
++    fun `a new picture starts from one of his unless she names another`() {
++        val his = picture("a", "me on the platform boots wide")
++        val stairs = picture("b", "me on the stairs smoking")
++        val mine = picture("c", "rooftop at night", made = true)
++        val all = listOf(mine, his, stairs)
++        assertEquals("a", PersonaSelfPictures.base(all, null)?.id)
++        assertEquals("b", PersonaSelfPictures.base(all, "the one on the stairs")?.id)
++        assertEquals("c", PersonaSelfPictures.base(all, "the rooftop one")?.id)
++        assertEquals("a", PersonaSelfPictures.base(all, "something else entirely")?.id)
++        assertNull(PersonaSelfPictures.base(emptyList(), null))
++    }
++
++    @Test
++    fun `the key is the one his Venice provider holds, and only that one`() {
++        val config = LLMConfig(
++            customEndpoints = mapOf("Custom OpenAI-Compatible" to "https://api.venice.ai/api/v1", "Other" to "https://example.com/v1"),
++            apiKeys = mapOf("Custom OpenAI-Compatible" to " vkey ", "Other" to "okey")
++        )
++        assertEquals("vkey", PersonaSelfPictures.veniceKey(config))
++        assertNull(PersonaSelfPictures.veniceKey(LLMConfig(apiKeys = mapOf("Other" to "okey"))))
++    }
++
++    @Test
++    fun `the request asks for her picture unblurred on the private edit model`() {
++        val body = Json.parseToJsonElement(PersonaSelfPictures.body("", "BASE64", "p")).jsonObject
++        assertEquals(PersonaSelfPictures.DEFAULT_MODEL, body["model"]!!.jsonPrimitive.content)
++        assertEquals("BASE64", body["image"]!!.jsonPrimitive.content)
++        assertFalse(body["safe_mode"]!!.jsonPrimitive.boolean)
++        assertEquals("https://api.venice.ai/api/v1/image/edit", PersonaSelfPictures.EDIT_URL)
++    }
++
++    @Test
++    fun `pictures she made have room of their own and never push out his`() {
++        val his = (1..PersonaPictureRules.MAX_SELF).map { picture("h$it", "his $it") }
++        var index = PersonaPictureRules.Index(pictures = his)
++        // His store is full, and hers still has room.
++        assertFalse(PersonaPictureRules.hasRoomFor(index, PersonaPicture.Kind.SELF))
++        val pushedOut = ArrayList<PersonaPicture>()
++        for (n in 1..PersonaPictureRules.MAX_MADE + 2) {
++            val (after, out) = PersonaPictureRules.withMade(index, picture("m$n", "made $n"))
++            index = after
++            pushedOut += out
++        }
++        assertEquals(his, index.pictures.filterNot { it.made })
++        assertEquals(PersonaPictureRules.MAX_MADE, index.pictures.count { it.made })
++        assertEquals(listOf("m1", "m2"), pushedOut.map { it.id })
++        // Read back, the limits hold the same way.
++        val read = PersonaPictureRules.parseIndex(PersonaPictureRules.encodeIndex(index))
++        assertEquals(index.pictures.map { it.id }, read.pictures.map { it.id })
++    }
++
++    @Test
++    fun `she is told which pictures she made, after his`() {
++        val captions = PersonaPictureRules.captions(
++            listOf(picture("m", "rooftop", made = true), picture("h", "platform"), picture("m2", "curb", made = true))
++        )
++        assertEquals(listOf("platform", "made by me: curb", "made by me: rooftop"), captions)
++    }
++
++    @Test
++    fun `the chat finds the picture a result names and shows the line without its id`() {
++        val row = "Your alarm is set for 7:00 AM!\n${PersonaPictureActions.MADE_PREFIX}1f2e-3d4c): on a rooftop"
++        assertEquals(listOf("1f2e-3d4c"), PersonaPictureActions.madePictureIds(row))
++        assertEquals("Your alarm is set for 7:00 AM!\nMade a new picture of her: on a rooftop", PersonaPictureActions.shownWithoutIds(row))
++        assertTrue(PersonaPictureActions.madePictureIds("Message sent to Bob!").isEmpty())
++    }
++
++    @Test
++    fun `she is told she can make one only where one can be made`() {
++        val engine = File("src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt").readText()
++        assertTrue(engine.contains("makesPictures = config.personaMakesPictures && PersonaSelfPictures.veniceKey(config) != null"))
++        assertTrue(PersonaPrompts.MAKES_PICTURES_LINE.contains("never the girl before, and never younger than you are"))
++        // It is never run unasked by the auto mode that asks about the rest.
++        assertTrue(com.opendroid.ai.core.agent.ActionSchema.isNeverAutoApprove(PersonaPictureActions.NAME))
++    }
++}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaStoreTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaStoreTest.kt
 new file mode 100644
 index 0000000..a49d480
@@ -54271,10 +54973,10 @@ index 0000000..c10bc02
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaWallTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaWallTest.kt
 new file mode 100644
-index 0000000..0e7cdbd
+index 0000000..1f923b9
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaWallTest.kt
-@@ -0,0 +1,462 @@
+@@ -0,0 +1,463 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.llm.buildPlanningRequest
@@ -54309,7 +55011,7 @@ index 0000000..0e7cdbd
 +    private fun kotlinSources() = mainSources.walkTopDown().filter { it.isFile && it.extension == "kt" }
 +
 +    @Test
-+    fun `only the chat loop, the voice service, the alarm, the memory filters, the card editor and the presence model touch the persona package`() {
++    fun `only the chat loop, the voice service, the alarm, the memory filters, the card editor, the presence model and her picture action touch the persona package`() {
 +        val allowed = setOf(
 +            "core/agent/AgentLoop.kt", // her chat prompt, her fixed lines, her command and her rein
 +            "core/service/OpenDroidService.kt", // wake reply, her own time, the approval prompt and her name on the notification
@@ -54319,7 +55021,8 @@ index 0000000..0e7cdbd
 +            "core/memory/MemoryManager.kt", // leaves her notes OUT of memory search
 +            "ui/viewmodel/PersonaViewModel.kt", // the owner reads and edits her card and hands her notes
 +            "ui/viewmodel/PersonaPicturesViewModel.kt", // the owner keeps her pictures, beside the card editor
-+            "ui/viewmodel/PersonaPresenceViewModel.kt" // tells the screens whether she is the one who talks
++            "ui/viewmodel/PersonaPresenceViewModel.kt", // tells the screens whether she is the one who talks, and shows a picture she made
++            "actions/PersonaPictureActions.kt" // the phone action by which she makes a picture of herself
 +        )
 +        val users = kotlinSources()
 +            .filterNot { relative(it).startsWith("core/persona/") }
