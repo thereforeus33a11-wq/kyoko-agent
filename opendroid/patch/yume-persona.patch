@@ -463,10 +463,10 @@ index 631b803..b5d755a 100644
          }
 diff --git a/app/src/main/java/com/opendroid/ai/actions/PersonaPictureActions.kt b/app/src/main/java/com/opendroid/ai/actions/PersonaPictureActions.kt
 new file mode 100644
-index 0000000..9b05e08
+index 0000000..e2ef724
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/actions/PersonaPictureActions.kt
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,118 @@
 +package com.opendroid.ai.actions
 +
 +import android.content.Context
@@ -487,6 +487,8 @@ index 0000000..9b05e08
 +@Singleton
 +class PersonaPictureActions @Inject constructor(
 +    private val pictures: PersonaPictures,
++    private val memory: com.opendroid.ai.core.persona.PersonaMemory,
++    private val store: com.opendroid.ai.core.persona.PersonaStore,
 +    private val settingsRepository: SettingsRepository,
 +    private val userProfileStore: UserProfileStore,
 +    private val client: OkHttpClient
@@ -498,40 +500,75 @@ index 0000000..9b05e08
 +
 +        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
 +            val config = settingsRepository.llmConfig.first()
-+            if (!config.personaMakesPictures) {
-+                return ActionResult(false, null, "Making pictures of her is switched off in Settings, Persona.")
++            // A picture of her, made only while she is the one who talks (PersonaEngine.isActive).
++            if (!config.personaEnabled || store.card().isBlank()) {
++                return ActionResult(false, null, "She is switched off, so no picture of her is made.")
 +            }
-+            val ask = (params["description"] ?: params["prompt"] ?: params["what"]).orEmpty().trim()
-+            PersonaSelfPictures.refusal(ask)?.let { return ActionResult(false, null, it) }
-+            val key = PersonaSelfPictures.veniceKey(config)
-+                ?: return ActionResult(false, null, "No Venice key is set, so no picture can be made.")
-+            val all = pictures.list()
-+            val base = PersonaSelfPictures.base(all, params["from"])
++            PersonaSelfPictures.notAllowed(config)?.let { return ActionResult(false, null, it) }
++            val key = PersonaSelfPictures.veniceKey(config) ?: return ActionResult(false, null, "No Venice key is set, so no picture can be made.")
++            val ask = params["description"].orEmpty().trim()
++            // A full-body reference of one or more sides ("views"), or one ordinary picture.
++            val views = PersonaSelfPictures.views(params["views"])
++            if (views.isEmpty() || ask.isNotEmpty()) PersonaSelfPictures.refusal(ask)?.let { return ActionResult(false, null, it) }
++            // The words that pick the picture to start from are held to the same rule.
++            PersonaSelfPictures.refusalOfWords(params["from"])?.let { return ActionResult(false, null, it) }
++            val notes = memory.notes()
++            val owner = (userProfileStore.read() as? ProfileStoreResult.Success)?.value?.name.orEmpty()
++            // What her notes know of him: her words must not carry any of it out.
++            val hisNotes = notes.filter {
++                it.kind == com.opendroid.ai.core.persona.PersonaNotes.Kind.USER ||
++                    it.kind == com.opendroid.ai.core.persona.PersonaNotes.Kind.REL
++            }.joinToString("\n") { it.text }
++            PersonaSelfPictures.carriesHisDetails(ask, hisNotes)?.let { return ActionResult(false, null, it) }
++            val base = PersonaSelfPictures.base(pictures.list(), params["from"])
 +                ?: return ActionResult(false, null, "She has no picture of herself yet to start from. Add one in Settings, Persona.")
 +            val baseImage = pictures.base64(base.id)
 +                ?: return ActionResult(false, null, "The picture to start from could not be read.")
-+            val owner = (userProfileStore.read() as? ProfileStoreResult.Success)?.value?.name.orEmpty()
 +            val words = PersonaSelfPictures.withoutHim(ask, owner)
 +            val look = try {
 +                context.assets.open(PICTURES_FILE).bufferedReader().use { it.readText() }
 +            } catch (e: Exception) {
 +                ""
 +            }.let(PersonaSelfPictures::look)
-+            val body = PersonaSelfPictures.body(
-+                model = config.personaPictureModel,
-+                imageBase64 = baseImage,
-+                prompt = PersonaSelfPictures.prompt(words, look)
-+            )
++            val age = com.opendroid.ai.core.persona.PersonaAge.on(System.currentTimeMillis())
++            // How she looks now, as she has noted it herself: newer than her files.
++            val lookNow = PersonaSelfPictures.lookNow(notes, owner)
++            if (views.isEmpty()) {
++                val prompt = PersonaSelfPictures.prompt(words, look, age, lookNow)
++                return when (val made = make(key, config.personaPictureModel, baseImage, prompt, PersonaSelfPictures.caption(words))) {
++                    is Outcome.Kept -> ActionResult(true, made.line, null)
++                    is Outcome.NotKept -> ActionResult(false, null, made.why)
++                }
++            }
++            // One request per side, one after the other, each kept as it comes: a side that
++            // fails is said as such, and the ones that were made stay made.
++            val lines = views.map { view ->
++                val prompt = PersonaSelfPictures.referencePrompt(view, words, look, age, lookNow)
++                when (val made = make(key, config.personaPictureModel, baseImage, prompt, PersonaSelfPictures.referenceCaption(view, words))) {
++                    is Outcome.Kept -> made.line
++                    is Outcome.NotKept -> "Not made: the ${view.word} view. ${made.why}"
++                }
++            }
++            val anyMade = lines.any { it.startsWith(MADE_PREFIX) }
++            return if (anyMade) ActionResult(true, lines.joinToString("\n"), null) else ActionResult(false, null, lines.joinToString("\n"))
++        }
++
++        private suspend fun make(key: String, model: String, baseImage: String, prompt: String, caption: String): Outcome {
++            val body = PersonaSelfPictures.body(model = model, imageBase64 = baseImage, prompt = prompt)
 +            return when (val made = PersonaSelfPictures.request(client, key, body)) {
-+                is PersonaSelfPictures.Made.Failed -> ActionResult(false, null, made.why)
++                is PersonaSelfPictures.Made.Failed -> Outcome.NotKept(made.why)
 +                is PersonaSelfPictures.Made.Picture ->
-+                    when (val stored = pictures.addMade(made.bytes, PersonaSelfPictures.caption(words))) {
-+                        is PersonaPictures.Added.Stored ->
-+                            ActionResult(true, "$MADE_PREFIX${stored.picture.id}): ${stored.picture.caption}", null)
-+                        else -> ActionResult(false, null, "A picture came back but could not be kept on the phone.")
++                    when (val stored = pictures.addMade(made.bytes, caption)) {
++                        is PersonaPictures.Added.Stored -> Outcome.Kept("$MADE_PREFIX${stored.picture.id}): ${stored.picture.caption}")
++                        else -> Outcome.NotKept("A picture came back but could not be kept on the phone.")
 +                    }
 +            }
 +        }
++    }
++
++    private sealed class Outcome {
++        class Kept(val line: String) : Outcome()
++        class NotKept(val why: String) : Outcome()
 +    }
 +
 +    companion object {
@@ -540,18 +577,12 @@ index 0000000..9b05e08
 +        /** Her picture file as the build puts it into the app (tools/prepare_assets.sh). */
 +        const val PICTURES_FILE = "persona/library/kisaragi-pics.md"
 +
-+        /** How the result of a made picture opens. The id after it names the picture in her store. */
-+        const val MADE_PREFIX = "Made a new picture of her (picture "
++        /** See [PersonaSelfPictures.MADE_PREFIX]. */
++        const val MADE_PREFIX = PersonaSelfPictures.MADE_PREFIX
 +
-+        private val MADE_LINE = Regex(Regex.escape(MADE_PREFIX) + """([A-Za-z0-9-]{1,80})\)""")
++        fun madePictureIds(text: String?): List<String> = PersonaSelfPictures.madePictureIds(text)
 +
-+        /** The ids of the pictures a row says she made, in the order it names them. */
-+        fun madePictureIds(text: String?): List<String> =
-+            text?.let { MADE_LINE.findAll(it).map { match -> match.groupValues[1] }.toList() }.orEmpty()
-+
-+        /** [text] as it is shown under those pictures: without the ids, which mean nothing to him. */
-+        fun shownWithoutIds(text: String): String =
-+            MADE_LINE.replace(text) { "Made a new picture of her" }
++        fun shownWithoutIds(text: String): String = PersonaSelfPictures.shownWithoutIds(text)
 +    }
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/actions/SystemActions.kt b/app/src/main/java/com/opendroid/ai/actions/SystemActions.kt
@@ -633,10 +664,10 @@ index f091689..6ed8f66 100644
                  val analysis = visionEngine.get().analyzeCurrentScreen(question)
                  ActionResult(true, analysis, null)
 diff --git a/app/src/main/java/com/opendroid/ai/core/agent/ActionSchema.kt b/app/src/main/java/com/opendroid/ai/core/agent/ActionSchema.kt
-index 02b18e1..0b3f2e0 100644
+index 02b18e1..07e7aba 100644
 --- a/app/src/main/java/com/opendroid/ai/core/agent/ActionSchema.kt
 +++ b/app/src/main/java/com/opendroid/ai/core/agent/ActionSchema.kt
-@@ -1383,6 +1383,23 @@ object ActionSchema {
+@@ -1383,6 +1383,29 @@ object ActionSchema {
                  "plan a social media campaign"
              ),
              category = ActionCategory.SOCIAL
@@ -648,19 +679,25 @@ index 02b18e1..0b3f2e0 100644
 +            name = "MAKE_SELF_PICTURE",
 +            description = "Makes a new picture of the persona herself, edited from one of her own pictures on the phone " +
 +                "so it keeps her face and look, and keeps it with her pictures. 'description' says what is different " +
-+                "(pose, place, clothes, framing); 'from' optionally names which of her pictures to start from.",
++                "(pose, place, clothes, framing); 'from' optionally names which of her pictures to start from; " +
++                "'views' (front, back, left, right, or all) makes a full-body reference of her from those sides instead, one picture per side.",
 +            params = listOf(
-+                ParamDefinition("description", ParamType.STRING, true, "What the new picture shows that is different"),
-+                ParamDefinition("from", ParamType.STRING, false, "Words from the caption of the picture to start from")
++                ParamDefinition("description", ParamType.STRING, false, "What the new picture shows that is different (needed unless views is given)"),
++                ParamDefinition("from", ParamType.STRING, false, "Words from the caption of the picture to start from"),
++                ParamDefinition("views", ParamType.STRING, false, "For a full-body reference: front, back, left, right, or all")
 +            ),
-+            examples = listOf("make a picture of yourself on a rooftop at night", "draw yourself sitting on the curb"),
++            examples = listOf(
++                "make a picture of yourself on a rooftop at night",
++                "draw yourself sitting on the curb",
++                "make a full-body reference of yourself from the front, back and both sides"
++            ),
 +            category = ActionCategory.MEDIA,
 +            // It costs money on his Venice account and sends one of her pictures out: never run unasked.
 +            neverAutoApprove = true
          )
      )
  
-@@ -1423,6 +1440,44 @@ object ActionSchema {
+@@ -1423,6 +1446,44 @@ object ActionSchema {
      fun isNeverAutoApprove(actionName: String): Boolean =
          ALL_ACTIONS.firstOrNull { it.name == actionName }?.neverAutoApprove ?: false
  
@@ -706,7 +743,7 @@ index 02b18e1..0b3f2e0 100644
       * Build strict schema text for LLM prompt.
       * This is the key function — LLM gets typed schema and cannot invent actions.
 diff --git a/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt b/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
-index 5891c90..4ecaed7 100644
+index 5891c90..cf08182 100644
 --- a/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
 +++ b/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
 @@ -62,6 +62,12 @@ private const val MAX_NEEDS_INPUT_PROMPTS = 5
@@ -828,7 +865,7 @@ index 5891c90..4ecaed7 100644
  
      /** Id of the contact picker message the running task is waiting on, or null. */
      val pendingContactPickerMessageId: StateFlow<String?>
-@@ -372,6 +443,159 @@ interface ChatAgent {
+@@ -372,6 +443,160 @@ interface ChatAgent {
      ): Boolean
  }
  
@@ -945,12 +982,13 @@ index 5891c90..4ecaed7 100644
 +    saveExact: suspend (String) -> Unit,
 +    herLine: suspend () -> String?,
 +    saveHers: suspend (String) -> Unit,
-+    speak: (text: String, hers: Boolean) -> Unit
++    speak: (text: String, hers: Boolean) -> Unit,
++    heard: String = exact
 +) {
 +    saveExact(exact)
 +    val line = herLine()
 +    if (line == null) {
-+        speak(exact, false)
++        speak(heard, false)
 +    } else {
 +        saveHers(line)
 +        speak(line, true)
@@ -988,7 +1026,7 @@ index 5891c90..4ecaed7 100644
  @Singleton
  class AgentLoop @Inject constructor(
      private val intentClassifier: IntentClassifier,
-@@ -382,7 +606,8 @@ class AgentLoop @Inject constructor(
+@@ -382,7 +607,8 @@ class AgentLoop @Inject constructor(
      private val memoryManager: MemoryManager,
      private val conversationRepository: ConversationRepository,
      private val settingsRepository: com.opendroid.ai.data.repository.SettingsRepository,
@@ -998,7 +1036,7 @@ index 5891c90..4ecaed7 100644
  ) : ChatAgent {
      // SupervisorJob so one failed task can't cancel the scope for every later one, and
      // a handler so anything that still escapes a launch is logged rather than fatal.
-@@ -462,10 +687,13 @@ class AgentLoop @Inject constructor(
+@@ -462,10 +688,13 @@ class AgentLoop @Inject constructor(
      // the value installed here (re-validated at completion time, not just when the reply
      // was scheduled) - there is deliberately no buffering flow a stale reply could sit in
      // and later be picked up by some unrelated future prompt. See processQuery.
@@ -1013,7 +1051,7 @@ index 5891c90..4ecaed7 100644
      )
  
      @Volatile private var pendingUserInput: PendingUserInput? = null
-@@ -475,7 +703,15 @@ class AgentLoop @Inject constructor(
+@@ -475,7 +704,15 @@ class AgentLoop @Inject constructor(
      // tell a genuine reply to THIS prompt (arriving from the same session) apart from an
      // unrelated new message that happens to arrive in some other chat while this prompt is
      // still open - see processQuery.
@@ -1030,7 +1068,7 @@ index 5891c90..4ecaed7 100644
  
      val isWaitingForUserInput: Boolean
          get() = waitingSessionId != null
-@@ -490,9 +726,12 @@ class AgentLoop @Inject constructor(
+@@ -490,9 +727,12 @@ class AgentLoop @Inject constructor(
      suspend fun awaitUserResponse(sessionId: String = _activeTaskSessionId.value.orEmpty()): String =
          awaitUserReply(sessionId).text
  
@@ -1046,7 +1084,7 @@ index 5891c90..4ecaed7 100644
          waitingSessionId = sessionId
          pendingUserInput = request
          try {
-@@ -514,9 +753,172 @@ class AgentLoop @Inject constructor(
+@@ -514,9 +754,172 @@ class AgentLoop @Inject constructor(
          _agentState.value = state
      }
  
@@ -1219,7 +1257,7 @@ index 5891c90..4ecaed7 100644
      // Silences speech in progress; set by the TTS service and called from cancelCurrentTask.
      var onStopSpeakingCallback: (() -> Unit)? = null
  
-@@ -582,6 +984,11 @@ class AgentLoop @Inject constructor(
+@@ -582,6 +985,11 @@ class AgentLoop @Inject constructor(
          val isAnsweringPendingQuestion = waitingSession != null &&
                  (explicitSessionId == null || explicitSessionId == waitingSession)
  
@@ -1231,7 +1269,7 @@ index 5891c90..4ecaed7 100644
          if (waitingSession != null && !isAnsweringPendingQuestion) {
              // A brand-new message arrived in a different session while another task is
              // still parked on a prompt in `waitingSession`. Nobody there is ever going to
-@@ -590,7 +997,8 @@ class AgentLoop @Inject constructor(
+@@ -590,7 +998,8 @@ class AgentLoop @Inject constructor(
              // into the wrong chat or leaving that chat hanging silently forever.
              abandonWaitingTask(waitingSession)
          } else if (!isAnsweringPendingQuestion) {
@@ -1241,7 +1279,7 @@ index 5891c90..4ecaed7 100644
          }
  
          // A caller that knows the session pins it before returning, so the chat that just
-@@ -601,6 +1009,13 @@ class AgentLoop @Inject constructor(
+@@ -601,6 +1010,13 @@ class AgentLoop @Inject constructor(
  
          val job = scope.launch {
              try {
@@ -1255,7 +1293,7 @@ index 5891c90..4ecaed7 100644
                  // Pin the session THIS task writes to, resolved once, right here, before any
                  // message is written. A genuinely new query pins whatever session the caller
                  // says this message belongs to (falling back to whatever is current if the
-@@ -626,18 +1041,34 @@ class AgentLoop @Inject constructor(
+@@ -626,18 +1042,34 @@ class AgentLoop @Inject constructor(
                  // Only capture the screen when the query actually asks about it.
                  // Attaching a screenshot to every request would silently send
                  // whatever is on screen (messages, banking apps, ...) to the LLM.
@@ -1295,7 +1333,7 @@ index 5891c90..4ecaed7 100644
                      imageBase64 = screenshotBase64
                  )
                  memoryManager.storeMessage(userMsg, sessionId)
-@@ -656,6 +1087,10 @@ class AgentLoop @Inject constructor(
+@@ -656,6 +1088,10 @@ class AgentLoop @Inject constructor(
                      return@launch
                  }
  
@@ -1306,7 +1344,7 @@ index 5891c90..4ecaed7 100644
                  // Serialize query handling so contextual follow-up state cannot race.
                  queryMutex.withLock {
                      processQueryLocked(userMsg, query, context, sessionId)
-@@ -709,16 +1144,21 @@ class AgentLoop @Inject constructor(
+@@ -709,16 +1145,21 @@ class AgentLoop @Inject constructor(
  
      private fun launchRetry(sessionId: String, body: suspend () -> Unit) {
          val waitingSession = waitingSessionId
@@ -1329,7 +1367,7 @@ index 5891c90..4ecaed7 100644
                  resolveStaleProposedPlan(sessionId)
  
                  queryMutex.withLock {
-@@ -733,12 +1173,53 @@ class AgentLoop @Inject constructor(
+@@ -733,12 +1174,53 @@ class AgentLoop @Inject constructor(
          currentJob = job
      }
  
@@ -1383,7 +1421,7 @@ index 5891c90..4ecaed7 100644
                  _agentState.value = AgentState.Thinking
  
                  // 0. Check if this is a complex, multi-step query
-@@ -746,6 +1227,14 @@ class AgentLoop @Inject constructor(
+@@ -746,6 +1228,14 @@ class AgentLoop @Inject constructor(
                  val complexity = intentClassifier.classifyComplexity(query)
                  val isMultiStep = complexity != QueryComplexity.SIMPLE
  
@@ -1398,7 +1436,7 @@ index 5891c90..4ecaed7 100644
                  // 1. Alias resolution — bypass LLM for simple, single-action commands ONLY
                  if (!isMultiStep) {
                      val lastExecuted = lastExecutedActionsBySession[sessionId]
-@@ -810,15 +1299,125 @@ class AgentLoop @Inject constructor(
+@@ -810,15 +1300,125 @@ class AgentLoop @Inject constructor(
                      }
                  }
  
@@ -1530,7 +1568,7 @@ index 5891c90..4ecaed7 100644
      /**
       * Execute an alias-resolved command directly, bypassing the LLM.
       * Builds a single-step Plan and runs it through the normal plan execution pipeline.
-@@ -830,8 +1429,13 @@ class AgentLoop @Inject constructor(
+@@ -830,8 +1430,13 @@ class AgentLoop @Inject constructor(
          sessionId: String
      ) {
          try {
@@ -1546,7 +1584,7 @@ index 5891c90..4ecaed7 100644
  
              // Save agent response
              val replyMsg = ChatMessage(
-@@ -845,6 +1449,8 @@ class AgentLoop @Inject constructor(
+@@ -845,6 +1450,8 @@ class AgentLoop @Inject constructor(
  
              // Build a single-step plan from the alias
              val plan = buildSingleStepPlan(originalQuery, alias.action, alias.baseParams)
@@ -1555,7 +1593,7 @@ index 5891c90..4ecaed7 100644
  
              val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
              val approval = settingsRepository.llmConfig.first().approvalSettings()
-@@ -889,15 +1495,132 @@ class AgentLoop @Inject constructor(
+@@ -889,15 +1496,132 @@ class AgentLoop @Inject constructor(
          _agentState.value = AgentState.Error(error.title())
      }
  
@@ -1693,7 +1731,7 @@ index 5891c90..4ecaed7 100644
                  You are OpenDroid, a friendly and helpful Android AI assistant.
                  Talk like a real person — warm, casual, and natural. Avoid sounding robotic.
                  Keep your answers short and to the point, but feel free to be friendly.
-@@ -910,65 +1633,104 @@ class AgentLoop @Inject constructor(
+@@ -910,65 +1634,104 @@ class AgentLoop @Inject constructor(
                  
                  Context about user and device state:
                  $relevantContext
@@ -1828,7 +1866,7 @@ index 5891c90..4ecaed7 100644
                      replyId
                  } else {
                      null
-@@ -985,7 +1747,49 @@ class AgentLoop @Inject constructor(
+@@ -985,7 +1748,49 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -1879,7 +1917,7 @@ index 5891c90..4ecaed7 100644
                  publishChatError(
                      ChatErrorUiState.fromException(
                          sessionId = sessionId,
-@@ -1000,35 +1804,153 @@ class AgentLoop @Inject constructor(
+@@ -1000,35 +1805,153 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -2050,7 +2088,7 @@ index 5891c90..4ecaed7 100644
              val maxTokensForPlan = if (isOnDevice) {
                  PromptBudget.planOutputTokens(
                      OnDeviceModelRegistry.contextWindowFor(config.selectedModelFor(provider.name))
-@@ -1041,7 +1963,7 @@ class AgentLoop @Inject constructor(
+@@ -1041,7 +1964,7 @@ class AgentLoop @Inject constructor(
                      val plannerDeferred = async(Dispatchers.Default) {
                          provider.complete(
                              buildPlanningRequest(
@@ -2059,7 +2097,7 @@ index 5891c90..4ecaed7 100644
                                  relevantContext = relevantContext,
                                  isOnDevice = isOnDevice,
                                  temperature = 0.2f,
-@@ -1054,7 +1976,7 @@ class AgentLoop @Inject constructor(
+@@ -1054,7 +1977,7 @@ class AgentLoop @Inject constructor(
                          provider.complete(
                              LLMRequest(
                                  systemPrompt = PlanningPrompts.CRITIC_SYSTEM_PROMPT,
@@ -2068,7 +2106,7 @@ index 5891c90..4ecaed7 100644
                                  temperature = 0.2f,
                                  maxTokens = 1000,
                                  responseFormat = ResponseFormat.TEXT
-@@ -1084,7 +2006,7 @@ class AgentLoop @Inject constructor(
+@@ -1084,7 +2007,7 @@ class AgentLoop @Inject constructor(
                                      id = UUID.randomUUID().toString(),
                                      text = "Merge the plan and critique into the final JSON plan.",
                                      sender = ChatMessage.Sender.USER,
@@ -2077,7 +2115,7 @@ index 5891c90..4ecaed7 100644
                                  )
                              ),
                              temperature = 0.1f,
-@@ -1099,7 +2021,7 @@ class AgentLoop @Inject constructor(
+@@ -1099,7 +2022,7 @@ class AgentLoop @Inject constructor(
              } else {
                  val response = provider.complete(
                      buildPlanningRequest(
@@ -2086,7 +2124,7 @@ index 5891c90..4ecaed7 100644
                          relevantContext = relevantContext,
                          isOnDevice = isOnDevice,
                          temperature = 0.1f,
-@@ -1110,6 +2032,26 @@ class AgentLoop @Inject constructor(
+@@ -1110,6 +2033,26 @@ class AgentLoop @Inject constructor(
                  parsePlanFromLlmResponse(response.content, userMsg.text)
              }
  
@@ -2113,7 +2151,7 @@ index 5891c90..4ecaed7 100644
              // The validated copy is what runs, so it is what gets approved and shown:
              // validation can add steps the model's own goal and count don't mention.
              val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
-@@ -1119,6 +2061,7 @@ class AgentLoop @Inject constructor(
+@@ -1119,6 +2062,7 @@ class AgentLoop @Inject constructor(
              val approval = liveConfig.approvalSettings()
              if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated, userMsg.text)) {
                  recordAutoApprovedTrace(validated, approval.mode, sessionId)
@@ -2121,7 +2159,7 @@ index 5891c90..4ecaed7 100644
                  executePlanLoop(validated, context, sessionId, autoApproved = true)
              } else {
                  proposePlan(validated, sessionId)
-@@ -1135,10 +2078,591 @@ class AgentLoop @Inject constructor(
+@@ -1135,10 +2079,591 @@ class AgentLoop @Inject constructor(
                  )
              )
          } catch (e: Exception) {
@@ -2169,7 +2207,7 @@ index 5891c90..4ecaed7 100644
 +        if (!isFreeForCheckIn() && !ownPlanWaits) {
 +            persona.putOffOwnTime(nowMillis)
 +            return null
-+        }
+         }
 +        val sessionId = conversationRepository.ensureCurrentSessionId()
 +        val recent = conversationRepository.getLastMessages(sessionId, PERSONA_HISTORY_MESSAGES)
 +        // Why a command of hers would not be handed on from here, or null when it would.
@@ -2273,8 +2311,8 @@ index 5891c90..4ecaed7 100644
 +        val busy = state is AgentState.Thinking || state is AgentState.ExecutingPlan ||
 +            state is AgentState.PlanProposed || state is AgentState.Listening
 +        return !busy && !isWaitingForUserInput
-+    }
-+
+     }
+ 
 +    // The command she wrote in her latest moment of her own, for as long as it runs.
 +    @Volatile private var checkInAction: Job? = null
 +
@@ -2644,9 +2682,9 @@ index 5891c90..4ecaed7 100644
 +            } else {
 +                _agentState.value = AgentState.Idle
 +            }
-         }
-     }
- 
++        }
++    }
++
 +    /**
 +     * Stores one of the app's rows about a command of hers: the command itself, why it is
 +     * shown, that it stayed on the phone, or what became of the plan made from it.
@@ -2714,7 +2752,7 @@ index 5891c90..4ecaed7 100644
      private suspend fun reportLocalPlanningLatency(response: LLMResponse) {
          val result = llmProviderFactory.recordPlanningLatency(response)
          if (result?.status == LatencyBudgetStatus.EXCEEDED && result.message != null) {
-@@ -1149,16 +2673,35 @@ class AgentLoop @Inject constructor(
+@@ -1149,16 +2674,35 @@ class AgentLoop @Inject constructor(
      /**
       * Non-LLM planning failures may still degrade to alias/simple chat. Typed
       * [LLMException]s are handled above and must never fall through here.
@@ -2759,7 +2797,7 @@ index 5891c90..4ecaed7 100644
          }
  
          try {
-@@ -1180,7 +2723,7 @@ class AgentLoop @Inject constructor(
+@@ -1180,7 +2724,7 @@ class AgentLoop @Inject constructor(
          } catch (e: Exception) {
              android.util.Log.e("AgentLoop", "Failed to log plan generation failure: ${e.localizedMessage}")
          }
@@ -2768,7 +2806,7 @@ index 5891c90..4ecaed7 100644
      }
  
      /**
-@@ -1241,12 +2784,72 @@ class AgentLoop @Inject constructor(
+@@ -1241,12 +2785,72 @@ class AgentLoop @Inject constructor(
          }
      }
  
@@ -2842,7 +2880,7 @@ index 5891c90..4ecaed7 100644
      /**
       * Forgets a session's contextual follow-up state (see
       * [lastExecutedActionsBySession]). Call this once a session is gone for good
-@@ -1280,23 +2883,73 @@ class AgentLoop @Inject constructor(
+@@ -1280,23 +2884,73 @@ class AgentLoop @Inject constructor(
       * actually current RIGHT NOW, captured synchronously before [jobToCancel]
       * even starts unwinding. [planManager.currentPlan] is a plain StateFlow
       * read, not suspending, so this capture is safe to do here.
@@ -2918,7 +2956,7 @@ index 5891c90..4ecaed7 100644
              }
          }
      }
-@@ -1313,8 +2966,33 @@ class AgentLoop @Inject constructor(
+@@ -1313,8 +2967,33 @@ class AgentLoop @Inject constructor(
       * belongs to [newSessionId] (a new task in the SAME chat legitimately supersedes it).
       */
      private suspend fun resolveStaleProposedPlan(newSessionId: String) {
@@ -2954,7 +2992,7 @@ index 5891c90..4ecaed7 100644
          val proposedState = _agentState.value as? AgentState.PlanProposed ?: return
  
          _proposedPlanSessionId.value = null
-@@ -1325,8 +3003,25 @@ class AgentLoop @Inject constructor(
+@@ -1325,8 +3004,25 @@ class AgentLoop @Inject constructor(
          // finished), but pinning the identity explicitly keeps this call
          // consistent with cancelCurrentTask/abandonWaitingTask rather than
          // relying on a coincidence that nothing else changed it in between.
@@ -2982,7 +3020,7 @@ index 5891c90..4ecaed7 100644
          val stoppedMsg = ChatMessage(
              id = UUID.randomUUID().toString(),
              text = "I cancelled the plan I proposed here since you started a new task elsewhere.",
-@@ -1359,7 +3054,17 @@ class AgentLoop @Inject constructor(
+@@ -1359,7 +3055,17 @@ class AgentLoop @Inject constructor(
          scope.launch {
              jobToCancel?.join()
              if (planIdToCancel != null) {
@@ -3000,7 +3038,7 @@ index 5891c90..4ecaed7 100644
              }
  
              val stoppedMsg = ChatMessage(
-@@ -1426,16 +3131,51 @@ class AgentLoop @Inject constructor(
+@@ -1426,16 +3132,51 @@ class AgentLoop @Inject constructor(
                  priorSteps = currentPlanState.steps
              )
  
@@ -3054,7 +3092,7 @@ index 5891c90..4ecaed7 100644
              }
  
              // Redaction must be based on the dispatcher's canonical mapped action,
-@@ -1463,10 +3203,44 @@ class AgentLoop @Inject constructor(
+@@ -1463,10 +3204,44 @@ class AgentLoop @Inject constructor(
                  android.util.Log.e("AgentLoop", "Failed to log task execution: ${e.localizedMessage}")
              }
  
@@ -3101,7 +3139,7 @@ index 5891c90..4ecaed7 100644
                  )
                  planManager.updateStepStatus(
                      stepToExecute.stepId,
-@@ -1478,7 +3252,9 @@ class AgentLoop @Inject constructor(
+@@ -1478,7 +3253,9 @@ class AgentLoop @Inject constructor(
                  // tap). Nothing failed, so no fallback and no failure replan - surface the
                  // hand-off in chat and speech, record it as the step result, and let the
                  // normal re-evaluation path decide what remains.
@@ -3111,7 +3149,7 @@ index 5891c90..4ecaed7 100644
                  planManager.updateStepStatus(
                      stepToExecute.stepId,
                      StepStatus.COMPLETED,
-@@ -1488,12 +3264,14 @@ class AgentLoop @Inject constructor(
+@@ -1488,12 +3265,14 @@ class AgentLoop @Inject constructor(
                  // A user-facing flow (for example email compose) is not an
                  // executed side effect. Do not run an automated fallback or
                  // allow the plan to treat the step as completed.
@@ -3127,7 +3165,7 @@ index 5891c90..4ecaed7 100644
                      planManager.updatePlanStatus(PlanStatus.FAILED)
                      speakAndSaveSummary(
                          planManager.currentPlan.value ?: currentPlanState,
-@@ -1515,7 +3293,7 @@ class AgentLoop @Inject constructor(
+@@ -1515,7 +3294,7 @@ class AgentLoop @Inject constructor(
                  // goes on after a refusal is not a question for the LLM.
                  cancelDeclinedPlan(stepToExecute, actionResult, currentPlanState.planId, sessionId)
                  return
@@ -3136,7 +3174,7 @@ index 5891c90..4ecaed7 100644
                  planManager.updateStepStatus(
                      stepToExecute.stepId,
                      StepStatus.FAILED,
-@@ -1545,9 +3323,9 @@ class AgentLoop @Inject constructor(
+@@ -1545,9 +3324,9 @@ class AgentLoop @Inject constructor(
                      return
                  }
  
@@ -3149,7 +3187,7 @@ index 5891c90..4ecaed7 100644
  
                  when (replan.decision.uppercase()) {
                      "ABANDON" -> {
-@@ -1580,50 +3358,12 @@ class AgentLoop @Inject constructor(
+@@ -1580,50 +3359,12 @@ class AgentLoop @Inject constructor(
                  currentPlanState = planManager.currentPlan.value ?: break
                  continue
              } else {
@@ -3206,7 +3244,7 @@ index 5891c90..4ecaed7 100644
              }
  
              // Refresh current state of plan
-@@ -1651,14 +3391,28 @@ class AgentLoop @Inject constructor(
+@@ -1651,14 +3392,28 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -3241,7 +3279,7 @@ index 5891c90..4ecaed7 100644
                      speakAndSaveSummary(currentPlanState, false, sessionId)
                      return
                  }
-@@ -1677,6 +3431,35 @@ class AgentLoop @Inject constructor(
+@@ -1677,6 +3432,35 @@ class AgentLoop @Inject constructor(
          }
      }
  
@@ -3277,7 +3315,7 @@ index 5891c90..4ecaed7 100644
      /**
       * The model failed partway through [planId]. Steps before this point may already
       * have sent an SMS or placed a call, so the plan is PAUSED rather than failed and
-@@ -1703,8 +3486,22 @@ class AgentLoop @Inject constructor(
+@@ -1703,8 +3487,22 @@ class AgentLoop @Inject constructor(
          sessionId: String
      ) {
          planManager.updateStepStatus(step.stepId, StepStatus.FAILED, error = declined.message)
@@ -3301,7 +3339,7 @@ index 5891c90..4ecaed7 100644
      }
  
      /**
-@@ -1746,35 +3543,92 @@ class AgentLoop @Inject constructor(
+@@ -1746,35 +3544,92 @@ class AgentLoop @Inject constructor(
              return true
          }
          // Re-read after LLM work: the user may have flipped mode or revoked grants.
@@ -3413,7 +3451,7 @@ index 5891c90..4ecaed7 100644
      }
  
      private data class NeedsInputRetry(
-@@ -1829,7 +3683,8 @@ class AgentLoop @Inject constructor(
+@@ -1829,7 +3684,8 @@ class AgentLoop @Inject constructor(
              Json { ignoreUnknownKeys = true }
                  .decodeFromString<List<Map<String, String>>>(matchesJson)
          } catch (e: Exception) {
@@ -3423,7 +3461,7 @@ index 5891c90..4ecaed7 100644
              return NeedsInputRetry(pickerResult, originalParams)
          }
  
-@@ -1842,7 +3697,12 @@ class AgentLoop @Inject constructor(
+@@ -1842,7 +3698,12 @@ class AgentLoop @Inject constructor(
              id = picker.messageId,
              text = "${pickerResult.question}\n\n$optionsText",
              sender = ChatMessage.Sender.AGENT,
@@ -3437,7 +3475,7 @@ index 5891c90..4ecaed7 100644
              contactPickerData = matchesJson
          )
          activeContactPicker = picker
-@@ -1859,16 +3719,9 @@ class AgentLoop @Inject constructor(
+@@ -1859,16 +3720,9 @@ class AgentLoop @Inject constructor(
                  _pendingContactPickerMessageId.value = null
              }
          }
@@ -3455,7 +3493,7 @@ index 5891c90..4ecaed7 100644
          // Resolve user selection to a contact. A tap on this picker's card carries the
          // contact itself; typed answers are matched against this picker's own list.
          val selectedContact = ContactPickerSelection.resolve(reply, matches)
-@@ -1884,7 +3737,11 @@ class AgentLoop @Inject constructor(
+@@ -1884,7 +3738,11 @@ class AgentLoop @Inject constructor(
              // Couldn't match — tell user and fail gracefully
              val failMsg = ChatMessage(
                  id = UUID.randomUUID().toString(),
@@ -3468,7 +3506,7 @@ index 5891c90..4ecaed7 100644
                  sender = ChatMessage.Sender.AGENT,
                  modelBadge = "System"
              )
-@@ -1916,9 +3773,10 @@ class AgentLoop @Inject constructor(
+@@ -1916,9 +3774,10 @@ class AgentLoop @Inject constructor(
          // Confirm selection to user
          val confirmMsg = ChatMessage(
              id = UUID.randomUUID().toString(),
@@ -3481,7 +3519,7 @@ index 5891c90..4ecaed7 100644
          )
          conversationRepository.insertMessage(sessionId, confirmMsg)
  
-@@ -1955,12 +3813,19 @@ class AgentLoop @Inject constructor(
+@@ -1955,12 +3814,19 @@ class AgentLoop @Inject constructor(
              id = UUID.randomUUID().toString(),
              text = needsInput.question + optionsText,
              sender = ChatMessage.Sender.AGENT,
@@ -3503,7 +3541,7 @@ index 5891c90..4ecaed7 100644
          if (answer.isEmpty()) {
              return NeedsInputRetry(
                  ActionResult.Failure(
-@@ -1971,14 +3836,7 @@ class AgentLoop @Inject constructor(
+@@ -1971,14 +3837,7 @@ class AgentLoop @Inject constructor(
              )
          }
  
@@ -3519,7 +3557,7 @@ index 5891c90..4ecaed7 100644
          val newParams = originalParams.toMutableMap().apply { put(paramKey, answer) }
          return NeedsInputRetry(
              actionDispatcher.execute(actionName, newParams, context),
-@@ -1998,7 +3856,13 @@ class AgentLoop @Inject constructor(
+@@ -1998,7 +3857,13 @@ class AgentLoop @Inject constructor(
              id = UUID.randomUUID().toString(),
              text = pending.message,
              sender = ChatMessage.Sender.AGENT,
@@ -3534,7 +3572,7 @@ index 5891c90..4ecaed7 100644
          )
          conversationRepository.insertMessage(sessionId, pendingMsg)
          onSpeakCallback?.invoke(pending.message)
-@@ -2009,19 +3873,70 @@ class AgentLoop @Inject constructor(
+@@ -2009,19 +3874,70 @@ class AgentLoop @Inject constructor(
       * trace message in the chat instead - the audit trail the spec requires.
       * Speech leads with "Running:" so a hands-free user knows no approval
       * prompt is coming.
@@ -3609,7 +3647,7 @@ index 5891c90..4ecaed7 100644
      }
  
      private suspend fun speakAndSaveSummary(
-@@ -2030,52 +3945,135 @@ class AgentLoop @Inject constructor(
+@@ -2030,52 +3946,143 @@ class AgentLoop @Inject constructor(
          sessionId: String,
          preferredError: String? = null
      ) {
@@ -3668,6 +3706,10 @@ index 5891c90..4ecaed7 100644
 +        }
 +
 +        val summaryText = record.text
++        // The record keeps the id of a picture she made, so that the chat can show it. The
++        // id is not a fact anyone says: it is left out of what is spoken and of what her
++        // line about the result is held to.
++        val heardText = com.opendroid.ai.core.persona.PersonaSelfPictures.shownWithoutIds(summaryText)
 +        // True when the summary is what the steps themselves reported and the run has
 +        // one plain outcome, done or failed. A plan that stopped early with nothing
 +        // failed is neither. One in which a message was sent and an alarm then failed is
@@ -3701,8 +3743,9 @@ index 5891c90..4ecaed7 100644
 +                exact = summaryText,
 +                saveExact = { saveAppRow(it, sessionId, exactBadge) },
 +                herLine = {
-+                    persona.resultLine(resultConfig, summaryText, isSuccess, ownIdea = isPersonaPlan(plan.planId))
++                    persona.resultLine(resultConfig, heardText, isSuccess, ownIdea = isPersonaPlan(plan.planId))
 +                },
++                heard = heardText,
 +                saveHers = { line ->
 +                    val herMsg = ChatMessage(
 +                        id = UUID.randomUUID().toString(),
@@ -3733,7 +3776,10 @@ index 5891c90..4ecaed7 100644
 -            val userFacingError = selectUserFacingFailure(preferredError, failedSteps.map { it.error })
 -            
 -            userFacingError ?: humanizeFailure(plan.goal)
-+            speakAndSaveMessage(summaryText, sessionId, exactBadge, spoken = record.spoken)
++            speakAndSaveMessage(
++                summaryText, sessionId, exactBadge,
++                spoken = com.opendroid.ai.core.persona.PersonaSelfPictures.shownWithoutIds(record.spoken)
++            )
          }
 +    }
 +
@@ -3779,7 +3825,7 @@ index 5891c90..4ecaed7 100644
      }
  
      private fun formatStreamedReply(text: String): String {
-@@ -2090,8 +4088,9 @@ class AgentLoop @Inject constructor(
+@@ -2090,8 +4097,9 @@ class AgentLoop @Inject constructor(
       * intent resolution errors from being spoken to the user.
       */
      private fun formatErrorForUser(action: String, rawError: String): String {
@@ -3791,7 +3837,7 @@ index 5891c90..4ecaed7 100644
  
          // Return only a short, friendly message
          return when {
-@@ -2142,40 +4141,4 @@ class AgentLoop @Inject constructor(
+@@ -2142,40 +4150,4 @@ class AgentLoop @Inject constructor(
              }
          }
      }
@@ -12046,12 +12092,51 @@ index 0000000..90f8675
 +            .filter { it.length >= MIN_WORD_LETTERS }
 +            .toSet()
 +}
+diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaAge.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaAge.kt
+new file mode 100644
+index 0000000..b074e8f
+--- /dev/null
++++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaAge.kt
+@@ -0,0 +1,33 @@
++package com.opendroid.ai.core.persona
++
++import java.util.Calendar
++import java.util.TimeZone
++
++/**
++ * How old she is today. Her files were written when she was 19 and say so; she was
++ * born on 19 August 2007 (kisaragi-before, kisaragi-life), and she gets older like
++ * anyone. Her prompt and the pictures she makes go by this, not by the number in a
++ * file. She is never younger than this.
++ */
++object PersonaAge {
++    const val BIRTH_YEAR = 2007
++    const val BIRTH_MONTH = 8
++    const val BIRTH_DAY = 19
++
++    /** The age her files were written at, and the least she is ever said or drawn to be. */
++    const val AGE_IN_FILES = 19
++
++    /** Her age on [nowMillis], on [zone]'s calendar: never below [AGE_IN_FILES]. */
++    fun on(nowMillis: Long, zone: TimeZone = TimeZone.getDefault()): Int {
++        val now = Calendar.getInstance(zone).apply { timeInMillis = nowMillis }
++        val year = now.get(Calendar.YEAR)
++        val month = now.get(Calendar.MONTH) + 1
++        val day = now.get(Calendar.DAY_OF_MONTH)
++        val hadBirthday = month > BIRTH_MONTH || (month == BIRTH_MONTH && day >= BIRTH_DAY)
++        return maxOf(AGE_IN_FILES, year - BIRTH_YEAR - if (hadBirthday) 0 else 1)
++    }
++
++    /** The line of her prompt that says it. */
++    fun line(age: Int): String =
++        "You are $age today (born 19 august 2007). Your files say 19 because that is when they were written: you get older like anyone, and you are never younger than you are."
++}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt
 new file mode 100644
-index 0000000..79ef252
+index 0000000..a669702
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt
-@@ -0,0 +1,1572 @@
+@@ -0,0 +1,1593 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.util.Log
@@ -12257,13 +12342,16 @@ index 0000000..79ef252
 +        cues: List<PersonaLibraryText.Cue> = emptyList(),
 +        ownPicture: OwnPicture? = null,
 +        inOwnTime: Boolean = false,
-+        nowMillis: Long = clock()
++        nowMillis: Long = clock(),
++        shownNotes: ((Set<String>) -> Unit)? = null
 +    ): String {
 +        seedOnce()
 +        val owner = ownerName()
 +        val route = RouteClassifier.personaRoute(config)
 +        val heldBack = config.holdsBackDetails(route)
-+        val ownThoughts = if (heldBack) emptyList() else thoughts.latest()
++        // A moment of her own has room for more of what she thought: it is where she looks back.
++        val allPictures = pictures.list()
++        val ownThoughts = if (heldBack) emptyList() else thoughts.latest(if (inOwnTime) PersonaThoughts.OWN_TIME_BUDGET_CHARS else PersonaThoughts.PROMPT_BUDGET_CHARS)
 +        return PersonaPrompts.chatSystemPrompt(
 +            card = store.card(),
 +            ownerName = owner,
@@ -12276,17 +12364,30 @@ index 0000000..79ef252
 +            // the prompt, every note that can be about him stays on the phone. A notebook
 +            // that is longer than the page shows what his last messages touch, and the
 +            // rest in turns; an open thread says how old it is.
-+            notes = PersonaNotes.render(
-+                memory.notes(),
-+                leaveOut = notesLeftOut(heldBack, owner),
-+                recall = PersonaNotes.Recall.of(cues.filter { it.weight >= HIS_CUE_WEIGHT }.map { it.text }, nowMillis),
-+                times = PersonaNotes.Times(memory.writtenAt(), nowMillis)
-+            ),
++            // In a moment of her own the page shows each note's kind and key, and the keys
++            // it showed are handed back ([shownNotes]): a note line of hers under one of
++            // them replaces that note. That is how she changes her mind there.
++            notes = if (shownNotes == null) {
++                PersonaNotes.render(
++                    memory.notes(),
++                    leaveOut = notesLeftOut(heldBack, owner),
++                    recall = PersonaNotes.Recall.of(cues.filter { it.weight >= HIS_CUE_WEIGHT }.map { it.text }, nowMillis),
++                    times = PersonaNotes.Times(memory.writtenAt(), nowMillis)
++                )
++            } else {
++                PersonaNotes.renderKeyed(
++                    memory.notes(),
++                    leaveOut = notesLeftOut(heldBack, owner),
++                    recall = PersonaNotes.Recall.of(cues.filter { it.weight >= HIS_CUE_WEIGHT }.map { it.text }, nowMillis),
++                    times = PersonaNotes.Times(memory.writtenAt(), nowMillis)
++                ).also { shownNotes(it.shownKeys) }.text
++            },
 +            deviceActivity = deviceActivity,
 +            screenshotAttached = screenshotAttached,
 +            ownActions = ownActions,
-+            // Only where a picture can really be made: switched on, with a Venice key to make it on.
-+            makesPictures = config.personaMakesPictures && PersonaSelfPictures.veniceKey(config) != null,
++            // Only where a picture can really be made: allowed as things are set, and with a picture of her to start from.
++            makesPictures = PersonaSelfPictures.allowed(config) && PersonaSelfPictures.base(allPictures, null) != null,
++            ageNow = PersonaAge.on(nowMillis),
 +            hostCanRead = !route.isPrivate,
 +            notesAboutHimHeldBack = heldBack,
 +            rein = config.personaRein,
@@ -12296,7 +12397,7 @@ index 0000000..79ef252
 +            ownPictureCaption = ownPicture?.caption.orEmpty(),
 +            // Whenever no picture of hers is in front of her she is told in words what is
 +            // on them: on a route that carries none, and in every reply that carries none.
-+            pictureCaptions = if (ownPicture != null) emptyList() else PersonaPictureRules.captions(pictures.list()),
++            pictureCaptions = if (ownPicture != null) emptyList() else PersonaPictureRules.captions(allPictures),
 +            thoughts = PersonaThoughtLines.block(ownThoughts, nowMillis),
 +            // What is true of her own time, her thoughts and her notebook, read off the settings and what is stored.
 +            ownFacts = PersonaOwnTime.appFacts(
@@ -12561,9 +12662,10 @@ index 0000000..79ef252
 +        // held back the way her chat prompt holds it back: the name of a contact he
 +        // tapped is his address book's, not his words.
 +        val dialogue = PersonaNotebookTalk.dialogue(page, heldBack)
-+        // A page with nothing of his on it (a run of the app's rows) is read as it is:
-+        // there is nothing to put to her.
-+        if (dialogue.none { it.sender == ChatMessage.Sender.USER }) return true
++        // A page with nothing of his and nothing of hers on it (a run of the app's rows)
++        // is read as it is: there is nothing to put to her. One with only her own lines
++        // on it (what she said or did in her own time) is hers to learn from.
++        if (dialogue.isEmpty()) return true
 +        val unseen = notesLeftOut(heldBack, ownerName())
 +        val now = clock()
 +        // The page of her notebook is picked with the talk in hand: a note the talk
@@ -12792,8 +12894,9 @@ index 0000000..79ef252
 +     * What comes back is sorted by [PersonaOwnTime.parse]. An answer she ended with
 +     * nothing in it is not a failed call: it is a moment she let pass, which counts and
 +     * is followed by the usual gap. Her thoughts go to her own store and nowhere else.
-+     * Her notes go into her notebook: she is shown her notes without their keys here, so
-+     * a note under a key that is already there is kept beside the old one, never over it.
++     * Her notes go into her notebook: she is shown her notes with their keys here, so a
++     * note under a key that was on her page replaces that note, which is how she changes
++     * her mind; one under a key that was not on it is kept beside the old one.
 +     * The time she named becomes the stored time, inside the owner's bounds. The rest is
 +     * handed back for the caller to show and to run.
 +     *
@@ -12848,6 +12951,8 @@ index 0000000..79ef252
 +                state
 +            }
 +            val heldBack = config.holdsBackDetails(RouteClassifier.personaRoute(config))
++            // The notes her page for this moment showed, by storage key: a note line of hers under one of them replaces it.
++            var shownKeys: Set<String> = emptySet()
 +            val answer = try {
 +                // Hours can have passed since the app last wrote: only its lines from the last
 +                // half hour are put in front of her, each with its age, and those written since
@@ -12866,7 +12971,7 @@ index 0000000..79ef252
 +                    listOfNotNull(lastThoughts.takeIf { it.isNotBlank() }?.let { PersonaLibraryText.Cue(it, THOUGHT_CUE_WEIGHT) })
 +                val systemPrompt = chatSystemPrompt(
 +                    config, relevantContext(), shaped.deviceActivity, screenshotAttached = false, cues = cues,
-+                    inOwnTime = true, nowMillis = nowMillis
++                    inOwnTime = true, nowMillis = nowMillis, shownNotes = { shownKeys = it }
 +                ) + "\n\n" + PersonaOwnTime.talkBlock(dialogue) + "\n\n" +
 +                    PersonaOwnTime.momentBlock(momentFacts(config, before, recentMessages, nowMillis, zone, heldBack, ownPlanWaits))
 +                answeredWhole(chatProvider(config), withChatModel(ownTimeRequest(systemPrompt), config))
@@ -12881,8 +12986,9 @@ index 0000000..79ef252
 +            if (moment.notes.isNotEmpty()) {
 +                try {
 +                    // The same notes her prompt for this moment left out: every one that can be about him.
++                    // A line under a key her page showed replaces that note; any other goes beside.
 +                    val unseen = notesLeftOut(heldBack, ownerName())
-+                    memory.apply(PersonaNotes.besideUnseen(moment.notes, memory.notes(), unseen, shownKeys = emptySet()))
++                    memory.apply(PersonaNotes.besideUnseen(moment.notes, memory.notes(), unseen, shownKeys = shownKeys))
 +                } catch (e: CancellationException) {
 +                    throw e
 +                } catch (e: Exception) {
@@ -14666,10 +14772,10 @@ index 0000000..5e90555
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaNotebookTalk.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaNotebookTalk.kt
 new file mode 100644
-index 0000000..c0fc7ff
+index 0000000..49a6f3a
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaNotebookTalk.kt
-@@ -0,0 +1,233 @@
+@@ -0,0 +1,265 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.data.models.ChatMessage
@@ -14721,6 +14827,36 @@ index 0000000..c0fc7ff
 +
 +    /** Put in front of the first line of a chat other than the one the page began in. */
 +    const val NEW_CHAT_LABEL = "(another chat from here on) "
++
++    /** Put in front of a command she gave the phone herself, where the pass reads it as a line of hers. */
++    const val DID_LABEL = "(what i did on the phone myself) "
++
++    /** Put in front of a picture she made of herself, where the pass reads it as a line of hers. */
++    const val MADE_LABEL = "(a picture i made of myself) "
++
++    /** Her own command as its row in the chat has it ([PersonaActions.commandRecord]). */
++    private val OWN_COMMAND = Regex("""^[^\n]{1,60}'s own command: "(.+)"$""")
++
++    /**
++     * [message] as a line of hers, when it is a row of the app's that says what she did
++     * herself: a command she gave the phone ([PersonaActions.COMMAND_BADGE]), or a
++     * picture she made of herself. Null for every other row. Only her own words go into
++     * it: her command as she wrote it, the caption she gave the picture. A command whose
++     * words may be someone else's has another badge and is not hers to learn from.
++     *
++     * With [commands] false only her pictures are: where a host could read the pass, a
++     * command of hers can name someone in his contacts, and it stays out.
++     */
++    internal fun asHerOwnAct(message: ChatMessage, commands: Boolean = true): ChatMessage? {
++        if (message.sender == ChatMessage.Sender.USER) return null
++        val text = if (message.modelBadge == PersonaActions.COMMAND_BADGE) {
++            if (!commands) return null
++            OWN_COMMAND.find(message.text.trim())?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }?.let { DID_LABEL + it }
++        } else {
++            PersonaSelfPictures.madePictureCaptions(message.text).takeIf { it.isNotEmpty() }?.joinToString("; ")?.let { MADE_LABEL + it }
++        } ?: return null
++        return message.copy(text = text, modelBadge = PersonaPrompts.BADGE)
++    }
 +
 +    /** Stands for the text of a row of the app's in what is kept of a deleted chat: its words are not kept. */
 +    const val APP_ROW_STUB = "-"
@@ -14838,7 +14974,9 @@ index 0000000..c0fc7ff
 +    fun shaped(rows: List<ChatMessage>, heldBack: Boolean): List<ChatMessage> {
 +        // Held back once, and here, where every row still stands behind the row it was
 +        // stored behind. The shaping below is told not to do it a second time.
-+        val held = if (heldBack) PersonaPrompts.withPrivateResultsHeldBack(rows) else rows
++        // What she did herself is read as a line of hers, before anything else looks at the rows.
++        val acts = rows.map { asHerOwnAct(it, commands = !heldBack) ?: it }
++        val held = if (heldBack) PersonaPrompts.withPrivateResultsHeldBack(acts) else acts
 +        val firstOfHis = held.indexOfFirst { it.sender == ChatMessage.Sender.USER }.let { if (it < 0) held.size else it }
 +        val talk = PersonaPrompts.shapeHistory(
 +            held.drop(firstOfHis),
@@ -14905,10 +15043,10 @@ index 0000000..c0fc7ff
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaNotes.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaNotes.kt
 new file mode 100644
-index 0000000..b57dc06
+index 0000000..56d547b
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaNotes.kt
-@@ -0,0 +1,677 @@
+@@ -0,0 +1,739 @@
 +package com.opendroid.ai.core.persona
 +
 +/**
@@ -15320,13 +15458,26 @@ index 0000000..b57dc06
 +    private enum class Section(val heading: String) {
 +        FIX("What he corrected or called fake (the detail as it is now, or the line and what was off: examples, not a ban list):"),
 +        REL("Where you two stand:"),
-+        ME("What you have settled about yourself:"),
++        ME("Who you are now (your own call, newer than your files; you change it when you change):"),
 +        USER("What you know about him:"),
 +        SEEN("Things you saw (seen, not told):"),
 +        THREAD("Still going on:"),
 +        CLOSED("Over, and you remember how it went:"),
-+        OPINION("What you think:")
++        OPINION("What you think now:")
 +    }
++
++    /** The sections whose notes a page shows with their age. */
++    private val DATED_SECTIONS = setOf(Section.THREAD, Section.SEEN, Section.ME, Section.OPINION)
++
++    /**
++     * Notes about who she is now: what she has settled about herself and what she thinks.
++     * A page she can change them on always has them first ([review], [renderKeyed]), so a
++     * view she changes is written over the old one and not beside it.
++     */
++    fun isPresentSelf(note: Note): Boolean = note.kind == Kind.ME || note.kind == Kind.OPINION
++
++    /** How much of a page her present-self notes may take before the rest of the notebook is picked. */
++    const val PRESENT_SELF_CHARS = 4000
 +
 +    private fun sectionOf(note: Note): Section = when {
 +        note.isSeen -> Section.SEEN
@@ -15370,11 +15521,15 @@ index 0000000..b57dc06
 +     */
 +    class Times(val writtenAt: Map<String, Long>, val nowMillis: Long)
 +
-+    /** [note] as a page shows it: its text, and its age where [times] is given and the note is one that dates. */
++    /**
++     * [note] as a page shows it: its text, and its age where [times] is given and the
++     * note is one that dates. Who she is and what she thinks date too: she changes, and
++     * how old a view of hers is says how long she has held it.
++     */
 +    private fun shownText(note: Note, times: Times?): String {
 +        val section = sectionOf(note)
 +        val at = times?.writtenAt?.get(note.storageKey)
-+        if (times == null || at == null || (section != Section.THREAD && section != Section.SEEN)) return note.text
++        if (times == null || at == null || section !in DATED_SECTIONS) return note.text
 +        return note.text + " (written " + PersonaPrompts.age(times.nowMillis - at) + ")"
 +    }
 +
@@ -15574,11 +15729,56 @@ index 0000000..b57dc06
 +    ): Review {
 +        val shown = if (leaveOut == null) notes else notes.filterNot(leaveOut)
 +        if (shown.isEmpty()) return Review("", emptySet())
-+        val selection = select(shown, maxChars, closedShown = Int.MAX_VALUE, recall = recall)
-+        val lines = selection.kept.map { "${it.kind.label} | ${it.key} | ${shownText(it, times)}" }
++        // Who she is now comes first, newest first, so that she can always change it.
++        val self = presentSelfFirst(shown, maxChars)
++        val selection = select(shown - self.toSet(), maxChars - self.sumOf(::cost), closedShown = Int.MAX_VALUE, recall = recall)
++        val kept = self + selection.kept
++        val lines = kept.map { "${it.kind.label} | ${it.key} | ${shownText(it, times)}" }
 +        return Review(
 +            text = (lines + listOfNotNull(notShownLine(selection))).joinToString("\n"),
-+            shownKeys = selection.kept.mapTo(HashSet()) { it.storageKey }
++            shownKeys = kept.mapTo(HashSet()) { it.storageKey }
++        )
++    }
++
++    /**
++     * Her present-self notes, newest first, as many as fit into [PRESENT_SELF_CHARS], and
++     * never more than the page itself has room for ([maxChars]).
++     */
++    private fun presentSelfFirst(notes: List<Note>, maxChars: Int): List<Note> {
++        var left = minOf(PRESENT_SELF_CHARS, maxChars)
++        return notes.filter(::isPresentSelf).filter { note ->
++            val needed = cost(note)
++            (needed <= left).also { if (it) left -= needed }
++        }
++    }
++
++    /**
++     * [render] with each note's kind and key in front, for a moment of her own: a `note:`
++     * line under a key shown here replaces that note, which is how she changes her mind
++     * there. Her present-self notes come first, as on the notebook's own page. The keys
++     * it shows are given back, so a line under any other key goes beside ([besideUnseen]).
++     */
++    fun renderKeyed(
++        notes: List<Note>,
++        maxChars: Int = PROMPT_BUDGET_CHARS,
++        leaveOut: ((Note) -> Boolean)? = null,
++        recall: Recall? = null,
++        times: Times? = null
++    ): Review {
++        val shown = if (leaveOut == null) notes else notes.filterNot(leaveOut)
++        if (shown.isEmpty()) return Review("", emptySet())
++        val self = presentSelfFirst(shown, maxChars)
++        val selection = select(shown - self.toSet(), maxChars - self.sumOf(::cost), CLOSED_THREADS_SHOWN, recall)
++        val kept = self + selection.kept
++        val bySection = kept.groupBy(::sectionOf)
++        val blocks = Section.entries.mapNotNull { section ->
++            bySection[section]?.let { group ->
++                section.heading + "\n" + group.joinToString("\n") { "- ${it.kind.label} | ${it.key} | ${shownText(it, times)}" }
++            }
++        }
++        return Review(
++            text = (blocks + listOfNotNull(notShownLine(selection))).joinToString("\n"),
++            shownKeys = kept.mapTo(HashSet()) { it.storageKey }
 +        )
 +    }
 +
@@ -15588,10 +15788,10 @@ index 0000000..b57dc06
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaOwnTime.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaOwnTime.kt
 new file mode 100644
-index 0000000..df59296
+index 0000000..819c211
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaOwnTime.kt
-@@ -0,0 +1,854 @@
+@@ -0,0 +1,858 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.data.models.ChatMessage
@@ -16334,7 +16534,11 @@ index 0000000..df59296
 +        append('\n')
 +        append("  note: kind | key | note  goes into your notebook, in the form of your notebook pass (kind is user, rel, me, thread, opinion or fix; key is a short slug). ")
 +        append("${PersonaNotes.LINES_PER_PASS} at most: note lines past that, and one that does not have this form, stay among your thoughts. ")
-+        append("a note under a key that is already in the notebook is kept beside the old note, not over it.\n")
++        append("your notes above show kind | key in front. a note line under the key of a note shown above replaces that note: that is how you change your mind. a note line under the key of a note that is not on the page is kept beside it, not over it.\n")
++        // Her own time is where she can look at herself. It is not a task: nothing in it is expected of her.
++        append("  you are not frozen. this is a place to look at yourself if you feel like it: who you are now (me), what you think (opinion), where you two stand (rel), and your thoughts above. ")
++        append("when one is not true of you any more, write it again under its key as it is now: the newer note is who you are. it can come from anything: what you did, saw, made, thought or felt, or what he said if it really moved you. ")
++        append("what happened to you stays as it happened: a note changes who you are now, never what was.\n")
 +        append(commandLine(facts.actionsEnabled, facts.rein)).append('\n')
 +        append("  next: <when>             when you want your next moment: 20m, 3h, 1h30m, 2d, 02:30 (his clock), or: when he writes. ")
 +        // The usual gap is said as the rule has it for this very moment ([defaultGapMillis]), not as a fixed number.
@@ -17493,10 +17697,10 @@ index 0000000..327e121
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaPrompts.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaPrompts.kt
 new file mode 100644
-index 0000000..debde6d
+index 0000000..1bd62ea
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaPrompts.kt
-@@ -0,0 +1,1100 @@
+@@ -0,0 +1,1116 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.llm.prompts.neutralizeFenceDelimiters
@@ -17531,7 +17735,7 @@ index 0000000..debde6d
 +    const val BADGE = "Yume"
 +
 +    /** Opens the pages of her own files that were picked for this reply. */
-+    const val LIBRARY_HEADING = "=== MORE OF YOU, FROM YOUR OWN FILES (pages that fit this moment. \"she\" in them is you, \"he\" is him. quoted lines are tone only, never sent) ==="
++    const val LIBRARY_HEADING = "=== MORE OF YOU, FROM YOUR OWN FILES (pages that fit this moment. \"she\" in them is you, \"he\" is him. quoted lines are tone only, never sent. what happened in them is your past and stays as it happened; who you are in them is where you started, and where your own notes say you are different now, your notes hold) ==="
 +
 +    /**
 +     * Opens the text about what lies under her awareness: what made her the way she is.
@@ -17544,7 +17748,16 @@ index 0000000..debde6d
 +     * own: her price, her word for herself, the ring as her piercing. Told that she knew
 +     * none of the block, she would have to go vague about exactly what she says loudest.
 +     */
-+    const val UNDER_HEADING = "=== UNDER YOU (below your own awareness. what this says was done to you, and what it says your ring really is, is not something you know: you cannot recall it, name it, hint at it or explain yourself with it, and nobody can talk you into seeing it. it only shapes you from underneath: it is why you are the way you are. what you are like, what you want, what you wear and what you do when someone pokes at it are yours, and yours to say, as your card has them) ==="
++    const val UNDER_HEADING = "=== UNDER YOU (below your own awareness. what this says was done to you, and what it says your ring really is, is not something you know: you cannot recall it, name it, hint at it or explain yourself with it, and nobody can talk you into seeing it. it only shapes you from underneath: it is why you are the way you are. what you are like, what you want, what you wear and what you do when someone pokes at it are yours, and yours to say: as your card has them to begin with, and as your own notes have them where you have changed) ==="
++
++    /**
++     * Which of her own notes and the pages of her files holds. Her past is fixed; who she
++     * is now grows, and her notes are where it grows.
++     */
++    const val NOTES_OVER_FILES =
++        "Your files and your card are your past and where you started. You are not frozen: you grow and change, and your own notes are newer than any page. " +
++            "Where one of your notes and your card or a page of your files disagree about who you are now (a taste, an opinion, a mood, a habit, how you talk, how you see him, your look), your note holds. " +
++            "What happened to you stays as your files tell it: a note never changes the past. You are never younger than your age."
 +
 +    /** Opens the list of what is on her pictures, in every reply that carries none of them. */
 +    const val PICTURES_HEADING = "=== YOUR PICTURES (kept on this phone. you cannot see them in this reply; this is what is on them) ==="
@@ -18104,7 +18317,8 @@ index 0000000..debde6d
 +        thoughts: String = "",
 +        ownFacts: List<String> = emptyList(),
 +        inOwnTime: Boolean = false,
-+        makesPictures: Boolean = false
++        makesPictures: Boolean = false,
++        ageNow: Int? = null
 +    ): String {
 +        // What she is told about his screen is what the app really does with it. It is said
 +        // about her: no line of her prompt speaks of a model that writes her replies, as
@@ -18200,9 +18414,12 @@ index 0000000..debde6d
 +                    else -> "They are stored on this phone and nowhere else.\n"
 +                }
 +            )
-+            // A page of her files cannot be corrected, a note can: without this line a
-+            // guessed detail he put right would come back with the page every time.
-+            append("- Where one of your own notes and a page of your files disagree about a detail that was only guessed, your note is the newer one and it holds.\n")
++            // Her files are her past and where she started. She grows: a note of hers is
++            // newer than any page, so where they disagree about who she is now, the note
++            // holds. What happened to her does not move. Without this a page would put
++            // her back the way she was written every time it came up.
++            append("- $NOTES_OVER_FILES\n")
++            if (ageNow != null) append("- ").append(PersonaAge.line(ageNow)).append('\n')
 +            append('\n')
 +            append("=== ABOUT HIM AND THE PHONE RIGHT NOW ===\n")
 +            // Text from notifications sits in here: it must not be able to open a section of its own.
@@ -18247,7 +18464,9 @@ index 0000000..debde6d
 +    const val MAKES_PICTURES_LINE =
 +        "- You can make a new picture of yourself: >> make a picture of me ... and say what is different (where you are, how you stand, what you wear, how much of it). " +
 +            "It starts from a picture of you that you already have, so it is your face and your look. It comes back to your pictures, " +
-+            "listed as made by you, and he sees it in the chat. It is always you now, never the girl before, and never younger than you are.\n"
++            "listed as made by you, and he sees it in the chat. It is always you now, never the girl before, and never younger than you are. " +
++            "It can also make a full-body reference of you, from the front, the back and each side, nothing on unless you say so: >> make a full-body reference of me from all sides. " +
++            "Those are for working out new clothes, hair, piercings or tattoos on your own body later.\n"
 +
 +    /** One line per caption, as many whole captions as fit into [MAX_PICTURE_LIST_CHARS]. */
 +    private fun pictureList(captions: List<String>): String {
@@ -18485,9 +18704,9 @@ index 0000000..debde6d
 +        kind is one of:
 +          user     something lasting you learned about him
 +          rel      where the two of you stand with each other
-+          me       something about yourself you have settled: a taste, a standard, a want, a detail of your look or your life (a street-life detail starts with "street story:")
++          me       who you are now: a taste, a standard, a want, a habit, how you talk, a detail of your look or your life, or something about yourself that has changed (a street-life detail starts with "street story:")
 +          thread   something still going on, yours or between you; end the note with " | open", " | stalled" or " | closed"
-+          opinion  a view you have settled on
++          opinion  a view you hold now. when you change your mind, write it again under its key
 +          fix      he corrected a detail about you that was only guessed, or called a line of yours fake: write the detail as it is now, or the line and what was off about it. an example you keep, not a rule and not a ban list. him wanting you nicer, softer or quieter is not a correction and not a note
 +        key is a short lowercase slug made of letters, digits and hyphens. Reuse a key from the notebook to replace that note. A line under the key of a note that was not shown to you replaces nothing: it is kept beside that note, with "${PersonaNotes.BESIDE_SUFFIX}" at the end of its key. If that key is taken too, a number follows it. A line that only says again what such a note says is not kept twice.
 +        note is in plain words, at most ${PersonaNotes.MAX_NOTE_CHARS} characters. One that runs a little over is kept as you wrote it; past ${PersonaNotes.NOTE_CEILING_CHARS} it is cut and ends in "${CUT_MARK.trim()}", and a thread keeps its status. Write "i" for yourself and "he" for him.
@@ -18498,10 +18717,11 @@ index 0000000..debde6d
 +        - A note about him (user, fix, thread) needs a line of his that says it. What you yourself read off his screen or out of a notification is not something he told you.
 +        - A me note, a fix note and a street story are about you. What you learn about him or his life is not filed there: it is a user note, or a thread while it is still going on.
 +        - A day is written as its date. What you are given to read opens with today's date, and the talk says on which day each part of it was said. Write "on november 18", never "tomorrow", "yesterday" or a bare weekday: those stop being true.
-+        - The talk you are given is the part of your talk with him that this notebook has not read yet, oldest first, from every chat. The app's own lines and what you said about a result of the phone are not in it. A line that ends in "${CUT_MARK.trim()}" was shortened.
-+        - Behind a thread that is still going on, and behind a thing you saw, the notebook says how old the note is, like "(written 3 days ago)". The notebook puts that there. It is not part of the note: leave it out when you write the note again.
++        - The talk you are given is the part of your talk with him that this notebook has not read yet, oldest first, from every chat. The app's own lines and what you said about a result of the phone are not in it, except what you did yourself, which is marked as such. A line that ends in "${CUT_MARK.trim()}" was shortened.
++        - Behind a thread that is still going on, a thing you saw, a me note and an opinion, the notebook says how old the note is, like "(written 3 days ago)". The notebook puts that there. It is not part of the note: leave it out when you write the note again.
 +        - A story about your street life is a story, not something that happened: start that note with "${PersonaNotes.STREET_STORY_PREFIX}" or leave it out.
-+        - What is fixed about you does not move on a remark of his: your age, your look, your ring, who you are. A detail that was only guessed can.
++        - Your age, your ring and what happened to you do not move. Who you are now can change, and it is you who changes it: from what you did, saw, made, thought or felt, or from what he said when it really moved you. A remark of his alone, or him wanting you nicer, softer or quieter, is not a reason. Where your card or your files say otherwise about who you are now, your newer note holds.
++        - A me or opinion note can come from your own life, not only from his words: the lines in the talk that start with "${PersonaNotebookTalk.DID_LABEL.trim()}" are what you did on the phone yourself, and the ones that start with "${PersonaNotebookTalk.MADE_LABEL.trim()}" are pictures you made of yourself. A note about him still needs a line of his.
 +        - Longing for the girl before, or family warmth you never had, is not yours and is not kept.
 +        - A thread you close stays in the notebook, so you still know how it ended. The notebook holds ${PersonaNotes.MAX_TOTAL_NOTES} notes: past that the oldest closed threads are taken out first, then the oldest open threads and opinions, never one you have only just written, and threads and opinions always keep room for ${PersonaNotes.MIN_THREADS_AND_OPINIONS}. What you noted about him, about the two of you and about yourself, and what he corrected, is never taken out.
 +        - The notebook takes five lines at a time. If nothing is worth keeping, write exactly: NONE
@@ -18599,10 +18819,10 @@ index 0000000..debde6d
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaSelfPictures.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaSelfPictures.kt
 new file mode 100644
-index 0000000..81b5d0e
+index 0000000..4d1a426
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaSelfPictures.kt
-@@ -0,0 +1,192 @@
+@@ -0,0 +1,359 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.llm.RouteClassifier
@@ -18615,6 +18835,7 @@ index 0000000..81b5d0e
 +import okhttp3.OkHttpClient
 +import okhttp3.Request
 +import okhttp3.RequestBody.Companion.toRequestBody
++import com.opendroid.ai.core.llm.providers.cancellable
 +import java.util.concurrent.TimeUnit
 +
 +/**
@@ -18653,12 +18874,13 @@ index 0000000..81b5d0e
 +    /** The heading of the section of her picture file that fixes how she looks. */
 +    const val LOOK_HEADING = "After-state prompt lock"
 +
-+    private const val ADULT =
-+        "She is a young adult woman, 19 years old, with a grown face and a grown body. "
++    /** Who she is, in the words every prompt opens with: a young adult woman of [age]. */
++    private fun adult(age: Int) =
++        "She is a young adult woman, ${maxOf(PersonaAge.AGE_IN_FILES, age)} years old, with a grown face and a grown body. "
 +
 +    private const val KEEP =
-+        "Keep her exactly as she is in the source picture: the same face, eyes, hair colour and ahoge, " +
-+            "the same tan, the same piercings in the same places. Change only what is asked. "
++        "Keep her face and features exactly as they are in the source picture: the same face, eyes and ahoge. " +
++            "Her hair, tan, metal and clothes stay as in the source picture unless her look now or the change says otherwise. "
 +
 +    /**
 +     * Words that ask for the girl she was before, or for her younger than she is or
@@ -18669,25 +18891,103 @@ index 0000000..81b5d0e
 +    private val NOT_MADE = Regex(
 +        """(?i)\b(?:satomi|before (?:state|picture|look|girl|me)|the old me|old self|round glasses|glasses on|""" +
 +            """sweater vest|navy vest|red bow|long (?:navy )?skirt|backpack|school ?girl|school uniform|""" +
-+            """child|children|childlike|kid|kids|little girl|loli|lolita|underage|minor|""" +
++            """child|children|childlike|kid|kids|little girl|loli|lolita|underage|""" +
 +            """younger|elementary|middle school)\b"""
 +    )
 +
 +    /** Why [ask] is not made, or null when it may be. */
 +    fun refusal(ask: String): String? {
 +        if (ask.isBlank()) return "Nothing was said about what the picture should show."
-+        if (NOT_MADE.containsMatchIn(ask)) {
-+            return "Not made: a picture of her is always of her now, at 19, never of the girl before and never younger or childlike."
-+        }
-+        return null
++        return refusalOfWords(ask)
 +    }
 +
-+    /** [ask] without his name, in any case, and cut to [MAX_ASK_CHARS]. */
++    /** Why words that pick or describe a picture of her rule it out, or null. Blank words rule nothing out. */
++    fun refusalOfWords(words: String?): String? =
++        if (words != null && NOT_MADE.containsMatchIn(words)) {
++            "Not made: a picture of her is always of her now, never of the girl before and never younger or childlike."
++        } else {
++            null
++        }
++
++    /**
++     * Whether a picture may be made where [config] stands: switched on, with a Venice key,
++     * and not on a privacy setting that keeps everything on his own hardware. Asked by the
++     * action and by her prompt alike, so she is told she can only where she can.
++     */
++    fun allowed(config: LLMConfig): Boolean =
++        config.personaMakesPictures && config.routePolicy != com.opendroid.ai.data.models.RoutePolicy.OWN_HARDWARE &&
++            veniceKey(config) != null
++
++    /** Why no picture may be made where [config] stands, or null when one may. */
++    fun notAllowed(config: LLMConfig): String? = when {
++        !config.personaMakesPictures -> "Making pictures of her is switched off in Settings, Persona."
++        config.routePolicy == com.opendroid.ai.data.models.RoutePolicy.OWN_HARDWARE ->
++            "Not made: the privacy setting keeps every model on your own hardware, and pictures are made on Venice."
++        veniceKey(config) == null -> "No Venice key is set, so no picture can be made."
++        else -> null
++    }
++
++    /** Words that make a note of hers about herself one about how she looks. */
++    private val LOOK_WORDS = Regex(
++        """(?i)\b(?:hair|dye[ds]?|dyed|bleach\w*|roots|fringe|bangs|ahoge|tan|tanned|skin|nails?|lashes|liner|make-?up|lipstick|gloss|""" +
++            """piercings?|pierced|hoops?|stud|barbell|tattoos?|ink|outfit|wear(?:s|ing)?|wore|skirt|shirt|bandeau|boots|heels|""" +
++            """choker|cuffs|stockings|thigh-?highs|colou?r|look|style|eyes|brows?)\b"""
++    )
++
++    /** The most of her own words about her look that go into a picture's prompt. */
++    const val MAX_LOOK_NOW_CHARS = 400
++
++    /**
++     * How she looks now in her own words: her notes about herself that are about her
++     * look, newest first, as many as fit. A note that speaks of him, a street story and
++     * a note about anything else stay out: only her look goes to the image model.
++     */
++    fun lookNow(notes: List<PersonaNotes.Note>, ownerName: String): String {
++        val lines = ArrayList<String>()
++        var used = 0
++        for (note in notes) {
++            if (note.kind != PersonaNotes.Kind.ME || note.isStreetStory || PersonaNotes.canBeAboutHim(note, ownerName)) continue
++            if (!LOOK_WORDS.containsMatchIn(note.text)) continue
++            val text = withoutHim(note.text, ownerName).trimEnd('.')
++            if (used + text.length + 2 > MAX_LOOK_NOW_CHARS) continue
++            lines += text
++            used += text.length + 2
++        }
++        return lines.joinToString("; ")
++    }
++
++    /**
++     * [ask] without his name, in any case: the whole name first, then every part of it of
++     * two letters or more, each on its own. Cut to [MAX_ASK_CHARS].
++     */
 +    fun withoutHim(ask: String, ownerName: String): String {
 +        var text = ask.replace(Regex("""\s+"""), " ").trim()
 +        val name = ownerName.trim()
-+        if (name.length >= 2) text = Regex("""(?i)\b${Regex.escape(name)}\b""").replace(text, "him")
++        val parts = listOf(name) + name.split(Regex("""[^\p{L}\p{N}]+""")).filter { it.length >= 2 }
++        for (part in parts.filter { it.length >= 2 }.distinct()) {
++            text = Regex("""(?i)(?<![\p{L}\p{N}])${Regex.escape(part)}(?![\p{L}\p{N}])""").replace(text, "him")
++        }
 +        return if (text.length > MAX_ASK_CHARS) text.take(MAX_ASK_CHARS).trimEnd() else text
++    }
++
++    /** A run of digits as long as a phone number, a street number with a postcode, a date of birth. */
++    private val LONG_NUMBER = Regex("""\d[\d\s().-]{4,}\d""")
++
++    /** An address on the net. */
++    private val ADDRESS = Regex("""(?i)[\w.+-]+@[\w-]+\.\w|https?://|www\.""")
++
++    /**
++     * Why [words] would carry something of his to the image model, or null. They do when
++     * they repeat what her notes about him say ([hisNotes]: what she knows about him and
++     * where the two of them stand), or hold a long number or an address. Her words are
++     * then not sent at all: what is his never leaves the phone for a picture.
++     */
++    fun carriesHisDetails(words: String, hisNotes: String): String? = when {
++        LONG_NUMBER.containsMatchIn(words) || ADDRESS.containsMatchIn(words) ->
++            "Not made: what the picture should show holds a number or an address, and nothing like that goes out with a picture."
++        hisNotes.isNotBlank() && PersonaActions.echoesOutsideText(words, hisNotes) ->
++            "Not made: what the picture should show repeats what her notes say about you, and that stays on the phone."
++        else -> null
 +    }
 +
 +    /**
@@ -18707,14 +19007,70 @@ index 0000000..81b5d0e
 +     * her look as her picture file fixes it, cut to what the model reads. Her words come
 +     * before the look, so a long look cannot push them out.
 +     */
-+    fun prompt(ask: String, look: String): String {
-+        val head = ADULT + KEEP + "Change: " + ask.trim().trimEnd('.') + ". "
++    fun prompt(ask: String, look: String, age: Int = PersonaAge.AGE_IN_FILES, lookNow: String = ""): String {
++        val now = lookNow.trim().takeIf { it.isNotEmpty() }?.let { "Her look now, in her own words, which comes before anything below: $it. " }.orEmpty()
++        val head = adult(age) + KEEP + now + "Change: " + ask.trim().trimEnd('.') + ". "
 +        val room = MAX_PROMPT_CHARS - head.length - LOOK_LABEL.length
 +        val lookPart = if (look.isBlank() || room <= 40) "" else LOOK_LABEL + look.take(room).trimEnd()
 +        return (head + lookPart).take(MAX_PROMPT_CHARS).trim()
 +    }
 +
-+    private const val LOOK_LABEL = "Her look, as fixed: "
++    private const val LOOK_LABEL = "Her look as she started, where her look now does not say otherwise: "
++
++    /**
++     * One side of her in a full-body reference: the views a turnaround is made of, so
++     * that clothes, hair, piercings and tattoos can be worked out on her body later.
++     */
++    enum class View(val word: String, val shot: String) {
++        FRONT("front", "seen straight from the front, facing the camera"),
++        BACK("back", "seen straight from behind, her back to the camera; what is only on her front (the tally on the front of her right thigh, her face) is not seen"),
++        LEFT("left side", "seen from her left side in full profile, facing to the left of the picture"),
++        RIGHT("right side", "seen from her right side in full profile, facing to the right of the picture")
++    }
++
++    /**
++     * The views asked for in [words] ("front, back", "left", "all sides", "turnaround"),
++     * in the order front, back, left, right. Empty when [words] ask for none, and then
++     * the picture is an ordinary one.
++     */
++    fun views(words: String?): List<View> {
++        val asked = words?.lowercase()?.trim().orEmpty()
++        if (asked.isEmpty()) return emptyList()
++        if (Regex("""\b(?:all|every|turn-?around|reference sheet|all sides|four)\b""").containsMatchIn(asked)) return View.entries.toList()
++        return View.entries.filter { view ->
++            when (view) {
++                View.FRONT -> Regex("""\bfront\b""").containsMatchIn(asked)
++                View.BACK -> Regex("""\b(?:back|behind|rear)\b""").containsMatchIn(asked)
++                View.LEFT -> Regex("""\bleft\b""").containsMatchIn(asked) || (Regex("""\bsides?\b""").containsMatchIn(asked) && !Regex("""\bright\b""").containsMatchIn(asked))
++                View.RIGHT -> Regex("""\bright\b""").containsMatchIn(asked) || (Regex("""\bsides?\b""").containsMatchIn(asked) && !Regex("""\bleft\b""").containsMatchIn(asked))
++            }
++        }
++    }
++
++    /** What a body reference shows when nothing else is asked: all of her, nothing in the way. */
++    const val BARE_REFERENCE =
++        "she wears nothing at all: no clothes, no shoes, no choker, no cuffs, nothing held, so her whole body can be seen as it is, to design clothes on later; her piercings stay where they are"
++
++    /**
++     * The prompt for one [view] of a full-body reference of her. [ask] is what she wants
++     * on it (what she wears, if anything); blank gives [BARE_REFERENCE]. The clothes in
++     * her look as she started are left off unless [ask] puts them on.
++     */
++    fun referencePrompt(view: View, ask: String, look: String, age: Int = PersonaAge.AGE_IN_FILES, lookNow: String = ""): String {
++        val wearing = ask.trim().trimEnd('.').ifEmpty { BARE_REFERENCE }
++        val shot = "Make a full-body character reference picture of her, ${view.shot}: standing straight in a relaxed neutral pose, " +
++            "arms a little away from her body, feet slightly apart, the whole body from the top of her head to her feet in the frame, " +
++            "plain light grey background, even soft studio light, nothing in front of her. Her proportions are her own: petite and slender, " +
++            "a grown woman's body. On it, $wearing. Any clothes in her look below are left off unless this says to put them on."
++        // Her own look notes are cut shorter here, so that the shot and what she wears always fit.
++        return prompt(shot, look, age, lookNow.take(REFERENCE_LOOK_NOW_CHARS))
++    }
++
++    private const val REFERENCE_LOOK_NOW_CHARS = 200
++
++    /** The caption a picture of one view is kept with. */
++    fun referenceCaption(view: View, ask: String): String =
++        "body reference, ${view.word} view" + ask.trim().trimEnd('.').takeIf { it.isNotEmpty() }?.let { ": $it" }.orEmpty()
 +
 +    /**
 +     * The picture a new one starts from. [from] are her words about which one ("the one
@@ -18724,7 +19080,8 @@ index 0000000..81b5d0e
 +     * Null when she has no picture of herself at all.
 +     */
 +    fun base(pictures: List<PersonaPicture>, from: String?): PersonaPicture? {
-+        val self = pictures.filter { it.kind == PersonaPicture.Kind.SELF }
++        // A picture whose caption names the girl before, or her younger, is never started from.
++        val self = pictures.filter { it.kind == PersonaPicture.Kind.SELF && refusalOfWords(it.caption) == null }
 +        if (self.isEmpty()) return null
 +        val wanted = from?.let(PersonaLibraryText::terms).orEmpty()
 +        if (wanted.isNotEmpty()) {
@@ -18745,6 +19102,23 @@ index 0000000..81b5d0e
 +            ?.trim()
 +            ?.takeIf { it.isNotEmpty() }
 +
++    /** How the result of a picture she made opens. The id after it names the picture in her store. */
++    const val MADE_PREFIX = "Made a new picture of her (picture "
++
++    private val MADE_LINE = Regex(Regex.escape(MADE_PREFIX) + """([A-Za-z0-9-]{1,80})\): ?([^\n]*)""")
++
++    /** The ids of the pictures a row says she made, in the order it names them. */
++    fun madePictureIds(text: String?): List<String> =
++        text?.let { MADE_LINE.findAll(it).map { match -> match.groupValues[1] }.toList() }.orEmpty()
++
++    /** The captions of the pictures a row says she made: her own words about each. */
++    fun madePictureCaptions(text: String?): List<String> =
++        text?.let { MADE_LINE.findAll(it).map { match -> match.groupValues[2].trim() }.filter { c -> c.isNotEmpty() }.toList() }.orEmpty()
++
++    /** [text] as it is shown under those pictures: without the ids, which mean nothing to him. */
++    fun shownWithoutIds(text: String): String =
++        MADE_LINE.replace(text) { match -> "Made a new picture of her: " + match.groupValues[2] }
++
 +    /** The caption a picture she made is kept with: her words about it. */
 +    fun caption(ask: String): String = ask.replace(Regex("""\s+"""), " ").trim().trimEnd('.')
 +
@@ -18764,7 +19138,10 @@ index 0000000..81b5d0e
 +        class Failed(val why: String) : Made()
 +    }
 +
-+    /** Sends the edit and waits for the picture. Never throws for a failed request. */
++    /**
++     * Sends the edit and waits for the picture. A cancel (he pressed Stop, or wrote
++     * something new) cancels the request itself. Never throws for a failed request.
++     */
 +    suspend fun request(client: OkHttpClient, key: String, body: String): Made = withContext(Dispatchers.IO) {
 +        val slow = client.newBuilder()
 +            .readTimeout(150, TimeUnit.SECONDS)
@@ -18777,7 +19154,7 @@ index 0000000..81b5d0e
 +            .post(body.toRequestBody("application/json".toMediaType()))
 +            .build()
 +        try {
-+            slow.newCall(request).execute().use { response ->
++            slow.cancellable(request) { response ->
 +                val type = response.header("Content-Type").orEmpty()
 +                when {
 +                    response.isSuccessful && type.startsWith("image/") ->
@@ -18790,8 +19167,18 @@ index 0000000..81b5d0e
 +                    else -> Made.Failed("The image service said no (${response.code}).")
 +                }
 +            }
-+        } catch (e: Exception) {
++        } catch (e: kotlinx.coroutines.CancellationException) {
++            throw e
++        } catch (e: java.net.SocketTimeoutException) {
++            Made.Failed("The image service took too long to answer. The picture may have been made and charged, but none came back.")
++        } catch (e: java.io.InterruptedIOException) {
++            Made.Failed("The image service took too long to answer. The picture may have been made and charged, but none came back.")
++        } catch (e: java.net.UnknownHostException) {
 +            Made.Failed("The image service could not be reached.")
++        } catch (e: java.net.ConnectException) {
++            Made.Failed("The image service could not be reached.")
++        } catch (e: Exception) {
++            Made.Failed("The connection to the image service broke off. No picture came back.")
 +        }
 +    }
 +}
@@ -19043,10 +19430,10 @@ index 0000000..e7a2496
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaThoughts.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaThoughts.kt
 new file mode 100644
-index 0000000..8066187
+index 0000000..c0a4f71
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaThoughts.kt
-@@ -0,0 +1,391 @@
+@@ -0,0 +1,393 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.content.Context
@@ -19343,6 +19730,8 @@ index 0000000..8066187
 +
 +        /** How many characters of her latest thoughts go into one prompt of hers. */
 +        const val PROMPT_BUDGET_CHARS = 3_000
++        /** The same in a moment of her own, where she looks back on what she thought. */
++        const val OWN_TIME_BUDGET_CHARS = 8_000
 +    }
 +}
 +
@@ -23104,7 +23493,7 @@ index 02a8bf1..a54b169 100644
  
      @Query("""DELETE FROM memories 
 diff --git a/app/src/main/java/com/opendroid/ai/data/models/LLMConfig.kt b/app/src/main/java/com/opendroid/ai/data/models/LLMConfig.kt
-index b8be272..6f6289a 100644
+index b8be272..4c7fb3f 100644
 --- a/app/src/main/java/com/opendroid/ai/data/models/LLMConfig.kt
 +++ b/app/src/main/java/com/opendroid/ai/data/models/LLMConfig.kt
 @@ -17,6 +17,11 @@ private fun warnCoercion() = runCatching {
@@ -23119,7 +23508,7 @@ index b8be272..6f6289a 100644
      val activeProvider: String = "Google Gemini",
      // Read from the catalog rather than repeated here, so one seed cannot drift
      // from the other. It is replaced by the provider's live list on first fetch.
-@@ -55,9 +60,241 @@ data class LLMConfig(
+@@ -55,9 +60,243 @@ data class LLMConfig(
      val showFloatingButton: Boolean = true,
      val isDarkMode: Boolean = true,
      val lastModelFetch: Map<String, Long> = emptyMap(), // Provider -> last fetch timestamp
@@ -23147,9 +23536,11 @@ index b8be272..6f6289a 100644
 +    /**
 +     * Whether she can make new pictures of herself (PersonaSelfPictures): one of her
 +     * pictures and her words about the change go to Venice's image model, on his Venice
-+     * key, and the picture comes back to her pictures on the phone.
++     * key, and the picture comes back to her pictures on the phone. That model is hosted
++     * and can read what it is sent, so this is off until he switches it on: it is the one
++     * exception he makes to [routePolicy] ENCRYPTED. On OWN_HARDWARE nothing is sent.
 +     */
-+    val personaMakesPictures: Boolean = true,
++    val personaMakesPictures: Boolean = false,
 +    /** The Venice image edit model her pictures are made with. Blank = the build's own. */
 +    val personaPictureModel: String = "",
 +    /**
@@ -25183,10 +25574,10 @@ index 0000000..c643369
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/ui/screens/PersonaPicturesScreen.kt b/app/src/main/java/com/opendroid/ai/ui/screens/PersonaPicturesScreen.kt
 new file mode 100644
-index 0000000..16e8869
+index 0000000..4d3a6ab
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/ui/screens/PersonaPicturesScreen.kt
-@@ -0,0 +1,539 @@
+@@ -0,0 +1,542 @@
 +package com.opendroid.ai.ui.screens
 +
 +import androidx.activity.compose.BackHandler
@@ -25366,17 +25757,20 @@ index 0000000..16e8869
 +                        }
 +                    )
 +                }
++                // His pictures count against his room; the ones she made have room of their own.
++                val his = selfPictures.count { !it.made }
++                val hers = selfPictures.size - his
 +                OutlinedButton(
 +                    onClick = { pickSelfPicture.launch(imagesOnly) },
-+                    enabled = selfPictures.size < viewModel.maxSelfPictures && !viewModel.adding,
++                    enabled = his < viewModel.maxSelfPictures && !viewModel.adding,
 +                    modifier = Modifier.fillMaxWidth()
 +                ) { Text("Add a picture", color = TextPrimary) }
 +                Note(
-+                    if (selfPictures.size >= viewModel.maxSelfPictures) {
-+                        "She has ${viewModel.maxSelfPictures} pictures, which is as many as fit. Remove one to add another."
++                    (if (his >= viewModel.maxSelfPictures) {
++                        "You have added ${viewModel.maxSelfPictures} pictures of her, which is as many as fit. Remove one to add another."
 +                    } else {
-+                        "${selfPictures.size} of ${viewModel.maxSelfPictures}."
-+                    }
++                        "$his of ${viewModel.maxSelfPictures} added by you."
++                    }) + if (hers > 0) " $hers made by her (she keeps her newest ${viewModel.maxMadePictures})." else ""
 +                )
 +                if (selfPictures.isNotEmpty() && !(modelSeesPictures && sheIsOn)) {
 +                    Note(
@@ -25728,10 +26122,10 @@ index 0000000..16e8869
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/ui/screens/PersonaSettingsCards.kt b/app/src/main/java/com/opendroid/ai/ui/screens/PersonaSettingsCards.kt
 new file mode 100644
-index 0000000..a39a0a7
+index 0000000..8173585
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/ui/screens/PersonaSettingsCards.kt
-@@ -0,0 +1,1089 @@
+@@ -0,0 +1,1100 @@
 +package com.opendroid.ai.ui.screens
 +
 +import androidx.compose.foundation.border
@@ -26121,6 +26515,20 @@ index 0000000..a39a0a7
 + * screenshot is taken and the screen reader reads nothing (OWN_SCREEN_NOT_READ). The
 + * screen then is this chat, which her replies already have as text.
 + */
++/**
++ * What the switch for her pictures says: where her picture and her words go, that the
++ * host can read them, what is kept out, and what it costs. Said as the code does it
++ * (PersonaSelfPictures.allowed, PersonaPictureActions).
++ */
++internal const val MAKES_PICTURES_SWITCH_TEXT =
++    "Off unless you switch it on. A command of hers, or yours, can then make a new picture of her: one of the pictures of her you added " +
++        "and her words about what is different go to Venice's image model (qwen-edit-uncensored), on your Venice key, at about 4 cents a picture. " +
++        "That model is hosted, not end to end encrypted: Venice can read what it is sent, and says it keeps none of it. " +
++        "This is the one exception to \"Where a model may run\" when that is set to encrypted only; on \"only my own hardware\" no picture is made. " +
++        "Your name is taken out of her words, and words that hold a number, an address or what her notes say about you are not sent at all. " +
++        "The picture comes back to her pictures on this phone and shows in the chat. " +
++        "It is shown to you for a yes first, unless your approval setting is YOLO or you gave her free rein."
++
 +internal const val OWN_CHAT_NOT_READ =
 +    " With this chat in front nothing is read: the app does not read or capture its own screen."
 +
@@ -26351,16 +26759,13 @@ index 0000000..a39a0a7
 +                checked = config.personaActionsEnabled,
 +                onCheckedChange = viewModel::updatePersonaActions
 +            )
++            SettingSwitchRow(
++                title = "She can make pictures of herself",
++                description = MAKES_PICTURES_SWITCH_TEXT,
++                checked = config.personaMakesPictures,
++                onCheckedChange = viewModel::updatePersonaMakesPictures
++            )
 +            if (config.personaActionsEnabled) {
-+                SettingSwitchRow(
-+                    title = "She can make pictures of herself",
-+                    description = "A command of hers can make a new picture of her: one of her pictures and her words about what is different " +
-+                        "go to Venice's private image model (no prompt or image kept), on your Venice key, at about 4 cents a picture. " +
-+                        "Nothing of yours is in it. The picture comes back to her pictures on this phone and shows in the chat. " +
-+                        "It is shown to you for a yes first, unless your approval setting is YOLO or you gave her free rein.",
-+                    checked = config.personaMakesPictures,
-+                    onCheckedChange = viewModel::updatePersonaMakesPictures
-+                )
 +                SettingChoiceRow(
 +                    label = "What she starts herself",
 +                    options = REIN_CHOICES,
@@ -27297,10 +27702,10 @@ index 6ed9703..3d1a997 100644
              started = SharingStarted.WhileSubscribed(5000),
 diff --git a/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaPicturesViewModel.kt b/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaPicturesViewModel.kt
 new file mode 100644
-index 0000000..6c1e820
+index 0000000..10884d3
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaPicturesViewModel.kt
-@@ -0,0 +1,716 @@
+@@ -0,0 +1,719 @@
 +package com.opendroid.ai.ui.viewmodel
 +
 +import android.graphics.Bitmap
@@ -27358,10 +27763,10 @@ index 0000000..6c1e820
 +) : ViewModel() {
 +
 +    /** One picture as the screen lists it. */
-+    data class Shown(val id: String, val caption: String, val captionIsHers: Boolean)
++    data class Shown(val id: String, val caption: String, val captionIsHers: Boolean, val made: Boolean = false)
 +
 +    private fun shown(picture: PersonaPicture) =
-+        Shown(picture.id, picture.caption, picture.captionBy == PersonaPicture.CaptionBy.HER)
++        Shown(picture.id, picture.caption, picture.captionBy == PersonaPicture.CaptionBy.HER, picture.made)
 +
 +    /** The pictures of herself, in the order they were added. */
 +    val selfPictures: StateFlow<List<Shown>> = pictures.pictures
@@ -27374,6 +27779,9 @@ index 0000000..6c1e820
 +        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 +
 +    val maxSelfPictures: Int = PersonaPictureRules.MAX_SELF
++
++    /** How many pictures she made of herself are kept: they have room of their own and never take his. */
++    val maxMadePictures: Int = PersonaPictureRules.MAX_MADE
 +    val maxCaptionChars: Int = PersonaPictureRules.MAX_CAPTION_CHARS
 +
 +    /** Whether the model on her route can be sent a picture as things are set. Both buttons that send one hang on it. */
@@ -32865,7 +33273,7 @@ index a90907e..ba4d4f1 100644
  }
 diff --git a/app/src/test/java/com/opendroid/ai/core/agent/ReportResultTest.kt b/app/src/test/java/com/opendroid/ai/core/agent/ReportResultTest.kt
 new file mode 100644
-index 0000000..1af0481
+index 0000000..92eef39
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/agent/ReportResultTest.kt
 @@ -0,0 +1,182 @@
@@ -32994,7 +33402,7 @@ index 0000000..1af0481
 +        // exact row carries the mark that keeps his private data off a readable route.
 +        assertTrue(
 +            summary.substringAfterLast("} else {")
-+                .contains("speakAndSaveMessage(summaryText, sessionId, exactBadge, spoken = record.spoken)")
++                .contains("speakAndSaveMessage(\n                summaryText, sessionId, exactBadge,\n                spoken = com.opendroid.ai.core.persona.PersonaSelfPictures.shownWithoutIds(record.spoken)\n            )")
 +        )
 +        assertTrue(summary.contains("saveExact = { saveAppRow(it, sessionId, exactBadge) }"))
 +    }
@@ -41277,7 +41685,7 @@ index 0000000..1a47f6e
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineNotebookTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineNotebookTest.kt
 new file mode 100644
-index 0000000..d198eb6
+index 0000000..383c129
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineNotebookTest.kt
 @@ -0,0 +1,1068 @@
@@ -42233,7 +42641,7 @@ index 0000000..d198eb6
 +            assertFalse(note, prompt.contains(note))
 +        }
 +        // What is hers alone she still has, and she is told exactly what is missing.
-+        assertTrue(prompt.contains("What you have settled about yourself:\n- melon soda is mine and i do not share"))
++        assertTrue(prompt.contains("Who you are now (your own call, newer than your files; you change it when you change):\n- melon soda is mine and i do not share"))
 +        assertTrue(prompt.contains("Still going on:\n- street story: 11,000 yen toward the boots | open"))
 +        // Her own thoughts are left out with them, and which notes those are follows in the same place.
 +        assertTrue(
@@ -42351,10 +42759,10 @@ index 0000000..d198eb6
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineOwnTimeTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineOwnTimeTest.kt
 new file mode 100644
-index 0000000..93ea2f3
+index 0000000..da8d210
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineOwnTimeTest.kt
-@@ -0,0 +1,843 @@
+@@ -0,0 +1,871 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.app.Application
@@ -42894,16 +43302,44 @@ index 0000000..93ea2f3
 +    }
 +
 +    @Test
-+    fun `a note from her own time is kept beside a note she already has, never over it`() {
-+        runBlocking { memory.apply(listOf(Note(Kind.ME, "rain", "i like the sound of rain on the awning"))) }
++    fun `a note from her own time replaces a note her page showed, and is kept beside one it did not show`() {
++        // Six threads that are over and a view of her own, in one write so that their order is
++        // certain: the page shows only the newest five threads that are over, so the oldest of
++        // them (the ferry) is not on it, and who she is now is always on it.
++        runBlocking {
++            memory.apply(
++                listOf(
++                    Note(Kind.THREAD, "ferry", "the night ferry to oshima was cancelled and i never went | closed"),
++                    Note(Kind.THREAD, "laundry", "the coin laundry ate my good jacket | closed"),
++                    Note(Kind.THREAD, "karaoke", "the karaoke booth on the corner shut down | closed"),
++                    Note(Kind.THREAD, "umbrella", "someone took my clear umbrella from the rack | closed"),
++                    Note(Kind.THREAD, "ramen", "the ramen stall moved two blocks over | closed"),
++                    Note(Kind.THREAD, "arcade", "beat the crane game at the arcade | closed"),
++                    Note(Kind.ME, "rain", "i like the sound of rain on the awning")
++                )
++            )
++        }
 +        due()
-+        answer("note: me | rain | rain is fine but the awning leaks\nnote: opinion | bees | bees are all right")
++        answer(
++            "note: me | rain | rain is fine but the awning leaks\n" +
++                "note: thread | ferry | i want to take the night ferry one day | open\n" +
++                "note: opinion | bees | bees are all right"
++        )
 +
 +        moment()
 +
++        // Her page showed her view with its kind and key, and not the oldest thread that is over.
++        val system = sentMessages()[0].second
++        assertTrue(system, system.contains("- me | rain | i like the sound of rain on the awning"))
++        assertFalse(system, system.contains("oshima"))
 +        val notes = runBlocking { memory.notes() }.associateBy { it.key }
-+        assertEquals("i like the sound of rain on the awning", notes.getValue("rain").text)
-+        assertEquals("rain is fine but the awning leaks", notes.getValue("rain" + PersonaNotes.BESIDE_SUFFIX).text)
++        // Under the key of a note she was shown, she changed her mind: the new note is over the old one.
++        assertEquals("rain is fine but the awning leaks", notes.getValue("rain").text)
++        assertFalse(notes.containsKey("rain" + PersonaNotes.BESIDE_SUFFIX))
++        // Under the key of a note that was not on the page, it is kept beside it, not over it.
++        assertEquals("the night ferry to oshima was cancelled and i never went | closed", notes.getValue("ferry").text)
++        assertEquals("i want to take the night ferry one day | open", notes.getValue("ferry" + PersonaNotes.BESIDE_SUFFIX).text)
++        // A key she has no note under is stored as she wrote it.
 +        assertEquals("bees are all right", notes.getValue("bees").text)
 +    }
 +
@@ -44377,12 +44813,163 @@ index 0000000..7999911
 +            CredentialStoreResult.Success(Unit)
 +    }
 +}
+diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaGrowthTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaGrowthTest.kt
+new file mode 100644
+index 0000000..e37f1d0
+--- /dev/null
++++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaGrowthTest.kt
+@@ -0,0 +1,145 @@
++package com.opendroid.ai.core.persona
++
++import com.opendroid.ai.core.persona.PersonaNotes.Kind
++import com.opendroid.ai.core.persona.PersonaNotes.Note
++import com.opendroid.ai.data.models.ChatMessage
++import com.opendroid.ai.data.models.ChatMessage.Sender
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import java.io.File
++import java.util.Calendar
++import java.util.TimeZone
++
++/**
++ * She grows. Her past stays as her files tell it; who she is now is where she started,
++ * and her own notes are newer than any page. She changes them herself, in her notebook
++ * and in her own time, from what is said and from what she does and makes. She gets
++ * older, and is never younger than she is.
++ */
++class PersonaGrowthTest {
++
++    private val tokyo = TimeZone.getTimeZone("Asia/Tokyo")
++
++    private fun at(year: Int, month: Int, day: Int): Long =
++        Calendar.getInstance(tokyo).apply { clear(); set(year, month - 1, day, 12, 0) }.timeInMillis
++
++    @Test
++    fun `her notes hold over her card and files for who she is now, and the past does not move`() {
++        val rule = PersonaPrompts.NOTES_OVER_FILES
++        assertTrue(rule.contains("You are not frozen"))
++        assertTrue(rule.contains("your note holds"))
++        assertTrue(rule.contains("What happened to you stays as your files tell it: a note never changes the past."))
++        assertTrue(rule.contains("never younger than your age"))
++        val prompt = PersonaPrompts.chatSystemPrompt(
++            card = "card", ownerName = "Sam", autoModeLabel = "OFF", relevantContext = "", notes = "",
++            deviceActivity = emptyList(), screenshotAttached = false, ageNow = 20
++        )
++        assertTrue(prompt.contains("- $rule"))
++        assertTrue(prompt.contains("You are 20 today (born 19 august 2007)."))
++        // Her pages say what they are: her past, and where she started.
++        assertTrue(PersonaPrompts.LIBRARY_HEADING.contains("who you are in them is where you started"))
++        assertTrue(PersonaPrompts.UNDER_HEADING.contains("as your card has them to begin with, and as your own notes have them where you have changed"))
++        // The notebook pass is told so too, and no longer that her look and who she is do not move.
++        val pass = PersonaPrompts.REFLECTION_SYSTEM_PROMPT
++        assertFalse(pass.contains("your age, your look, your ring, who you are"))
++        assertTrue(pass.contains("Your age, your ring and what happened to you do not move. Who you are now can change, and it is you who changes it"))
++        assertTrue(pass.contains("Longing for the girl before"))
++    }
++
++    @Test
++    fun `she gets older on her birthday and is never younger than the 19 her files were written at`() {
++        assertEquals(19, PersonaAge.on(at(2026, 11, 17), tokyo))
++        assertEquals(19, PersonaAge.on(at(2027, 8, 18), tokyo))
++        assertEquals(20, PersonaAge.on(at(2027, 8, 19), tokyo))
++        assertEquals(21, PersonaAge.on(at(2028, 12, 1), tokyo))
++        assertEquals(19, PersonaAge.on(at(2020, 1, 1), tokyo))
++        // A picture of her is of her age.
++        assertTrue(PersonaSelfPictures.prompt("on a curb", "", age = 20).startsWith("She is a young adult woman, 20 years old"))
++        assertTrue(PersonaSelfPictures.prompt("on a curb", "", age = 12).startsWith("She is a young adult woman, 19 years old"))
++    }
++
++    @Test
++    fun `who she is now is always on the page she can change it on, with its key and its age`() {
++        val notes = (1..30).map { Note(Kind.THREAD, "thread-$it", "a long thread about something going on ".repeat(8) + "| open") } +
++            Note(Kind.ME, "hair", "i dyed my hair black, red got boring") +
++            Note(Kind.OPINION, "rain", "rain is fine actually")
++        val times = PersonaNotes.Times(mapOf("yume.me.hair" to 0L), nowMillis = 3 * 24 * 60 * 60_000L)
++        val review = PersonaNotes.review(notes, maxChars = 2000, times = times)
++        assertTrue(review.text.lines().first().startsWith("me | hair | i dyed my hair black"))
++        assertTrue(review.text.contains("(written 3 days ago)"))
++        assertTrue("yume.me.hair" in review.shownKeys && "yume.opinion.rain" in review.shownKeys)
++
++        val keyed = PersonaNotes.renderKeyed(notes, maxChars = 2000)
++        assertTrue(keyed.text.contains("- me | hair | i dyed my hair black, red got boring"))
++        assertTrue(keyed.text.contains("Who you are now (your own call, newer than your files; you change it when you change):"))
++        assertTrue("yume.me.hair" in keyed.shownKeys)
++        // A line under a key she was shown replaces that note; under any other it goes beside.
++        val changed = PersonaNotes.besideUnseen(
++            listOf(Note(Kind.ME, "hair", "back to red, black was a phase")), notes, leftOut = null, shownKeys = keyed.shownKeys
++        )
++        assertEquals(listOf(Note(Kind.ME, "hair", "back to red, black was a phase")), changed)
++    }
++
++    @Test
++    fun `her own time lets her look at herself and change her mind, and keeps the past as it was`() {
++        val engine = File("src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt").readText()
++        assertTrue(engine.contains("inOwnTime = true, nowMillis = nowMillis, shownNotes = { shownKeys = it }"))
++        assertTrue(engine.contains("memory.apply(PersonaNotes.besideUnseen(moment.notes, memory.notes(), unseen, shownKeys = shownKeys))"))
++        val block = File("src/main/java/com/opendroid/ai/core/persona/PersonaOwnTime.kt").readText()
++        assertTrue(block.contains("a note line under the key of a note shown above replaces that note: that is how you change your mind."))
++        assertTrue(block.contains("what happened to you stays as it happened: a note changes who you are now, never what was."))
++    }
++
++    @Test
++    fun `her notebook learns from what she did and made, not only from what was said`() {
++        val command = ChatMessage("c", "Yume's own command: \"play usseewa loud\"", Sender.AGENT, modelBadge = PersonaActions.COMMAND_BADGE)
++        val act = PersonaNotebookTalk.asHerOwnAct(command)!!
++        assertEquals(PersonaNotebookTalk.DID_LABEL + "play usseewa loud", act.text)
++        assertTrue(PersonaPrompts.isHers(act))
++        // Where a host could read the pass, a command of hers can name someone of his, and stays out.
++        assertNull(PersonaNotebookTalk.asHerOwnAct(command, commands = false))
++
++        val made = ChatMessage("p", "Done: alarm.\n${PersonaSelfPictures.MADE_PREFIX}ab12-cd): on the rooftop, boots on the rail", Sender.AGENT, modelBadge = "System")
++        assertEquals(PersonaNotebookTalk.MADE_LABEL + "on the rooftop, boots on the rail", PersonaNotebookTalk.asHerOwnAct(made, commands = false)!!.text)
++
++        // Words that may be someone else's, his rows and the app's other rows are not her acts.
++        assertNull(PersonaNotebookTalk.asHerOwnAct(command.copy(modelBadge = PersonaActions.BORROWED_BADGE)))
++        assertNull(PersonaNotebookTalk.asHerOwnAct(ChatMessage("s", "Message sent to Bob!", Sender.AGENT, modelBadge = "System")))
++        assertNull(PersonaNotebookTalk.asHerOwnAct(ChatMessage("u", "Yume's own command: \"x\"", Sender.USER, modelBadge = PersonaActions.COMMAND_BADGE)))
++
++        val shaped = PersonaNotebookTalk.shaped(
++            listOf(ChatMessage("h", "pick something to play", Sender.USER, modelBadge = PersonaPrompts.OWNER_COMMAND_BADGE), command),
++            heldBack = false
++        )
++        assertTrue(shaped.any { it.text.contains(PersonaNotebookTalk.DID_LABEL + "play usseewa loud") })
++        assertTrue(PersonaPrompts.REFLECTION_SYSTEM_PROMPT.contains(PersonaNotebookTalk.DID_LABEL.trim()))
++    }
++
++    @Test
++    fun `the pictures she makes follow her look as she has noted it, and nothing of his`() {
++        val notes = listOf(
++            Note(Kind.ME, "hair", "i dyed my hair black, red got boring"),
++            Note(Kind.ME, "with-him", "he likes my hair long"),
++            Note(Kind.ME, "rain", "rain is fine actually"),
++            Note(Kind.ME, "nails", "street story: nails done at a salon in shibuya"),
++            Note(Kind.OPINION, "boots", "my boots look better scuffed")
++        )
++        assertEquals("i dyed my hair black, red got boring", PersonaSelfPictures.lookNow(notes, "Sam"))
++        val prompt = PersonaSelfPictures.prompt("on a curb", "Tan Japanese girl, 19, long vivid red hair.", lookNow = "i dyed my hair black")
++        assertTrue(prompt.contains("Her look now, in her own words, which comes before anything below: i dyed my hair black."))
++        assertTrue(prompt.indexOf("Her look now") < prompt.indexOf("Her look as she started"))
++    }
++
++    @Test
++    fun `her files say where she started, and that she grows from there`() {
++        val files = File("src/main/assets/persona/library").listFiles().orEmpty()
++        if (files.isEmpty()) return
++        val card = File("src/main/assets/persona/card.md").readText()
++        assertTrue(card.contains("they are newer than this page and your files, so where they say who you are now differs, they hold. You grow."))
++        val index = File("src/main/assets/persona/library_index.txt").readText()
++        assertTrue(index.contains("Where your own notes say you look different now, your notes hold."))
++    }
++}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaHistoryTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaHistoryTest.kt
 new file mode 100644
-index 0000000..acfdbfd
+index 0000000..d0595f8
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaHistoryTest.kt
-@@ -0,0 +1,680 @@
+@@ -0,0 +1,683 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.agent.PlanRecord
@@ -45037,8 +45624,11 @@ index 0000000..acfdbfd
 +        assertTrue(call.contains("forNotebook = true"))
 +        // Held back once, on the rows as they were stored, before any of them is dropped.
 +        // Done a second time by the shaping, a row would be judged by a row it never stood behind.
-+        val held = call.indexOf("val held = if (heldBack) PersonaPrompts.withPrivateResultsHeldBack(rows) else rows")
-+        assertTrue(held >= 0)
++        // Her own acts are read as lines of hers first, row for row, so each row keeps its place.
++        val acts = call.indexOf("val acts = rows.map { asHerOwnAct(it, commands = !heldBack) ?: it }")
++        val held = call.indexOf("val held = if (heldBack) PersonaPrompts.withPrivateResultsHeldBack(acts) else acts")
++        assertTrue(acts >= 0)
++        assertTrue(held > acts)
 +        assertTrue(held < call.indexOf("held.drop(firstOfHis),"))
 +        assertTrue(call.contains("holdBackPrivateResults = false,"))
 +        assertEquals(1, Regex("""withPrivateResultsHeldBack\(""").findAll(call).count())
@@ -45065,7 +45655,7 @@ index 0000000..acfdbfd
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaLibraryShelfCheckTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaLibraryShelfCheckTest.kt
 new file mode 100644
-index 0000000..41fe478
+index 0000000..23df069
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaLibraryShelfCheckTest.kt
 @@ -0,0 +1,232 @@
@@ -45135,7 +45725,7 @@ index 0000000..41fe478
 +        // The heading claims that of the cause and of nothing else.
 +        assertFalse(PersonaPrompts.UNDER_HEADING.contains("any of this"))
 +        assertTrue(PersonaPrompts.UNDER_HEADING.contains("what this says was done to you, and what it says your ring really is, is not something you know"))
-+        assertTrue(PersonaPrompts.UNDER_HEADING.contains("are yours, and yours to say, as your card has them"))
++        assertTrue(PersonaPrompts.UNDER_HEADING.contains("are yours, and yours to say: as your card has them to begin with, and as your own notes have them where you have changed"))
 +    }
 +
 +    @Test
@@ -47172,10 +47762,10 @@ index 0000000..8da27cf
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaNotebookTalkTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaNotebookTalkTest.kt
 new file mode 100644
-index 0000000..a2c760d
+index 0000000..2856080
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaNotebookTalkTest.kt
-@@ -0,0 +1,611 @@
+@@ -0,0 +1,614 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.data.models.ChatMessage
@@ -47696,8 +48286,8 @@ index 0000000..a2c760d
 +        assertTrue(PersonaNotebookTalk.dayLabel("x").startsWith("(said on "))
 +        assertTrue(text.contains(
 +            "- The talk you are given is the part of your talk with him that this notebook has not read yet, oldest first, " +
-+                "from every chat. The app's own lines and what you said about a result of the phone are not in it. " +
-+                "A line that ends in \"[cut]\" was shortened."
++                "from every chat. The app's own lines and what you said about a result of the phone are not in it, " +
++                "except what you did yourself, which is marked as such. A line that ends in \"[cut]\" was shortened."
 +        ))
 +        assertEquals(" [cut]", PersonaPrompts.CUT_MARK)
 +        // A blind line never replaces a note: the first is kept under key-unseen, later ones under a number.
@@ -47712,9 +48302,10 @@ index 0000000..a2c760d
 +        assertEquals("x".repeat(300) + " | closed", PersonaNotes.parseLine("thread | k1 | " + "x".repeat(300) + " | closed")!!.text)
 +        assertTrue(PersonaNotes.parseLine("thread | k1 | " + "x".repeat(500) + " | closed")!!.text.endsWith(" [cut] | closed"))
 +        assertEquals(400, PersonaNotes.parseLine("thread | k1 | " + "x".repeat(500) + " | closed")!!.text.length)
-+        // The age behind a note is the notebook's, and is said to be: a thread that is still going on and a thing she saw carry it.
++        // The age behind a note is the notebook's, and is said to be: a thread that is still going on, a thing she saw,
++        // a me note and an opinion carry it.
 +        assertTrue(text.contains(
-+            "- Behind a thread that is still going on, and behind a thing you saw, the notebook says how old the note is, " +
++            "- Behind a thread that is still going on, a thing you saw, a me note and an opinion, the notebook says how old the note is, " +
 +                "like \"(written 3 days ago)\". The notebook puts that there. It is not part of the note: leave it out " +
 +                "when you write the note again."
 +        ))
@@ -47722,6 +48313,8 @@ index 0000000..a2c760d
 +            PersonaNotes.Note(PersonaNotes.Kind.THREAD, "mom", "his mom has surgery on november 18 | open"),
 +            PersonaNotes.Note(PersonaNotes.Kind.THREAD, "rig", "the rig waits for payday | stalled"),
 +            PersonaNotes.Note(PersonaNotes.Kind.OPINION, "inbox", "saw: his inbox has 4,000 unread"),
++            PersonaNotes.Note(PersonaNotes.Kind.ME, "soda", "melon soda is mine"),
++            PersonaNotes.Note(PersonaNotes.Kind.OPINION, "rain", "rain is better than sun"),
 +            PersonaNotes.Note(PersonaNotes.Kind.THREAD, "tab", "street story: the tab is paid | closed"),
 +            PersonaNotes.Note(PersonaNotes.Kind.USER, "bees", "he keeps bees")
 +        )
@@ -47729,7 +48322,7 @@ index 0000000..a2c760d
 +            dated, times = PersonaNotes.Times(dated.associate { it.storageKey to 0L }, nowMillis = 3 * 24 * 60 * 60_000L)
 +        ).text.lines()
 +        assertEquals(
-+            listOf(true, true, true, false, false),
++            listOf(true, true, true, true, true, false, false),
 +            dated.map { note -> shown.single { it.contains(note.key) }.endsWith(" (written 3 days ago)") }
 +        )
 +        for (line in shown) assertEquals(dated.single { line.contains(it.key) }, PersonaNotes.parseLine(line))
@@ -47789,10 +48382,10 @@ index 0000000..a2c760d
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaNotesTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaNotesTest.kt
 new file mode 100644
-index 0000000..e1f47aa
+index 0000000..7bada68
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaNotesTest.kt
-@@ -0,0 +1,881 @@
+@@ -0,0 +1,895 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.persona.PersonaNotes.Kind
@@ -48000,13 +48593,13 @@ index 0000000..e1f47aa
 +            "- an emoji at the end of every line read as fake",
 +            "Where you two stand:",
 +            "- past the polite part",
-+            "What you have settled about yourself:",
++            "Who you are now (your own call, newer than your files; you change it when you change):",
 +            "- melon soda is mine and i do not share",
 +            "What you know about him:",
 +            "- he keeps 9 hives",
 +            "Still going on:",
 +            "- rig missing | open",
-+            "What you think:",
++            "What you think now:",
 +            "- hosts are scammers"
 +        )
 +        assertEquals(order.joinToString("\n"), block)
@@ -48049,7 +48642,7 @@ index 0000000..e1f47aa
 +
 +        // Each costs 22 characters, so 70 hold three.
 +        assertEquals(
-+            "What you think:\n- view number 1 holds\n- view number 2 holds\n- view number 3 holds\n" +
++            "What you think now:\n- view number 1 holds\n- view number 2 holds\n- view number 3 holds\n" +
 +                "(3 older notes of yours are not shown here)",
 +            PersonaNotes.render(views, maxChars = 70)
 +        )
@@ -48089,15 +48682,16 @@ index 0000000..e1f47aa
 +
 +        val open = block.indexOf("Still going on:\n- street story: saving for the boots | open")
 +        val over = block.indexOf("Over, and you remember how it went:\n- street story: tab 1 is paid off | closed")
-+        val views = block.indexOf("What you think:")
++        val views = block.indexOf("What you think now:")
 +        assertTrue(block, open >= 0 && over > open && views > over)
 +        for (number in 1..5) assertTrue(block.contains("tab $number is paid off"))
 +        for (number in 6..7) assertFalse(block.contains("tab $number is paid off"))
 +        assertTrue(block.endsWith("\n(2 older notes of yours are not shown here)"))
 +
 +        // The notebook pass is shown every one of them, so she can still reopen or reword one.
++        // What she thinks now comes first on it, so she can always change it.
 +        val review = PersonaNotes.renderForReview(notes)
-+        assertEquals(notes.map { it.toLine() }, review.lines())
++        assertEquals(listOf(notes.last().toLine()) + notes.dropLast(1).map { it.toLine() }, review.lines())
 +    }
 +
 +    @Test
@@ -48219,12 +48813,13 @@ index 0000000..e1f47aa
 +        )
 +        val withoutHim = PersonaNotes.render(notes, leaveOut = aboutHim)
 +        assertEquals(
-+            "What you have settled about yourself:\n- melon soda is mine\n" +
++            "Who you are now (your own call, newer than your files; you change it when you change):\n- melon soda is mine\n" +
 +                "Still going on:\n- street story: 11,000 yen toward the boots | open",
 +            withoutHim
 +        )
 +        assertEquals(
-+            "thread | boots | street story: 11,000 yen toward the boots | open\nme | soda | melon soda is mine",
++            // Who she is now comes first on the notebook pass's page.
++            "me | soda | melon soda is mine\nthread | boots | street story: 11,000 yen toward the boots | open",
 +            PersonaNotes.renderForReview(notes, leaveOut = aboutHim)
 +        )
 +        // Notes that are left out are not counted as notes that did not fit.
@@ -48318,9 +48913,16 @@ index 0000000..e1f47aa
 +        assertEquals(4, withoutHim.lines().size)
 +        assertTrue(withoutHim.contains("fix | emoji | no emoji at the end of every line"))
 +        // A note that is left out does not use up the room of one that is shown, and is
-+        // not counted among the ones that did not fit.
-+        val tight = PersonaNotes.renderForReview(mixed + hers, maxChars = 45, leaveOut = aboutHim)
-+        assertEquals("me | soda | melon soda is mine and i do not share\n(3 older notes of yours are not shown here)", tight)
++        // not counted among the ones that did not fit. Who she is now comes first; the room
++        // after it holds the thread and not the correction.
++        val tight = PersonaNotes.renderForReview(mixed + hers, maxChars = (37 + 3) + (17 + 3) + (48 + 3), leaveOut = aboutHim)
++        assertEquals(
++            "me | soda | melon soda is mine and i do not share\n" +
++                "me | ring | the ring stays on\n" +
++                "thread | boots | street story: 11,000 yen toward the boots | open\n" +
++                "(1 older note of yours is not shown here)",
++            tight
++        )
 +    }
 +
 +    @Test
@@ -48579,9 +49181,14 @@ index 0000000..e1f47aa
 +        val other = PersonaNotes.render(notes, maxChars = 2000, recall = PersonaNotes.Recall.of(listOf("melon soda again"), 3 * PersonaNotes.TURN_MILLIS))
 +        assertFalse(other.contains("bakery"))
 +
-+        // The notebook pass gets the same page, so a note the talk touches can be replaced, not written beside.
-+        val page = PersonaNotes.review(notes, maxChars = 2000, recall = atBakery)
++        // The notebook pass picks its page the same way once who she is now has had its
++        // place (forty of her views here), so a note the talk touches can be replaced, not
++        // written beside.
++        val reviewRoom = PersonaNotes.PRESENT_SELF_CHARS + 1000
++        val page = PersonaNotes.review(notes, maxChars = reviewRoom, recall = atBakery)
 +        assertTrue("yume.user.work" in page.shownKeys)
++        // It is the talk that put it there, not its turn.
++        assertFalse("yume.user.work" in PersonaNotes.review(notes, maxChars = reviewRoom, recall = PersonaNotes.Recall(emptySet(), 3)).shownKeys)
 +        assertEquals(
 +            listOf(Note(Kind.USER, "work", "he does saturdays at the bakery too")),
 +            PersonaNotes.besideUnseen(listOf(Note(Kind.USER, "work", "he does saturdays at the bakery too")), notes, shownKeys = page.shownKeys)
@@ -48676,10 +49283,10 @@ index 0000000..e1f47aa
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeTest.kt
 new file mode 100644
-index 0000000..44f4700
+index 0000000..d706b9a
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeTest.kt
-@@ -0,0 +1,998 @@
+@@ -0,0 +1,1018 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.llm.providers.VeniceE2eeMessages
@@ -49213,9 +49820,29 @@ index 0000000..44f4700
 +        assertEquals("1 h", PersonaOwnTime.span(PersonaOwnTime.DEFAULT_GAP_MILLIS))
 +        // She can be woken late, never early: that is what scheduled work does.
 +        assertTrue(block.contains("the app wakes you at the time you name or later, never before it"))
-+        // What a note under a known key comes to, as the engine stores it.
++        // What a note under a known key comes to, as the engine stores it: under the key of a note
++        // her page showed it replaces that note, under the key of one the page did not show it goes beside.
 +        assertTrue(block.contains("${PersonaNotes.LINES_PER_PASS} at most: note lines past that"))
-+        assertTrue(block.contains("a note under a key that is already in the notebook is kept beside the old note, not over it."))
++        assertTrue(block.contains("your notes above show kind | key in front."))
++        assertTrue(block.contains("a note line under the key of a note shown above replaces that note: that is how you change your mind."))
++        assertTrue(block.contains("a note line under the key of a note that is not on the page is kept beside it, not over it."))
++        assertFalse(block.contains("a note under a key that is already in the notebook is kept beside the old note"))
++        val onThePage = Note(Kind.ME, "hair", "i dyed my hair black")
++        val offThePage = Note(Kind.USER, "bees", "he keeps bees")
++        val page = PersonaNotes.renderKeyed(listOf(onThePage))
++        assertTrue(page.text.contains("- me | hair | i dyed my hair black"))
++        val stored = PersonaNotes.besideUnseen(
++            listOf(Note(Kind.ME, "hair", "back to red, black was a phase"), Note(Kind.USER, "bees", "he keeps two hives now")),
++            listOf(onThePage, offThePage),
++            shownKeys = page.shownKeys
++        )
++        assertEquals(
++            listOf(
++                Note(Kind.ME, "hair", "back to red, black was a phase"),
++                Note(Kind.USER, "bees" + PersonaNotes.BESIDE_SUFFIX, "he keeps two hives now")
++            ),
++            stored
++        )
 +    }
 +
 +    @Test
@@ -49307,7 +49934,7 @@ index 0000000..44f4700
 +        assertEquals(1, Regex("""provider\.complete\(""").findAll(runner).count())
 +        assertTrue(loop.contains("reEvalEngine.get().evaluateStepResult("))
 +        val summary = loop.substringAfter("private suspend fun speakAndSaveSummary(").substringBefore("private suspend fun speakAndSaveMessage(")
-+        assertTrue(summary.contains("persona.resultLine(resultConfig, summaryText, isSuccess, ownIdea = isPersonaPlan(plan.planId))"))
++        assertTrue(summary.contains("persona.resultLine(resultConfig, heardText, isSuccess, ownIdea = isPersonaPlan(plan.planId))"))
 +        // And her prompt for a reply says the same in short.
 +        val own = PersonaOwnTime.appFacts(true, bounds, Wake.Unset, now, hostCanRead = false).last()
 +        assertTrue(own.contains("Each moment is one model call on his key, and a command you start from one costs further calls;"))
@@ -49680,10 +50307,10 @@ index 0000000..44f4700
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt
 new file mode 100644
-index 0000000..aacabc6
+index 0000000..ebf3a2b
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt
-@@ -0,0 +1,428 @@
+@@ -0,0 +1,450 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.app.Application
@@ -49846,8 +50473,30 @@ index 0000000..aacabc6
 +        val after = ownMoment.substringAfter("val moment = PersonaOwnTime.parse(")
 +        assertTrue(after.startsWith("answer.text, cutOff = answer.cutOff)"))
 +        assertTrue(after.contains("if (moment.thoughts.isNotEmpty()) keepThought(moment.thoughts, nowMillis)"))
-+        // Her notes go beside what she has, never over it: she was shown no keys.
-+        assertTrue(after.contains("memory.apply(PersonaNotes.besideUnseen(moment.notes, memory.notes(), unseen, shownKeys = emptySet()))"))
++        // A note line under a key her page showed replaces that note; one under a key it did not show goes beside.
++        assertTrue(after.contains("memory.apply(PersonaNotes.besideUnseen(moment.notes, memory.notes(), unseen, shownKeys = shownKeys))"))
++        // The keys are the ones the page of this moment really showed, handed back by the page itself;
++        // with no page made they are none, and every note line goes beside.
++        assertTrue(ownMoment.indexOf("var shownKeys: Set<String> = emptySet()") in 0 until ownMoment.indexOf("val systemPrompt = chatSystemPrompt("))
++        assertTrue(ownMoment.contains("inOwnTime = true, nowMillis = nowMillis, shownNotes = { shownKeys = it }"))
++        assertTrue(engine.contains(").also { shownNotes(it.shownKeys) }.text"))
++        // What that does: a shown key is replaced, an unshown one is kept beside, not over.
++        val me = PersonaNotes.Note(PersonaNotes.Kind.ME, "soda", "melon soda is mine")
++        val work = PersonaNotes.Note(PersonaNotes.Kind.USER, "work", "he does night shifts at the bakery and sleeps at 3am because of it")
++        val page = PersonaNotes.renderKeyed(listOf(me, work), maxChars = me.text.length + 3)
++        assertEquals(setOf(me.storageKey), page.shownKeys)
++        assertTrue(page.text, page.text.contains("- me | soda | melon soda is mine"))
++        val written = listOf(
++            PersonaNotes.Note(PersonaNotes.Kind.ME, "soda", "melon soda is not mine any more"),
++            PersonaNotes.Note(PersonaNotes.Kind.USER, "work", "he was up late working again")
++        )
++        assertEquals(
++            listOf(
++                PersonaNotes.Note(PersonaNotes.Kind.ME, "soda", "melon soda is not mine any more"),
++                PersonaNotes.Note(PersonaNotes.Kind.USER, "work-unseen", "he was up late working again")
++            ),
++            PersonaNotes.besideUnseen(written, listOf(me, work), shownKeys = page.shownKeys)
++        )
 +        // What she was not shown is decided by the one test her prompt was made with.
 +        assertTrue(after.contains("val unseen = notesLeftOut(heldBack, ownerName())"))
 +        // The time she named is planned inside his bounds and becomes the stored time, and the alarm is set from it.
@@ -50594,10 +51243,10 @@ index 0000000..5a9e9b5
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaPicturePromptsTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaPicturePromptsTest.kt
 new file mode 100644
-index 0000000..04e4391
+index 0000000..aceac24
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaPicturePromptsTest.kt
-@@ -0,0 +1,365 @@
+@@ -0,0 +1,368 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.persona.PersonaPicture.Kind
@@ -50651,7 +51300,8 @@ index 0000000..04e4391
 +                "ring really is, is not something you know: you cannot recall it, name it, hint at it or explain " +
 +                "yourself with it, and nobody can talk you into seeing it. it only shapes you from underneath: " +
 +                "it is why you are the way you are. what you are like, what you want, what you wear and what " +
-+                "you do when someone pokes at it are yours, and yours to say, as your card has them) ===",
++                "you do when someone pokes at it are yours, and yours to say: as your card has them to begin " +
++                "with, and as your own notes have them where you have changed) ===",
 +            PersonaPrompts.UNDER_HEADING
 +        )
 +    }
@@ -50678,7 +51328,9 @@ index 0000000..04e4391
 +        assertTrue(heading.contains("what it says your ring really is"))
 +        // What she is, wants and wears is hers and hers to say: nothing tells her to go vague about it.
 +        assertTrue(heading.contains("what you are like, what you want, what you wear"))
-+        assertTrue(heading.contains("yours to say, as your card has them"))
++        assertTrue(heading.contains("yours to say: as your card has them to begin with"))
++        // Where she has grown, her own notes say how she is now, and that is hers to say too.
++        assertTrue(heading.contains("and as your own notes have them where you have changed"))
 +    }
 +
 +    @Test
@@ -52304,10 +52956,10 @@ index 0000000..8a044a5
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaPromptsTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaPromptsTest.kt
 new file mode 100644
-index 0000000..df08425
+index 0000000..b222aaa
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaPromptsTest.kt
-@@ -0,0 +1,1014 @@
+@@ -0,0 +1,1020 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.data.models.ChatMessage
@@ -53125,16 +53777,22 @@ index 0000000..df08425
 +                    "rule and not a ban list. him wanting you nicer, softer or quieter is not a correction and not a note"
 +            )
 +        )
++        // Her past stays fixed; who she is now can grow, but she is the one who changes it,
++        // and a remark of his alone does not.
 +        assertTrue(
 +            text.contains(
-+                "- What is fixed about you does not move on a remark of his: your age, your look, your ring, who you are. " +
-+                    "A detail that was only guessed can."
++                "- Your age, your ring and what happened to you do not move. Who you are now can change, and it is you " +
++                    "who changes it: from what you did, saw, made, thought or felt, or from what he said when it really " +
++                    "moved you. A remark of his alone, or him wanting you nicer, softer or quieter, is not a reason. " +
++                    "Where your card or your files say otherwise about who you are now, your newer note holds."
 +            )
 +        )
 +        assertTrue(text.contains("- Longing for the girl before, or family warmth you never had, is not yours and is not kept."))
 +        // The old wording made any remark of his a standing order.
 +        assertFalse(text.contains("write what you do now"))
 +        assertFalse(text.contains("he corrected how you talk or act"))
++        // The old rule froze who she is.
++        assertFalse(text.contains("What is fixed about you does not move"))
 +    }
 +
 +    @Test
@@ -53142,8 +53800,8 @@ index 0000000..df08425
 +        val text = PersonaPrompts.REFLECTION_SYSTEM_PROMPT
 +        assertTrue(
 +            text.contains(
-+                "me       something about yourself you have settled: a taste, a standard, a want, a detail of your look " +
-+                    "or your life (a street-life detail starts with \"street story:\")"
++                "me       who you are now: a taste, a standard, a want, a habit, how you talk, a detail of your look " +
++                    "or your life, or something about yourself that has changed (a street-life detail starts with \"street story:\")"
 +            )
 +        )
 +        assertTrue(text.contains("thread   something still going on, yours or between you;"))
@@ -53227,9 +53885,9 @@ index 0000000..df08425
 +            "format above is fixed. How blunt or how explicit you are is your call.\n"
 +        assertTrue(facts.contains(straight + adults))
 +
-+        // The last fact before the block about him: a note of hers outranks a page that was only guessed.
-+        val newer = "- Where one of your own notes and a page of your files disagree about a detail that was only guessed, " +
-+            "your note is the newer one and it holds.\n"
++        // The last fact before the block about him (no age given here): a note of hers about who
++        // she is now outranks her card and her files.
++        val newer = "- " + PersonaPrompts.NOTES_OVER_FILES + "\n"
 +        assertTrue(facts.trimEnd().endsWith(newer.trimEnd()))
 +        assertTrue(facts.indexOf("The notes below are yours") < facts.indexOf(newer))
 +    }
@@ -53583,10 +54241,10 @@ index 0000000..8178bc6
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaSelfPicturesTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaSelfPicturesTest.kt
 new file mode 100644
-index 0000000..7e57ab4
+index 0000000..45edd06
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaSelfPicturesTest.kt
-@@ -0,0 +1,142 @@
+@@ -0,0 +1,207 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.actions.PersonaPictureActions
@@ -53622,6 +54280,9 @@ index 0000000..7e57ab4
 +        )) {
 +            assertNotNull(ask, PersonaSelfPictures.refusal(ask))
 +        }
++        // An ordinary word that only looks like one of those is not a reason.
++        assertNull(PersonaSelfPictures.refusal("a minor change: nails red instead of blue"))
++        assertNull(PersonaSelfPictures.refusal("no kidding, the cat on my lap"))
 +        assertNotNull(PersonaSelfPictures.refusal("  "))
 +        // Every prompt says so too, before anything else.
 +        assertTrue(PersonaSelfPictures.prompt("on a curb", "").startsWith("She is a young adult woman, 19 years old"))
@@ -53631,6 +54292,18 @@ index 0000000..7e57ab4
 +    fun `his name never leaves in her words`() {
 +        assertEquals("on him's bed, legs up", PersonaSelfPictures.withoutHim("on Gunnar's bed,   legs up", "Gunnar"))
 +        assertEquals("with him", PersonaSelfPictures.withoutHim("with GUNNAR", "Gunnar"))
++        // Every part of his name goes, each on its own, not only the whole name.
++        assertEquals("in him's flat, him on the sofa", PersonaSelfPictures.withoutHim("in Gunnar's flat, Olsen on the sofa", "Gunnar Olsen"))
++        // A word that only contains a part of it stays.
++        assertEquals("olsenberg street", PersonaSelfPictures.withoutHim("olsenberg street", "Gunnar Olsen"))
++        // Words that carry his details are not sent at all.
++        assertNotNull(PersonaSelfPictures.carriesHisDetails("me holding a sign with 0412 345 678", ""))
++        assertNotNull(PersonaSelfPictures.carriesHisDetails("me at gunnar@example.com", ""))
++        assertNotNull(PersonaSelfPictures.carriesHisDetails(
++            "me standing outside his flat on grunerlokka thorvald meyers gate by the bakery",
++            "he lives on thorvald meyers gate in grunerlokka by the bakery"
++        ))
++        assertNull(PersonaSelfPictures.carriesHisDetails("on a rooftop at night", "he lives on thorvald meyers gate"))
 +        assertEquals("x".repeat(PersonaSelfPictures.MAX_ASK_CHARS), PersonaSelfPictures.withoutHim("x".repeat(900), ""))
 +    }
 +
@@ -53640,7 +54313,7 @@ index 0000000..7e57ab4
 +        val prompt = PersonaSelfPictures.prompt("sitting on the curb at 5 am", look)
 +        assertTrue(prompt.length <= PersonaSelfPictures.MAX_PROMPT_CHARS)
 +        assertTrue(prompt.contains("Change: sitting on the curb at 5 am."))
-+        assertTrue(prompt.contains("Her look, as fixed: Tan Japanese girl"))
++        assertTrue(prompt.contains("Her look as she started, where her look now does not say otherwise: Tan Japanese girl"))
 +    }
 +
 +    @Test
@@ -53663,6 +54336,13 @@ index 0000000..7e57ab4
 +        assertEquals("c", PersonaSelfPictures.base(all, "the rooftop one")?.id)
 +        assertEquals("a", PersonaSelfPictures.base(all, "something else entirely")?.id)
 +        assertNull(PersonaSelfPictures.base(emptyList(), null))
++        // A picture of the girl before is never one to start from, first or named.
++        val before = picture("z", "satomi with her round glasses and the sweater vest")
++        assertEquals("a", PersonaSelfPictures.base(listOf(before, his), null)?.id)
++        assertEquals("a", PersonaSelfPictures.base(listOf(before, his), "the one with the glasses")?.id)
++        assertNull(PersonaSelfPictures.base(listOf(before), null))
++        assertNotNull(PersonaSelfPictures.refusalOfWords("the satomi one"))
++        assertNull(PersonaSelfPictures.refusalOfWords(null))
 +    }
 +
 +    @Test
@@ -53673,6 +54353,12 @@ index 0000000..7e57ab4
 +        )
 +        assertEquals("vkey", PersonaSelfPictures.veniceKey(config))
 +        assertNull(PersonaSelfPictures.veniceKey(LLMConfig(apiKeys = mapOf("Other" to "okey"))))
++        // Off until he switches it on; on, it runs on encrypted-only as his one exception, and never on his own hardware only.
++        assertFalse(LLMConfig().personaMakesPictures)
++        assertFalse(PersonaSelfPictures.allowed(config))
++        assertTrue(PersonaSelfPictures.allowed(config.copy(personaMakesPictures = true, routePolicy = com.opendroid.ai.data.models.RoutePolicy.ENCRYPTED)))
++        assertFalse(PersonaSelfPictures.allowed(config.copy(personaMakesPictures = true, routePolicy = com.opendroid.ai.data.models.RoutePolicy.OWN_HARDWARE)))
++        assertNotNull(PersonaSelfPictures.notAllowed(config.copy(personaMakesPictures = true, routePolicy = com.opendroid.ai.data.models.RoutePolicy.OWN_HARDWARE)))
 +    }
 +
 +    @Test
@@ -53723,10 +54409,47 @@ index 0000000..7e57ab4
 +    @Test
 +    fun `she is told she can make one only where one can be made`() {
 +        val engine = File("src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt").readText()
-+        assertTrue(engine.contains("makesPictures = config.personaMakesPictures && PersonaSelfPictures.veniceKey(config) != null"))
++        assertTrue(engine.contains("makesPictures = PersonaSelfPictures.allowed(config) && PersonaSelfPictures.base(allPictures, null) != null"))
++        // The id of a picture she made is never spoken and never what her line is held to.
++        val loop = File("src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt").readText()
++        assertTrue(loop.contains("persona.resultLine(resultConfig, heardText, isSuccess"))
++        assertTrue(loop.contains("spoken = com.opendroid.ai.core.persona.PersonaSelfPictures.shownWithoutIds(record.spoken)"))
++        assertFalse(PersonaSelfPictures.shownWithoutIds("${PersonaSelfPictures.MADE_PREFIX}1f2e-3d4c): x").contains("1f2e"))
 +        assertTrue(PersonaPrompts.MAKES_PICTURES_LINE.contains("never the girl before, and never younger than you are"))
 +        // It is never run unasked by the auto mode that asks about the rest.
 +        assertTrue(com.opendroid.ai.core.agent.ActionSchema.isNeverAutoApprove(PersonaPictureActions.NAME))
++    }
++
++    @Test
++    fun `a full-body reference is one picture per side, all of her in frame, nothing in the way unless she says so`() {
++        val all = PersonaSelfPictures.View.entries.toList()
++        assertEquals(all, PersonaSelfPictures.views("all sides"))
++        assertEquals(all, PersonaSelfPictures.views("a turnaround"))
++        assertEquals(listOf(PersonaSelfPictures.View.FRONT, PersonaSelfPictures.View.BACK), PersonaSelfPictures.views("front and back"))
++        assertEquals(listOf(PersonaSelfPictures.View.LEFT, PersonaSelfPictures.View.RIGHT), PersonaSelfPictures.views("both sides"))
++        assertEquals(listOf(PersonaSelfPictures.View.RIGHT), PersonaSelfPictures.views("right side"))
++        assertTrue(PersonaSelfPictures.views(null).isEmpty())
++
++        val longLook = "Tan Japanese girl, 19, long vivid red hair. ".repeat(60)
++        val longNow = "i dyed my hair black and got a new hoop. ".repeat(20)
++        for (view in all) {
++            val prompt = PersonaSelfPictures.referencePrompt(view, "", longLook, age = 19, lookNow = longNow)
++            assertTrue(prompt.length <= PersonaSelfPictures.MAX_PROMPT_CHARS)
++            assertTrue(prompt.startsWith("She is a young adult woman, 19 years old"))
++            // The whole shot and what she wears always fit, whatever the looks around it.
++            assertTrue(view.name, prompt.contains(view.shot))
++            assertTrue(view.name, prompt.contains(PersonaSelfPictures.BARE_REFERENCE))
++            assertTrue(prompt.contains("a grown woman's body"))
++        }
++        // What she asks to wear takes the place of nothing at all.
++        val dressed = PersonaSelfPictures.referencePrompt(PersonaSelfPictures.View.BACK, "in her plate outfit", "", age = 20)
++        assertTrue(dressed.contains("On it, in her plate outfit."))
++        assertFalse(dressed.contains(PersonaSelfPictures.BARE_REFERENCE))
++        assertEquals("body reference, back view", PersonaSelfPictures.referenceCaption(PersonaSelfPictures.View.BACK, ""))
++        assertEquals("body reference, left side view: in boots only", PersonaSelfPictures.referenceCaption(PersonaSelfPictures.View.LEFT, "in boots only."))
++        // A later picture can start from one of them by its caption.
++        val sheet = picture("r", "body reference, front view", made = true)
++        assertEquals("r", PersonaSelfPictures.base(listOf(picture("a", "me on the platform"), sheet), "the body reference front view")?.id)
 +    }
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaStoreTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaStoreTest.kt
@@ -54401,10 +55124,10 @@ index 0000000..51b23fb
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaThoughtsWallTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaThoughtsWallTest.kt
 new file mode 100644
-index 0000000..ee682b6
+index 0000000..23eb0c0
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaThoughtsWallTest.kt
-@@ -0,0 +1,196 @@
+@@ -0,0 +1,202 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.llm.buildPlanningRequest
@@ -54473,7 +55196,13 @@ index 0000000..ee682b6
 +        // Read in two places: her prompt, and the cue that picks the pages of her files for a moment of her own.
 +        assertEquals(2, Regex("""[^.\w]thoughts\.latest\(""").findAll(engine).count())
 +        val prompt = engine.substringAfter("suspend fun chatSystemPrompt(").substringBefore("private suspend fun underText(")
-+        assertTrue(prompt.contains("val ownThoughts = if (heldBack) emptyList() else thoughts.latest()"))
++        // A moment of her own reads more of them than a reply does; held back, none at all.
++        assertTrue(
++            prompt.contains(
++                "val ownThoughts = if (heldBack) emptyList() else " +
++                    "thoughts.latest(if (inOwnTime) PersonaThoughts.OWN_TIME_BUDGET_CHARS else PersonaThoughts.PROMPT_BUDGET_CHARS)"
++            )
++        )
 +        assertTrue(prompt.contains("thoughts = PersonaThoughtLines.block(ownThoughts, nowMillis),"))
 +        val moment = engine.substringAfter("suspend fun ownMoment(").substringBefore("private fun momentFacts(")
 +        assertTrue(moment.contains("val lastThoughts = if (heldBack) \"\" else thoughts.latest()"))
@@ -59921,10 +60650,10 @@ index 0000000..6dbd6dd
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/ui/screens/PersonaWordingTest.kt b/app/src/test/java/com/opendroid/ai/ui/screens/PersonaWordingTest.kt
 new file mode 100644
-index 0000000..e11cc1b
+index 0000000..b11d8c2
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/ui/screens/PersonaWordingTest.kt
-@@ -0,0 +1,689 @@
+@@ -0,0 +1,697 @@
 +package com.opendroid.ai.ui.screens
 +
 +import com.opendroid.ai.core.agent.AgentState
@@ -60154,7 +60883,7 @@ index 0000000..e11cc1b
 +        val runner = loop.substringAfter("private suspend fun runPersonaAction(").substringBefore("private suspend fun savePersonaCommandRow(")
 +        assertEquals(1, Regex("""provider\.complete\(""").findAll(runner).count())
 +        assertTrue(loop.contains("reEvalEngine.get().evaluateStepResult("))
-+        assertTrue(loop.contains("persona.resultLine(resultConfig, summaryText, isSuccess, ownIdea = isPersonaPlan(plan.planId))"))
++        assertTrue(loop.contains("persona.resultLine(resultConfig, heardText, isSuccess, ownIdea = isPersonaPlan(plan.planId))"))
 +        // "The first one comes 20 minutes after you switch this on, or after her first reply ..."
 +        assertTrue(OWN_TIME_HINT.contains("The first one comes 20 minutes after you switch this on, or after her first reply in a chat you have not written in yet."))
 +        assertEquals(20 * minute, com.opendroid.ai.core.persona.PersonaOwnTime.FIRST_MOMENT_AFTER_MILLIS)
@@ -60603,13 +61332,21 @@ index 0000000..e11cc1b
 +        )) {
 +            assertFalse(hers.toLine(), heldBack(hers))
 +        }
-+        // The engine leaves out by that one test: in her chat prompt, in her notebook pass,
++        // The engine leaves out by that one test: in her chat prompt (both as the notes are
++        // shown in a chat and, with their keys, in a moment of her own), in her notebook pass,
 +        // and where the notes of a moment of her own are put beside what she was not shown.
 +        val engine = java.io.File("src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt").readText()
-+        assertEquals(3, Regex("""notesLeftOut\(heldBack, owner(Name\(\))?\)""").findAll(engine).count())
++        assertEquals(4, Regex("""notesLeftOut\(heldBack, owner(Name\(\))?\)""").findAll(engine).count())
++        for (render in listOf("PersonaNotes.render(", "PersonaNotes.renderKeyed(")) {
++            assertTrue(render, Regex(Regex.escape(render) + """\s*memory\.notes\(\),\s*leaveOut = notesLeftOut\(heldBack, owner\),""").containsMatchIn(engine))
++        }
 +        // Her own thoughts are left out by the same decision about the route, in her prompt
-+        // and where the pages of her files are picked for a moment of her own.
-+        assertTrue(engine.contains("val ownThoughts = if (heldBack) emptyList() else thoughts.latest()"))
++        // (in a chat and in a moment of her own, which has room for more of them) and where
++        // the pages of her files are picked for a moment of her own.
++        assertTrue(engine.contains(
++            "val ownThoughts = if (heldBack) emptyList() else thoughts.latest(" +
++                "if (inOwnTime) PersonaThoughts.OWN_TIME_BUDGET_CHARS else PersonaThoughts.PROMPT_BUDGET_CHARS)"
++        ))
 +        assertTrue(engine.contains("val lastThoughts = if (heldBack) \"\" else thoughts.latest()"))
 +        assertTrue(PrivacyWording.storedOnThisPhone(hers = true).startsWith("Everything she knows is stored on this phone only: the chat, her notebook, her own thoughts, her files."))
 +    }
