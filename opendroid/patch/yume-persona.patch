@@ -565,7 +565,7 @@ index 02b18e1..50046d0 100644
       * Build strict schema text for LLM prompt.
       * This is the key function — LLM gets typed schema and cannot invent actions.
 diff --git a/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt b/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
-index 5891c90..c0bd12e 100644
+index 5891c90..4ecaed7 100644
 --- a/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
 +++ b/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
 @@ -62,6 +62,12 @@ private const val MAX_NEEDS_INPUT_PROMPTS = 5
@@ -905,7 +905,7 @@ index 5891c90..c0bd12e 100644
          waitingSessionId = sessionId
          pendingUserInput = request
          try {
-@@ -514,9 +753,168 @@ class AgentLoop @Inject constructor(
+@@ -514,9 +753,172 @@ class AgentLoop @Inject constructor(
          _agentState.value = state
      }
  
@@ -1057,6 +1057,10 @@ index 5891c90..c0bd12e 100644
 +    // done nor failed. The record of the plan tells them in the handler's own words.
 +    private val handedOverSteps: MutableSet<String> = recentPlanIds()
 +
++    // Steps whose hand-over (a dialer open and waiting for his tap) was told to him when
++    // it happened. The record at the end keeps the line; it is not said a second time.
++    private val handOffsTold: MutableSet<String> = recentPlanIds()
++
 +    private fun stepKey(planId: String, stepId: String): String = "$planId/$stepId"
 +
 +    /** True when [planId] is a plan the persona started with a command of her own. */
@@ -1074,7 +1078,7 @@ index 5891c90..c0bd12e 100644
      // Silences speech in progress; set by the TTS service and called from cancelCurrentTask.
      var onStopSpeakingCallback: (() -> Unit)? = null
  
-@@ -582,6 +980,11 @@ class AgentLoop @Inject constructor(
+@@ -582,6 +984,11 @@ class AgentLoop @Inject constructor(
          val isAnsweringPendingQuestion = waitingSession != null &&
                  (explicitSessionId == null || explicitSessionId == waitingSession)
  
@@ -1086,7 +1090,7 @@ index 5891c90..c0bd12e 100644
          if (waitingSession != null && !isAnsweringPendingQuestion) {
              // A brand-new message arrived in a different session while another task is
              // still parked on a prompt in `waitingSession`. Nobody there is ever going to
-@@ -590,7 +993,8 @@ class AgentLoop @Inject constructor(
+@@ -590,7 +997,8 @@ class AgentLoop @Inject constructor(
              // into the wrong chat or leaving that chat hanging silently forever.
              abandonWaitingTask(waitingSession)
          } else if (!isAnsweringPendingQuestion) {
@@ -1096,7 +1100,7 @@ index 5891c90..c0bd12e 100644
          }
  
          // A caller that knows the session pins it before returning, so the chat that just
-@@ -601,6 +1005,13 @@ class AgentLoop @Inject constructor(
+@@ -601,6 +1009,13 @@ class AgentLoop @Inject constructor(
  
          val job = scope.launch {
              try {
@@ -1110,7 +1114,7 @@ index 5891c90..c0bd12e 100644
                  // Pin the session THIS task writes to, resolved once, right here, before any
                  // message is written. A genuinely new query pins whatever session the caller
                  // says this message belongs to (falling back to whatever is current if the
-@@ -626,18 +1037,34 @@ class AgentLoop @Inject constructor(
+@@ -626,18 +1041,34 @@ class AgentLoop @Inject constructor(
                  // Only capture the screen when the query actually asks about it.
                  // Attaching a screenshot to every request would silently send
                  // whatever is on screen (messages, banking apps, ...) to the LLM.
@@ -1150,7 +1154,7 @@ index 5891c90..c0bd12e 100644
                      imageBase64 = screenshotBase64
                  )
                  memoryManager.storeMessage(userMsg, sessionId)
-@@ -656,6 +1083,10 @@ class AgentLoop @Inject constructor(
+@@ -656,6 +1087,10 @@ class AgentLoop @Inject constructor(
                      return@launch
                  }
  
@@ -1161,7 +1165,7 @@ index 5891c90..c0bd12e 100644
                  // Serialize query handling so contextual follow-up state cannot race.
                  queryMutex.withLock {
                      processQueryLocked(userMsg, query, context, sessionId)
-@@ -709,16 +1140,21 @@ class AgentLoop @Inject constructor(
+@@ -709,16 +1144,21 @@ class AgentLoop @Inject constructor(
  
      private fun launchRetry(sessionId: String, body: suspend () -> Unit) {
          val waitingSession = waitingSessionId
@@ -1184,7 +1188,7 @@ index 5891c90..c0bd12e 100644
                  resolveStaleProposedPlan(sessionId)
  
                  queryMutex.withLock {
-@@ -733,12 +1169,53 @@ class AgentLoop @Inject constructor(
+@@ -733,12 +1173,53 @@ class AgentLoop @Inject constructor(
          currentJob = job
      }
  
@@ -1238,7 +1242,7 @@ index 5891c90..c0bd12e 100644
                  _agentState.value = AgentState.Thinking
  
                  // 0. Check if this is a complex, multi-step query
-@@ -746,6 +1223,14 @@ class AgentLoop @Inject constructor(
+@@ -746,6 +1227,14 @@ class AgentLoop @Inject constructor(
                  val complexity = intentClassifier.classifyComplexity(query)
                  val isMultiStep = complexity != QueryComplexity.SIMPLE
  
@@ -1253,7 +1257,7 @@ index 5891c90..c0bd12e 100644
                  // 1. Alias resolution — bypass LLM for simple, single-action commands ONLY
                  if (!isMultiStep) {
                      val lastExecuted = lastExecutedActionsBySession[sessionId]
-@@ -810,15 +1295,125 @@ class AgentLoop @Inject constructor(
+@@ -810,15 +1299,125 @@ class AgentLoop @Inject constructor(
                      }
                  }
  
@@ -1385,7 +1389,7 @@ index 5891c90..c0bd12e 100644
      /**
       * Execute an alias-resolved command directly, bypassing the LLM.
       * Builds a single-step Plan and runs it through the normal plan execution pipeline.
-@@ -830,8 +1425,13 @@ class AgentLoop @Inject constructor(
+@@ -830,8 +1429,13 @@ class AgentLoop @Inject constructor(
          sessionId: String
      ) {
          try {
@@ -1401,7 +1405,7 @@ index 5891c90..c0bd12e 100644
  
              // Save agent response
              val replyMsg = ChatMessage(
-@@ -845,6 +1445,8 @@ class AgentLoop @Inject constructor(
+@@ -845,6 +1449,8 @@ class AgentLoop @Inject constructor(
  
              // Build a single-step plan from the alias
              val plan = buildSingleStepPlan(originalQuery, alias.action, alias.baseParams)
@@ -1410,7 +1414,7 @@ index 5891c90..c0bd12e 100644
  
              val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
              val approval = settingsRepository.llmConfig.first().approvalSettings()
-@@ -889,15 +1491,132 @@ class AgentLoop @Inject constructor(
+@@ -889,15 +1495,132 @@ class AgentLoop @Inject constructor(
          _agentState.value = AgentState.Error(error.title())
      }
  
@@ -1548,7 +1552,7 @@ index 5891c90..c0bd12e 100644
                  You are OpenDroid, a friendly and helpful Android AI assistant.
                  Talk like a real person — warm, casual, and natural. Avoid sounding robotic.
                  Keep your answers short and to the point, but feel free to be friendly.
-@@ -910,65 +1629,104 @@ class AgentLoop @Inject constructor(
+@@ -910,65 +1633,104 @@ class AgentLoop @Inject constructor(
                  
                  Context about user and device state:
                  $relevantContext
@@ -1683,7 +1687,7 @@ index 5891c90..c0bd12e 100644
                      replyId
                  } else {
                      null
-@@ -985,7 +1743,49 @@ class AgentLoop @Inject constructor(
+@@ -985,7 +1747,49 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -1734,7 +1738,7 @@ index 5891c90..c0bd12e 100644
                  publishChatError(
                      ChatErrorUiState.fromException(
                          sessionId = sessionId,
-@@ -1000,12 +1800,96 @@ class AgentLoop @Inject constructor(
+@@ -1000,35 +1804,153 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -1747,6 +1751,16 @@ index 5891c90..c0bd12e 100644
              _chatError.value = null
 -            _agentState.value = AgentState.Speaking(finalReplyMsg.text)
 -            onSpeakCallback?.invoke(finalReplyMsg.text)
+-        } catch (e: CancellationException) {
+-            throw e
+-        } catch (e: LLMException) {
+-            publishChatError(
+-                ChatErrorUiState.fromException(
+-                    sessionId = sessionId,
+-                    requestId = requestId,
+-                    runId = runId,
+-                    failure = e
+-                )
 +            if (onlyCommand) {
 +                // No canned line is put under her badge for a reply she did not write. The
 +                // app's row that keeps her command is the record of this turn.
@@ -1833,10 +1847,19 @@ index 5891c90..c0bd12e 100644
 +                    _agentState.value = AgentState.Idle
 +                }
 +            }
-         } catch (e: CancellationException) {
-             throw e
-         } catch (e: LLMException) {
-@@ -1022,13 +1906,47 @@ class AgentLoop @Inject constructor(
++        } catch (e: CancellationException) {
++            throw e
++        } catch (e: LLMException) {
++            publishChatError(
++                ChatErrorUiState.fromException(
++                    sessionId = sessionId,
++                    requestId = requestId,
++                    runId = runId,
++                    failure = e
++                )
+             )
+         } catch (e: Exception) {
+             _agentState.value = AgentState.Error(NetworkErrorFormatter.toUserMessage(e))
          }
      }
  
@@ -1886,7 +1909,7 @@ index 5891c90..c0bd12e 100644
              val maxTokensForPlan = if (isOnDevice) {
                  PromptBudget.planOutputTokens(
                      OnDeviceModelRegistry.contextWindowFor(config.selectedModelFor(provider.name))
-@@ -1041,7 +1959,7 @@ class AgentLoop @Inject constructor(
+@@ -1041,7 +1963,7 @@ class AgentLoop @Inject constructor(
                      val plannerDeferred = async(Dispatchers.Default) {
                          provider.complete(
                              buildPlanningRequest(
@@ -1895,7 +1918,7 @@ index 5891c90..c0bd12e 100644
                                  relevantContext = relevantContext,
                                  isOnDevice = isOnDevice,
                                  temperature = 0.2f,
-@@ -1054,7 +1972,7 @@ class AgentLoop @Inject constructor(
+@@ -1054,7 +1976,7 @@ class AgentLoop @Inject constructor(
                          provider.complete(
                              LLMRequest(
                                  systemPrompt = PlanningPrompts.CRITIC_SYSTEM_PROMPT,
@@ -1904,7 +1927,7 @@ index 5891c90..c0bd12e 100644
                                  temperature = 0.2f,
                                  maxTokens = 1000,
                                  responseFormat = ResponseFormat.TEXT
-@@ -1084,7 +2002,7 @@ class AgentLoop @Inject constructor(
+@@ -1084,7 +2006,7 @@ class AgentLoop @Inject constructor(
                                      id = UUID.randomUUID().toString(),
                                      text = "Merge the plan and critique into the final JSON plan.",
                                      sender = ChatMessage.Sender.USER,
@@ -1913,7 +1936,7 @@ index 5891c90..c0bd12e 100644
                                  )
                              ),
                              temperature = 0.1f,
-@@ -1099,46 +2017,648 @@ class AgentLoop @Inject constructor(
+@@ -1099,7 +2021,7 @@ class AgentLoop @Inject constructor(
              } else {
                  val response = provider.complete(
                      buildPlanningRequest(
@@ -1922,15 +1945,10 @@ index 5891c90..c0bd12e 100644
                          relevantContext = relevantContext,
                          isOnDevice = isOnDevice,
                          temperature = 0.1f,
-                         maxTokens = maxTokensForPlan
-                     )
-                 )
--                reportLocalPlanningLatency(response)
--                parsePlanFromLlmResponse(response.content, userMsg.text)
-+                reportLocalPlanningLatency(response)
-+                parsePlanFromLlmResponse(response.content, userMsg.text)
-+            }
-+
+@@ -1110,6 +2032,26 @@ class AgentLoop @Inject constructor(
+                 parsePlanFromLlmResponse(response.content, userMsg.text)
+             }
+ 
 +            // With the persona on, a plan that only talks is not a plan: the words belong to
 +            // her chat reply, which has the conversation in front of it and her voice. This
 +            // also keeps the planner's prose out of the chat and skips an approval prompt
@@ -1951,32 +1969,22 @@ index 5891c90..c0bd12e 100644
 +            // talk with the stock assistant and is not marked as a command.
 +            if (!isTalkOnlyPlan(plan)) markOwnerCommand(plan, sessionId)
 +
-+            // The validated copy is what runs, so it is what gets approved and shown:
-+            // validation can add steps the model's own goal and count don't mention.
-+            val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
-+            // Re-read after LLM work: user may have flipped mode or revoked grants
-+            // while planning was in flight; stale pre-LLM config must not auto-run.
-+            val liveConfig = settingsRepository.llmConfig.first()
-+            val approval = liveConfig.approvalSettings()
-+            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated, userMsg.text)) {
-+                recordAutoApprovedTrace(validated, approval.mode, sessionId)
+             // The validated copy is what runs, so it is what gets approved and shown:
+             // validation can add steps the model's own goal and count don't mention.
+             val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
+@@ -1119,6 +2061,7 @@ class AgentLoop @Inject constructor(
+             val approval = liveConfig.approvalSettings()
+             if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated, userMsg.text)) {
+                 recordAutoApprovedTrace(validated, approval.mode, sessionId)
 +                planStarted = true
-+                executePlanLoop(validated, context, sessionId, autoApproved = true)
-+            } else {
-+                proposePlan(validated, sessionId)
-+            }
-+        } catch (e: CancellationException) {
-+            throw e
-+        } catch (e: LLMException) {
-+            publishChatError(
-+                ChatErrorUiState.fromException(
-+                    sessionId = sessionId,
-+                    requestId = userMsg.id,
-+                    runId = UUID.randomUUID().toString(),
-+                    failure = e
-+                )
-+            )
-+        } catch (e: Exception) {
+                 executePlanLoop(validated, context, sessionId, autoApproved = true)
+             } else {
+                 proposePlan(validated, sessionId)
+@@ -1135,10 +2078,591 @@ class AgentLoop @Inject constructor(
+                 )
+             )
+         } catch (e: Exception) {
+-            fallbackOrError(userMsg, context, e, sessionId)
 +            // A question from the planner, or an answer that is no plan, is not lost: her
 +            // reply is told that the app did not act, and why. A plan that broke off
 +            // after it had started is another matter: steps may have run, so her reply is
@@ -2371,21 +2379,9 @@ index 5891c90..c0bd12e 100644
 +                )
 +                _agentState.value = AgentState.Idle
 +                return
-             }
--
--            // The validated copy is what runs, so it is what gets approved and shown:
--            // validation can add steps the model's own goal and count don't mention.
++            }
 +            notRun = com.opendroid.ai.core.persona.PersonaActionRows.NotRun.FAILED
-             val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
--            // Re-read after LLM work: user may have flipped mode or revoked grants
--            // while planning was in flight; stale pre-LLM config must not auto-run.
--            val liveConfig = settingsRepository.llmConfig.first()
--            val approval = liveConfig.approvalSettings()
--            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated, userMsg.text)) {
--                recordAutoApprovedTrace(validated, approval.mode, sessionId)
--                executePlanLoop(validated, context, sessionId, autoApproved = true)
--            } else {
--                proposePlan(validated, sessionId)
++            val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
 +            startedPlanId = validated.planId
 +            // Validation rewrites the plan. One it left with no steps would run nothing and still say done.
 +            if (validated.steps.isEmpty()) {
@@ -2440,8 +2436,8 @@ index 5891c90..c0bd12e 100644
 +                    handedOn = true
 +                    proposePlan(validated, sessionId)
 +                }
-             }
-         } catch (e: CancellationException) {
++            }
++        } catch (e: CancellationException) {
 +            // He stopped it, or wrote something new, before a plan was handed on. Her
 +            // command row is already in the chat; this says that it never ran. The
 +            // coroutine is cancelled, so the row needs NonCancellable to be written at all.
@@ -2462,18 +2458,8 @@ index 5891c90..c0bd12e 100644
 +                    }
 +                }
 +            }
-             throw e
--        } catch (e: LLMException) {
--            publishChatError(
--                ChatErrorUiState.fromException(
--                    sessionId = sessionId,
--                    requestId = userMsg.id,
--                    runId = UUID.randomUUID().toString(),
--                    failure = e
--                )
--            )
-         } catch (e: Exception) {
--            fallbackOrError(userMsg, context, e, sessionId)
++            throw e
++        } catch (e: Exception) {
 +            android.util.Log.w("AgentLoop", "Persona action not run: ${e.javaClass.simpleName}")
 +            // The chat says what became of it in a fixed row: no model is asked, so this
 +            // cannot loop. It is not spoken, because her reply is still being read out.
@@ -2587,7 +2573,7 @@ index 5891c90..c0bd12e 100644
      private suspend fun reportLocalPlanningLatency(response: LLMResponse) {
          val result = llmProviderFactory.recordPlanningLatency(response)
          if (result?.status == LatencyBudgetStatus.EXCEEDED && result.message != null) {
-@@ -1149,16 +2669,35 @@ class AgentLoop @Inject constructor(
+@@ -1149,16 +2673,35 @@ class AgentLoop @Inject constructor(
      /**
       * Non-LLM planning failures may still degrade to alias/simple chat. Typed
       * [LLMException]s are handled above and must never fall through here.
@@ -2632,7 +2618,7 @@ index 5891c90..c0bd12e 100644
          }
  
          try {
-@@ -1180,7 +2719,7 @@ class AgentLoop @Inject constructor(
+@@ -1180,7 +2723,7 @@ class AgentLoop @Inject constructor(
          } catch (e: Exception) {
              android.util.Log.e("AgentLoop", "Failed to log plan generation failure: ${e.localizedMessage}")
          }
@@ -2641,7 +2627,7 @@ index 5891c90..c0bd12e 100644
      }
  
      /**
-@@ -1241,12 +2780,72 @@ class AgentLoop @Inject constructor(
+@@ -1241,12 +2784,72 @@ class AgentLoop @Inject constructor(
          }
      }
  
@@ -2679,8 +2665,8 @@ index 5891c90..c0bd12e 100644
 +                savePlanRow(PlanRecord.rejected(rejected, ::canonicalNameOf), rejected, rowSession)
 +            }
 +        }
-+    }
-+
+     }
+ 
 +    /** [plan] as the plan manager holds it now, when it is still the same plan; else [plan] itself. */
 +    private fun livePlan(plan: Plan): Plan =
 +        planManager.currentPlan.value?.takeIf { it.planId == plan.planId } ?: plan
@@ -2707,15 +2693,15 @@ index 5891c90..c0bd12e 100644
 +        } catch (e: Exception) {
 +            android.util.Log.w("AgentLoop", "Plan row not stored: ${e.javaClass.simpleName}")
 +        }
-     }
- 
++    }
++
 +    /** The name the dispatcher runs a step's action under. */
 +    private fun canonicalNameOf(step: PlanStep): String = actionDispatcher.canonicalActionName(step.action, step.params)
 +
      /**
       * Forgets a session's contextual follow-up state (see
       * [lastExecutedActionsBySession]). Call this once a session is gone for good
-@@ -1280,23 +2879,73 @@ class AgentLoop @Inject constructor(
+@@ -1280,23 +2883,73 @@ class AgentLoop @Inject constructor(
       * actually current RIGHT NOW, captured synchronously before [jobToCancel]
       * even starts unwinding. [planManager.currentPlan] is a plain StateFlow
       * read, not suspending, so this capture is safe to do here.
@@ -2791,7 +2777,7 @@ index 5891c90..c0bd12e 100644
              }
          }
      }
-@@ -1313,8 +2962,33 @@ class AgentLoop @Inject constructor(
+@@ -1313,8 +2966,33 @@ class AgentLoop @Inject constructor(
       * belongs to [newSessionId] (a new task in the SAME chat legitimately supersedes it).
       */
      private suspend fun resolveStaleProposedPlan(newSessionId: String) {
@@ -2827,7 +2813,7 @@ index 5891c90..c0bd12e 100644
          val proposedState = _agentState.value as? AgentState.PlanProposed ?: return
  
          _proposedPlanSessionId.value = null
-@@ -1325,8 +2999,25 @@ class AgentLoop @Inject constructor(
+@@ -1325,8 +3003,25 @@ class AgentLoop @Inject constructor(
          // finished), but pinning the identity explicitly keeps this call
          // consistent with cancelCurrentTask/abandonWaitingTask rather than
          // relying on a coincidence that nothing else changed it in between.
@@ -2855,7 +2841,7 @@ index 5891c90..c0bd12e 100644
          val stoppedMsg = ChatMessage(
              id = UUID.randomUUID().toString(),
              text = "I cancelled the plan I proposed here since you started a new task elsewhere.",
-@@ -1359,7 +3050,17 @@ class AgentLoop @Inject constructor(
+@@ -1359,7 +3054,17 @@ class AgentLoop @Inject constructor(
          scope.launch {
              jobToCancel?.join()
              if (planIdToCancel != null) {
@@ -2873,7 +2859,7 @@ index 5891c90..c0bd12e 100644
              }
  
              val stoppedMsg = ChatMessage(
-@@ -1426,16 +3127,51 @@ class AgentLoop @Inject constructor(
+@@ -1426,16 +3131,51 @@ class AgentLoop @Inject constructor(
                  priorSteps = currentPlanState.steps
              )
  
@@ -2927,15 +2913,64 @@ index 5891c90..c0bd12e 100644
              }
  
              // Redaction must be based on the dispatcher's canonical mapped action,
-@@ -1478,6 +3214,7 @@ class AgentLoop @Inject constructor(
+@@ -1463,10 +3203,44 @@ class AgentLoop @Inject constructor(
+                 android.util.Log.e("AgentLoop", "Failed to log task execution: ${e.localizedMessage}")
+             }
+ 
++            // A failed step whose fallback is a registered action runs the fallback here, and
++            // what the fallback returns is handled exactly as the step's own result would be.
++            // A fallback that hands the step to him (a dialer waiting for his tap) is then a
++            // hand-over, told once and recorded as one, not a second failure; one he turns
++            // down ends the plan as a refusal.
++            var primaryError: String? = null
++            var ranAction = stepToExecute.action
++            var ranCanonical = canonicalActionName
++            if (actionSequenceExecutor.shouldAttemptFallback(actionResult, stepToExecute)) {
++                // A cancel during the primary must not fire the fallback, which can be
++                // a SEND_SMS or MAKE_CALL the user just stopped.
++                currentCoroutineContext().ensureActive()
++                primaryError = actionResult.error
++                ranAction = stepToExecute.fallback
++                ranCanonical = actionDispatcher.canonicalActionName(stepToExecute.fallback, resolvedParams)
++                actionResult = try {
++                    actionSequenceExecutor.dispatch(stepToExecute.fallback, resolvedParams, context)
++                } catch (e: CancellationException) {
++                    throw e
++                } catch (e: Exception) {
++                    ActionResult(false, null, e.localizedMessage ?: "Unknown execution error")
++                }
++                if (actionResult.success) {
++                    // The result is what later steps read as $sN and the summary speaks, so
++                    // it holds only the fallback's data. Of the primary's error only the
++                    // size goes to the log: its text can name a contact.
++                    android.util.Log.w(
++                        "AgentLoop",
++                        "Step ${stepToExecute.stepId} primary failed, fallback succeeded " +
++                            "(${primaryError?.length ?: 0} chars of error text)"
++                    )
++                }
++            }
++
+             if (actionResult.success) {
+                 lastExecutedActionsBySession[sessionId] = LastExecutedAction(
+-                    stepToExecute.action,
+-                    PlanPrivacy.redactParams(stepToExecute.action, resolvedParams)
++                    ranAction,
++                    PlanPrivacy.redactParams(ranAction, resolvedParams)
+                 )
+                 planManager.updateStepStatus(
+                     stepToExecute.stepId,
+@@ -1478,7 +3252,9 @@ class AgentLoop @Inject constructor(
                  // tap). Nothing failed, so no fallback and no failure replan - surface the
                  // hand-off in chat and speech, record it as the step result, and let the
                  // normal re-evaluation path decide what remains.
 +                handOffPlanIds.add(currentPlanState.planId)
                  handlePendingUserAction(actionResult, sessionId)
++                handOffsTold.add(stepKey(currentPlanState.planId, stepToExecute.stepId))
                  planManager.updateStepStatus(
                      stepToExecute.stepId,
-@@ -1488,6 +3225,8 @@ class AgentLoop @Inject constructor(
+                     StepStatus.COMPLETED,
+@@ -1488,12 +3264,14 @@ class AgentLoop @Inject constructor(
                  // A user-facing flow (for example email compose) is not an
                  // executed side effect. Do not run an automated fallback or
                  // allow the plan to treat the step as completed.
@@ -2944,7 +2979,23 @@ index 5891c90..c0bd12e 100644
                  planManager.updateStepStatus(
                      stepToExecute.stepId,
                      StepStatus.FAILED,
-@@ -1545,9 +3284,9 @@ class AgentLoop @Inject constructor(
+                     error = actionResult.error ?: "User action is required before this step can complete."
+                 )
+-                if (stopsPlanAfterUserHandOff(canonicalActionName)) {
++                if (stopsPlanAfterUserHandOff(ranCanonical)) {
+                     planManager.updatePlanStatus(PlanStatus.FAILED)
+                     speakAndSaveSummary(
+                         planManager.currentPlan.value ?: currentPlanState,
+@@ -1515,7 +3293,7 @@ class AgentLoop @Inject constructor(
+                 // goes on after a refusal is not a question for the LLM.
+                 cancelDeclinedPlan(stepToExecute, actionResult, currentPlanState.planId, sessionId)
+                 return
+-            } else if (actionResult is ActionResult.UnknownAction) {
++            } else if (actionResult is ActionResult.UnknownAction && primaryError == null) {
+                 planManager.updateStepStatus(
+                     stepToExecute.stepId,
+                     StepStatus.FAILED,
+@@ -1545,9 +3323,9 @@ class AgentLoop @Inject constructor(
                      return
                  }
  
@@ -2957,24 +3008,64 @@ index 5891c90..c0bd12e 100644
  
                  when (replan.decision.uppercase()) {
                      "ABANDON" -> {
-@@ -1598,12 +3337,12 @@ class AgentLoop @Inject constructor(
-                     }
-                     if (fallbackResult.success) {
-                         // The result is what later steps read as $sN and the summary
+@@ -1580,50 +3358,12 @@ class AgentLoop @Inject constructor(
+                 currentPlanState = planManager.currentPlan.value ?: break
+                 continue
+             } else {
+-                // Try fallback action
+-                if (actionSequenceExecutor.shouldAttemptFallback(actionResult, stepToExecute)) {
+-                    // A cancel during the primary must not fire the fallback, which can be
+-                    // a SEND_SMS or MAKE_CALL the user just stopped.
+-                    currentCoroutineContext().ensureActive()
+-                    val fallbackResult = try {
+-                        actionSequenceExecutor.dispatch(stepToExecute.fallback, resolvedParams, context)
+-                    } catch (e: CancellationException) {
+-                        throw e
+-                    } catch (e: Exception) {
+-                        ActionResult(false, null, e.localizedMessage ?: "Unknown execution error")
+-                    }
+-                    if (fallbackResult is ActionResult.Declined) {
+-                        cancelDeclinedPlan(stepToExecute, fallbackResult, currentPlanState.planId, sessionId)
+-                        return
+-                    }
+-                    if (fallbackResult.success) {
+-                        // The result is what later steps read as $sN and the summary
 -                        // speaks, so it holds only the fallback's data. The primary's
 -                        // error goes to the log.
-+                        // speaks, so it holds only the fallback's data. Of the primary's
-+                        // error only the size goes to the log: its text can name a contact.
-                         android.util.Log.w(
-                             "AgentLoop",
+-                        android.util.Log.w(
+-                            "AgentLoop",
 -                            "Step ${stepToExecute.stepId} primary failed, fallback succeeded: " +
 -                                actionResult.error?.let(com.opendroid.ai.core.crash.CrashLogRedactor::redact)
-+                            "Step ${stepToExecute.stepId} primary failed, fallback succeeded " +
-+                                "(${actionResult.error?.length ?: 0} chars of error text)"
-                         )
-                         planManager.updateStepStatus(
-                             stepToExecute.stepId,
-@@ -1651,14 +3390,28 @@ class AgentLoop @Inject constructor(
+-                        )
+-                        planManager.updateStepStatus(
+-                            stepToExecute.stepId,
+-                            StepStatus.COMPLETED,
+-                            result = completedStepResult(fallbackResult)
+-                        )
+-                    } else {
+-                        planManager.updateStepStatus(
+-                            stepToExecute.stepId,
+-                            StepStatus.FAILED,
+-                            error = "Primary failed: ${actionResult.error}. Fallback failed: ${fallbackResult.error}"
+-                        )
+-                    }
+-                } else {
+-                    planManager.updateStepStatus(
+-                        stepToExecute.stepId,
+-                        StepStatus.FAILED,
+-                        error = actionResult.error ?: "Action execution failed."
+-                    )
+-                }
++                planManager.updateStepStatus(
++                    stepToExecute.stepId,
++                    StepStatus.FAILED,
++                    error = primaryError?.let { "Primary failed: $it. Fallback failed: ${actionResult.error}" }
++                        ?: actionResult.error ?: "Action execution failed."
++                )
+             }
+ 
+             // Refresh current state of plan
+@@ -1651,14 +3391,28 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -3009,7 +3100,7 @@ index 5891c90..c0bd12e 100644
                      speakAndSaveSummary(currentPlanState, false, sessionId)
                      return
                  }
-@@ -1677,6 +3430,35 @@ class AgentLoop @Inject constructor(
+@@ -1677,6 +3431,35 @@ class AgentLoop @Inject constructor(
          }
      }
  
@@ -3045,7 +3136,7 @@ index 5891c90..c0bd12e 100644
      /**
       * The model failed partway through [planId]. Steps before this point may already
       * have sent an SMS or placed a call, so the plan is PAUSED rather than failed and
-@@ -1703,8 +3485,22 @@ class AgentLoop @Inject constructor(
+@@ -1703,8 +3486,22 @@ class AgentLoop @Inject constructor(
          sessionId: String
      ) {
          planManager.updateStepStatus(step.stepId, StepStatus.FAILED, error = declined.message)
@@ -3069,7 +3160,7 @@ index 5891c90..c0bd12e 100644
      }
  
      /**
-@@ -1746,35 +3542,92 @@ class AgentLoop @Inject constructor(
+@@ -1746,35 +3543,92 @@ class AgentLoop @Inject constructor(
              return true
          }
          // Re-read after LLM work: the user may have flipped mode or revoked grants.
@@ -3181,7 +3272,7 @@ index 5891c90..c0bd12e 100644
      }
  
      private data class NeedsInputRetry(
-@@ -1829,7 +3682,8 @@ class AgentLoop @Inject constructor(
+@@ -1829,7 +3683,8 @@ class AgentLoop @Inject constructor(
              Json { ignoreUnknownKeys = true }
                  .decodeFromString<List<Map<String, String>>>(matchesJson)
          } catch (e: Exception) {
@@ -3191,7 +3282,7 @@ index 5891c90..c0bd12e 100644
              return NeedsInputRetry(pickerResult, originalParams)
          }
  
-@@ -1842,7 +3696,12 @@ class AgentLoop @Inject constructor(
+@@ -1842,7 +3697,12 @@ class AgentLoop @Inject constructor(
              id = picker.messageId,
              text = "${pickerResult.question}\n\n$optionsText",
              sender = ChatMessage.Sender.AGENT,
@@ -3205,7 +3296,7 @@ index 5891c90..c0bd12e 100644
              contactPickerData = matchesJson
          )
          activeContactPicker = picker
-@@ -1859,16 +3718,9 @@ class AgentLoop @Inject constructor(
+@@ -1859,16 +3719,9 @@ class AgentLoop @Inject constructor(
                  _pendingContactPickerMessageId.value = null
              }
          }
@@ -3223,7 +3314,7 @@ index 5891c90..c0bd12e 100644
          // Resolve user selection to a contact. A tap on this picker's card carries the
          // contact itself; typed answers are matched against this picker's own list.
          val selectedContact = ContactPickerSelection.resolve(reply, matches)
-@@ -1884,7 +3736,11 @@ class AgentLoop @Inject constructor(
+@@ -1884,7 +3737,11 @@ class AgentLoop @Inject constructor(
              // Couldn't match — tell user and fail gracefully
              val failMsg = ChatMessage(
                  id = UUID.randomUUID().toString(),
@@ -3236,7 +3327,7 @@ index 5891c90..c0bd12e 100644
                  sender = ChatMessage.Sender.AGENT,
                  modelBadge = "System"
              )
-@@ -1916,9 +3772,10 @@ class AgentLoop @Inject constructor(
+@@ -1916,9 +3773,10 @@ class AgentLoop @Inject constructor(
          // Confirm selection to user
          val confirmMsg = ChatMessage(
              id = UUID.randomUUID().toString(),
@@ -3249,7 +3340,7 @@ index 5891c90..c0bd12e 100644
          )
          conversationRepository.insertMessage(sessionId, confirmMsg)
  
-@@ -1955,12 +3812,19 @@ class AgentLoop @Inject constructor(
+@@ -1955,12 +3813,19 @@ class AgentLoop @Inject constructor(
              id = UUID.randomUUID().toString(),
              text = needsInput.question + optionsText,
              sender = ChatMessage.Sender.AGENT,
@@ -3271,7 +3362,7 @@ index 5891c90..c0bd12e 100644
          if (answer.isEmpty()) {
              return NeedsInputRetry(
                  ActionResult.Failure(
-@@ -1971,14 +3835,7 @@ class AgentLoop @Inject constructor(
+@@ -1971,14 +3836,7 @@ class AgentLoop @Inject constructor(
              )
          }
  
@@ -3287,7 +3378,7 @@ index 5891c90..c0bd12e 100644
          val newParams = originalParams.toMutableMap().apply { put(paramKey, answer) }
          return NeedsInputRetry(
              actionDispatcher.execute(actionName, newParams, context),
-@@ -1998,7 +3855,13 @@ class AgentLoop @Inject constructor(
+@@ -1998,7 +3856,13 @@ class AgentLoop @Inject constructor(
              id = UUID.randomUUID().toString(),
              text = pending.message,
              sender = ChatMessage.Sender.AGENT,
@@ -3302,7 +3393,7 @@ index 5891c90..c0bd12e 100644
          )
          conversationRepository.insertMessage(sessionId, pendingMsg)
          onSpeakCallback?.invoke(pending.message)
-@@ -2009,19 +3872,70 @@ class AgentLoop @Inject constructor(
+@@ -2009,19 +3873,70 @@ class AgentLoop @Inject constructor(
       * trace message in the chat instead - the audit trail the spec requires.
       * Speech leads with "Running:" so a hands-free user knows no approval
       * prompt is coming.
@@ -3377,7 +3468,7 @@ index 5891c90..c0bd12e 100644
      }
  
      private suspend fun speakAndSaveSummary(
-@@ -2030,52 +3944,130 @@ class AgentLoop @Inject constructor(
+@@ -2030,52 +3945,135 @@ class AgentLoop @Inject constructor(
          sessionId: String,
          preferredError: String? = null
      ) {
@@ -3404,7 +3495,8 @@ index 5891c90..c0bd12e 100644
 +            plan = plan,
 +            isSuccess = isSuccess,
 +            canonicalName = ::canonicalNameOf,
-+            handedOver = { step -> handedOverSteps.contains(stepKey(plan.planId, step.stepId)) }
++            handedOver = { step -> handedOverSteps.contains(stepKey(plan.planId, step.stepId)) },
++            toldAlready = { step -> handOffsTold.contains(stepKey(plan.planId, step.stepId)) }
 +        )
 +        plan.steps.filter { it.status == StepStatus.FAILED }.forEach { step ->
 +            // The error text can name a contact or quote a message; only its size is logged.
@@ -3500,7 +3592,7 @@ index 5891c90..c0bd12e 100644
 -            val userFacingError = selectUserFacingFailure(preferredError, failedSteps.map { it.error })
 -            
 -            userFacingError ?: humanizeFailure(plan.goal)
-+            speakAndSaveMessage(summaryText, sessionId, exactBadge)
++            speakAndSaveMessage(summaryText, sessionId, exactBadge, spoken = record.spoken)
          }
 +    }
 +
@@ -3508,19 +3600,23 @@ index 5891c90..c0bd12e 100644
 +     * Stores [summaryText] as the app's row and speaks it. [hers] is set when the text
 +     * is one of her fixed lines from the phrasebook, and only then: such a line goes
 +     * through her voice, with her speech respelling. Everything else (what a step
-+     * reported, a hand-over, the stock lines) is spoken as it is written.
++     * reported, a hand-over, the stock lines) is spoken as it is written. [spoken] is
++     * what is said aloud when that is less than the row: lines he was told aloud already
++     * are not said again. When it is blank nothing is said.
 +     */
 +    private suspend fun speakAndSaveMessage(
 +        summaryText: String,
 +        sessionId: String,
 +        badge: String = "System",
-+        hers: Boolean = false
++        hers: Boolean = false,
++        spoken: String = summaryText
 +    ) {
 +        saveAppRow(summaryText, sessionId, badge)
  
 -        speakAndSaveMessage(summaryText, sessionId)
-+        _agentState.value = AgentState.Speaking(summaryText)
-+        speakLine(summaryText, hers)
++        if (spoken.isBlank()) return
++        _agentState.value = AgentState.Speaking(spoken)
++        speakLine(spoken, hers)
      }
  
 -    private suspend fun speakAndSaveMessage(summaryText: String, sessionId: String) {
@@ -3542,7 +3638,7 @@ index 5891c90..c0bd12e 100644
      }
  
      private fun formatStreamedReply(text: String): String {
-@@ -2090,8 +4082,9 @@ class AgentLoop @Inject constructor(
+@@ -2090,8 +4088,9 @@ class AgentLoop @Inject constructor(
       * intent resolution errors from being spoken to the user.
       */
      private fun formatErrorForUser(action: String, rawError: String): String {
@@ -3554,7 +3650,7 @@ index 5891c90..c0bd12e 100644
  
          // Return only a short, friendly message
          return when {
-@@ -2142,40 +4135,4 @@ class AgentLoop @Inject constructor(
+@@ -2142,40 +4141,4 @@ class AgentLoop @Inject constructor(
              }
          }
      }
@@ -5239,10 +5335,10 @@ index 8307439..34c5c6d 100644
          }
 diff --git a/app/src/main/java/com/opendroid/ai/core/agent/PlanRecord.kt b/app/src/main/java/com/opendroid/ai/core/agent/PlanRecord.kt
 new file mode 100644
-index 0000000..ace0509
+index 0000000..9c477ff
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/agent/PlanRecord.kt
-@@ -0,0 +1,393 @@
+@@ -0,0 +1,414 @@
 +package com.opendroid.ai.core.agent
 +
 +import com.opendroid.ai.actions.base.ActionResult
@@ -5294,7 +5390,10 @@ index 0000000..ace0509
 +     * record that holds both, or a step that never ran, was interrupted or was left with
 +     * the owner, is not: "it worked" and "it failed" are each wrong about a part of it.
 +     * [plannerWords] is what the plan's talk steps said, kept apart because it is the
-+     * planner's text and not a result.
++     * planner's text and not a result. [spoken] is [text] without the lines he was
++     * already told aloud while the plan ran (a hand-over such as "tap Call" is said when
++     * it happens): the record keeps them, the voice does not say them twice. It is empty
++     * when every line of the record was told already.
 +     */
 +    data class Record(
 +        val text: String,
@@ -5302,7 +5401,8 @@ index 0000000..ace0509
 +        val namesSteps: Boolean,
 +        val stopped: Boolean,
 +        val plainOutcome: Boolean,
-+        val plannerWords: String?
++        val plannerWords: String?,
++        val spoken: String = text
 +    )
 +
 +    /**
@@ -5314,17 +5414,23 @@ index 0000000..ace0509
 +     * [canonicalName] gives the name a step's action runs under. [handedOver] is true for
 +     * a step that was left with the owner to finish (a draft waiting for his tap): it is
 +     * neither done nor failed, and what he has to do is told in the handler's own words.
++     * [toldAlready] is true for a step that ended by handing the rest to him (a dialer
++     * open and waiting for his tap), which he was told aloud when it happened. Its line
++     * stays in [Record.text], after the steps that were done, where a shortened row still
++     * keeps it; it is left out of [Record.spoken]. Such a run is not a plain outcome.
 +     */
 +    fun of(
 +        plan: Plan,
 +        isSuccess: Boolean,
 +        canonicalName: (PlanStep) -> String,
-+        handedOver: (PlanStep) -> Boolean = { false }
++        handedOver: (PlanStep) -> Boolean = { false },
++        toldAlready: (PlanStep) -> Boolean = { false }
 +    ): Record {
 +        // Secrets a step was given are taken out of every result before it is repeated.
 +        val steps = PlanPrivacy.redactPlan(plan).steps
 +        val lines = PlanApprovalSummary.stepLines(plan)
 +        val done = mutableListOf<String>()
++        val handOffs = mutableListOf<String>()
 +        val failed = mutableListOf<String>()
 +        val interrupted = mutableListOf<String>()
 +        val notRun = mutableListOf<String>()
@@ -5343,7 +5449,10 @@ index 0000000..ace0509
 +                    canonical in ASKING_ACTIONS -> Unit
 +                    else -> {
 +                        val own = ownResult(step.result)
-+                        if (own != null) {
++                        if (own != null && toldAlready(step)) {
++                            anyHandedOver = true
++                            handOffs += own
++                        } else if (own != null) {
 +                            done += own
 +                        } else {
 +                            done += "Done: $label."
@@ -5380,19 +5489,26 @@ index 0000000..ace0509
 +        }
 +
 +        val stopped = !isSuccess && !anyFailed
++        val tail = mutableListOf<String>()
 +        // One outcome for the whole run, and the one the caller was told: only steps that
 +        // were done, or only steps that failed.
 +        val plainOutcome = !stopped && !anyHandedOver && interrupted.isEmpty() && notRun.isEmpty() &&
 +            if (isSuccess) done.isNotEmpty() && failed.isEmpty() else done.isEmpty() && failed.isNotEmpty()
++
 +        val out = mutableListOf<String>()
 +        out += done
++        out += handOffs
 +        out += failed
-+        if (stopped) out += STOPPED_NOTHING_FAILED
-+        interrupted.forEach { out += "Interrupted: $it ($MAY_HAVE_RUN)." }
-+        if (notRun.isNotEmpty()) out += "Not run: ${notRun.joinToString(", ")}."
++        // The same lines, less the hand-overs he was told when they happened.
++        val spoken = (done + failed).toMutableList()
++        if (stopped) tail += STOPPED_NOTHING_FAILED
++        interrupted.forEach { tail += "Interrupted: $it ($MAY_HAVE_RUN)." }
++        if (notRun.isNotEmpty()) tail += "Not run: ${notRun.joinToString(", ")}."
++        out += tail
++        spoken += tail
 +
 +        // What a talk step says is left out when it only repeats a result already listed.
-+        val plannerWords = talk.filterNot { words -> done.any { it == words } }
++        val plannerWords = talk.filterNot { words -> (done + handOffs).any { it == words } }
 +            .joinToString("\n").takeIf { it.isNotBlank() }
 +        if (out.isEmpty()) {
 +            return Record(
@@ -5410,7 +5526,8 @@ index 0000000..ace0509
 +            namesSteps = namesSteps,
 +            stopped = stopped,
 +            plainOutcome = plainOutcome,
-+            plannerWords = plannerWords
++            plannerWords = plannerWords,
++            spoken = spoken.joinToString("\n")
 +        )
 +    }
 +
@@ -15328,10 +15445,10 @@ index 0000000..b57dc06
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaOwnTime.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaOwnTime.kt
 new file mode 100644
-index 0000000..cab09b4
+index 0000000..df59296
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaOwnTime.kt
-@@ -0,0 +1,840 @@
+@@ -0,0 +1,854 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.data.models.ChatMessage
@@ -15759,10 +15876,24 @@ index 0000000..cab09b4
 +            }
 +    }
 +
-+    /** A mark at the start of a line, whatever its case, also behind a list dash. */
++    /**
++     * A mark at the start of a line, whatever its case, also behind a list dash, and
++     * behind the label a line of the talk block has ("you: say: hey") or a chat model's
++     * name label: copying the transcript's form does not unmark her line.
++     */
 +    private fun marked(line: String, mark: String): String? {
-+        val bare = line.trim().removePrefix("-").removePrefix("*").trim()
++        val bare = withoutTalkLabel(line.trim().removePrefix("-").removePrefix("*").trim())
 +        return if (bare.startsWith(mark, ignoreCase = true)) bare.substring(mark.length).trim() else null
++    }
++
++    /** "you:" or her name with a colon in front of a line, taken off only when a mark follows it. */
++    private val TALK_LABEL = Regex("""^(?:you|yume kisaragi|yume|kisaragi)\s*:\s*""", RegexOption.IGNORE_CASE)
++    private val MARKS = listOf(SAY, NOTE, NEXT, PersonaActions.MARKER, PersonaThoughtLines.MARKER)
++
++    private fun withoutTalkLabel(line: String): String {
++        val label = TALK_LABEL.find(line) ?: return line
++        val rest = line.substring(label.range.last + 1)
++        return if (MARKS.any { rest.startsWith(it, ignoreCase = true) }) rest else line
 +    }
 +
 +    /**
@@ -15829,8 +15960,8 @@ index 0000000..cab09b4
 +                    // Words after the mark that name no time may have been a thought.
 +                    if (next.isNotEmpty() && parseWish(next) == null) thoughts += trimmed
 +                }
-+                trimmed.startsWith(PersonaThoughtLines.MARKER) ->
-+                    PersonaThoughtLines.split(trimmed).thoughts.takeIf { it.isNotEmpty() }?.let { thoughts += it }
++                PersonaThoughtLines.isThoughtLine(withoutTalkLabel(trimmed)) ->
++                    PersonaThoughtLines.split(withoutTalkLabel(trimmed)).thoughts.takeIf { it.isNotEmpty() }?.let { thoughts += it }
 +                else -> thoughts += trimmed
 +            }
 +        }
@@ -18482,10 +18613,10 @@ index 0000000..e7a2496
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaThoughts.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaThoughts.kt
 new file mode 100644
-index 0000000..5c84fd6
+index 0000000..8066187
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaThoughts.kt
-@@ -0,0 +1,371 @@
+@@ -0,0 +1,391 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.content.Context
@@ -18809,11 +18940,31 @@ index 0000000..5c84fd6
 +     */
 +    data class Split(val text: String, val thoughts: String, val marked: Boolean)
 +
-+    private fun isThoughtLine(line: String): Boolean = line.trimStart().startsWith(MARKER)
++    /** Quotation marks a model may open a line with: the ones [PersonaPrompts.cleanReply] takes off a reply. */
++    private val OPENING_QUOTES = charArrayOf('"', '\u201C', '\u300C')
++    private val CLOSING_QUOTES = charArrayOf('"', '\u201D', '\u300D')
++
++    /** A name a chat model writes in front of a line, in any case, as a label with a colon. */
++    private val NAME_LABEL = Regex("""^(?:yume kisaragi|yume|kisaragi|assistant|ai)\s*:\s*""", RegexOption.IGNORE_CASE)
++
++    /**
++     * [line] without an opening quotation mark, and without a name label in front of it
++     * ("Yume: ", "yume: ") when a marker follows the label: a marker behind either still
++     * opens a thought. Otherwise the reply would lose the label when it is tidied and
++     * show the thought. A label with no marker behind it is left as it is.
++     */
++    private fun bare(line: String): String {
++        val text = line.trim().trimStart(*OPENING_QUOTES).trimStart()
++        val label = NAME_LABEL.find(text) ?: return text
++        val rest = text.substring(label.range.last + 1).trimStart(*OPENING_QUOTES).trimStart()
++        return if (rest.startsWith(HALF_MARKER)) rest else text
++    }
++
++    internal fun isThoughtLine(line: String): Boolean = bare(line).startsWith(MARKER)
 +
 +    /** What a thought line says, without its marker. A marker closed the way it was opened loses that too. */
 +    private fun thoughtOf(line: String): String =
-+        line.trim().trimStart('<').trim().removeSuffix(PersonaActions.MARKER).trim()
++        bare(line).trimStart('<').trim().trimEnd(*CLOSING_QUOTES).trim().removeSuffix(PersonaActions.MARKER).trim()
 +
 +    /**
 +     * Separates what she says from what she keeps to herself. Every line that starts
@@ -18844,7 +18995,7 @@ index 0000000..5c84fd6
 +    fun hidden(streamed: String): String {
 +        val lines = streamed.lines().filterNot { isThoughtLine(it) }
 +        val last = lines.indexOfLast { it.isNotBlank() }
-+        val whole = if (last >= 0 && lines[last].trim() == HALF_MARKER) lines.take(last) else lines
++        val whole = if (last >= 0 && bare(lines[last]) == HALF_MARKER) lines.take(last) else lines
 +        return whole.joinToString("\n")
 +    }
 +
@@ -19373,7 +19524,7 @@ index c402e3b..a37099e 100644
                              autoReplyEngine.scheduleAutoReply(savedEntity, sbn, applicationContext)
                          }
 diff --git a/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt b/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt
-index 23a33d8..66861fc 100644
+index 23a33d8..12432b8 100644
 --- a/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt
 +++ b/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt
 @@ -12,12 +12,16 @@ import com.opendroid.ai.core.agent.AgentLoop
@@ -19546,13 +19697,13 @@ index 23a33d8..66861fc 100644
          agentLoop.onSpeakCallback = { text ->
 -            textToSpeechEngine.speak(text)
 +            if (agentLoop.quietForOwnTime) speechEnded() else textToSpeechEngine.speak(text)
-+        }
-+        // Her own lines, and only those, get her speech respelling.
-+        agentLoop.onPersonaSpeakCallback = { text ->
-+            if (agentLoop.quietForOwnTime) speechEnded() else textToSpeechEngine.speak(text, personaVoice = true)
          }
 -        // Stop and Clear cancel the task; speech already playing or still being fetched
 -        // must stop with it.
++        // Her own lines, and only those, get her speech respelling.
++        agentLoop.onPersonaSpeakCallback = { text ->
++            if (agentLoop.quietForOwnTime) speechEnded() else textToSpeechEngine.speak(text, personaVoice = true)
++        }
 +        // Stop and Clear cancel the task, and a new message of his moves on from whatever
 +        // was being said; speech already playing, waiting or still being fetched stops
 +        // with it, and no microphone opens for a prompt that was cut off. A wake reply
@@ -19603,7 +19754,7 @@ index 23a33d8..66861fc 100644
              }
          }
  
-@@ -130,10 +252,30 @@ class OpenDroidService : Service() {
+@@ -130,25 +252,128 @@ class OpenDroidService : Service() {
          // and that second proposal must not wait in silence.
          serviceScope.launch {
              var promptedPlan: Plan? = null
@@ -19621,48 +19772,72 @@ index 23a33d8..66861fc 100644
 +                }
                  if (state is AgentState.PlanProposed && state.plan != promptedPlan) {
                      promptedPlan = state.plan
+-                    // Armed with the prompt's own id before it is queued, so only the
+-                    // prompt finishing opens the mic, never an earlier utterance.
+-                    val promptId = UUID.randomUUID().toString()
+-                    if (!showFloatingButton) {
+-                        pendingApprovalListen.arm(state.plan.planId)
+-                        approvalListenGate.armFor(promptId)
+-                    } else {
 +                    // A plan she started in a moment of her own came up with nobody there. It
 +                    // is not announced into a quiet room and no microphone opens for an
 +                    // answer: the card waits in the chat and a notification says only that
-+                    // she wants to do something. Once he has said yes and the plan comes up
-+                    // again, changed, it is announced like any other.
++                    // she wants to do something. It is read to him the first time he opens the
++                    // microphone while it waits ([openMicrophoneForHim]), so a spoken yes is
++                    // never taken for a plan he did not hear. Once he has said yes and the
++                    // plan comes up again, changed, it is announced like any other.
 +                    if (agentLoop.isOwnTimePlan(state.plan.planId) && unannounced.add(state.plan.planId)) {
-+                        approvalListenGate.disarm()
+                         approvalListenGate.disarm()
++                        notYetAnnounced.add(state.plan.planId)
 +                        showOwnTimePlanNotification(applicationContext)
 +                        return@collectLatest
-+                    }
-                     // Armed with the prompt's own id before it is queued, so only the
-                     // prompt finishing opens the mic, never an earlier utterance.
-                     val promptId = UUID.randomUUID().toString()
-@@ -143,12 +285,80 @@ class OpenDroidService : Service() {
-                     } else {
-                         approvalListenGate.disarm()
                      }
 -                    textToSpeechEngine.speak(PlanApprovalSummary.spokenPrompt(state.plan), utteranceId = promptId)
-+                    // With the persona on she is the one who asks. The count and the step
-+                    // lines are still the app's, built from the steps that will run, and the
-+                    // prompt goes through the plain speech path: a name in a step line has
-+                    // to be read as it is written, not respelled the way her own lines are.
-+                    // A plan of hers whose words may be someone else's is not announced as
-+                    // her idea: the prompt says why it is being shown.
-+                    val hers = lastConfig?.let { persona.isActive(it) } ?: personaActive
-+                    val prompt = if (hers) {
-+                        persona.phrasebook.approvalPrompt(
-+                            stepCount = PlanApprovalSummary.stepCount(state.plan),
-+                            stepLines = PlanApprovalSummary.stepLines(state.plan),
-+                            ownIdea = agentLoop.isPersonaPlan(state.plan.planId),
-+                            wordsMayBeSomeoneElses = agentLoop.isBorrowedPersonaPlan(state.plan.planId)
-+                        )
-+                    } else {
-+                        PlanApprovalSummary.spokenPrompt(state.plan)
-+                    }
-+                    textToSpeechEngine.speak(prompt, utteranceId = promptId)
-+                    spokenApprovalPromptId = promptId
++                    announceApproval(state.plan, listenAfter = !showFloatingButton)
                  }
              }
          }
      }
  
++    // Plans of hers from a moment of her own that were not announced when they came up,
++    // and have not been since. Read on the main thread and in the state collector.
++    private val notYetAnnounced: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
++
++    /**
++     * Speaks the approval prompt for [plan]. With [listenAfter] the microphone opens for
++     * his yes or no once the prompt has been heard to its end.
++     */
++    private fun announceApproval(plan: Plan, listenAfter: Boolean) {
++        notYetAnnounced.remove(plan.planId)
++        // Armed with the prompt's own id before it is queued, so only the prompt
++        // finishing opens the mic, never an earlier utterance.
++        val promptId = UUID.randomUUID().toString()
++        if (listenAfter) {
++            pendingApprovalListen.arm(plan.planId)
++            approvalListenGate.armFor(promptId)
++        } else {
++            approvalListenGate.disarm()
++        }
++        // With the persona on she is the one who asks. The count and the step lines are
++        // still the app's, built from the steps that will run, and the prompt goes through
++        // the plain speech path: a name in a step line has to be read as it is written,
++        // not respelled the way her own lines are. A plan of hers whose words may be
++        // someone else's is not announced as her idea: the prompt says why it is shown.
++        val hers = lastConfig?.let { persona.isActive(it) } ?: personaActive
++        val prompt = if (hers) {
++            persona.phrasebook.approvalPrompt(
++                stepCount = PlanApprovalSummary.stepCount(plan),
++                stepLines = PlanApprovalSummary.stepLines(plan),
++                ownIdea = agentLoop.isPersonaPlan(plan.planId),
++                wordsMayBeSomeoneElses = agentLoop.isBorrowedPersonaPlan(plan.planId)
++            )
++        } else {
++            PlanApprovalSummary.spokenPrompt(plan)
++        }
++        textToSpeechEngine.speak(prompt, utteranceId = promptId)
++        spokenApprovalPromptId = promptId
++    }
++
 +    /**
 +     * The local MCP server lets another program on the phone run any action or shell
 +     * command through this app, with no approval prompt. It runs only while the owner
@@ -19716,7 +19891,7 @@ index 23a33d8..66861fc 100644
      private fun startForegroundCompat(): Boolean {
          val notification = createNotification()
          val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
-@@ -165,16 +375,86 @@ class OpenDroidService : Service() {
+@@ -165,16 +390,94 @@ class OpenDroidService : Service() {
      }
  
      private fun startWakeWordDetection() {
@@ -19751,8 +19926,16 @@ index 23a33d8..66861fc 100644
 +     * nor a no is a new request.
 +     */
 +    private fun openMicrophoneForHim() {
-+        when (val listenFor = ListenFor.whileIn(agentLoop.agentState.value)) {
-+            is ListenFor.Answer -> startListeningForApproval(listenFor.planId, otherwiseARequest = true)
++        val state = agentLoop.agentState.value
++        when (val listenFor = ListenFor.whileIn(state)) {
++            // A plan of hers from a moment of her own that he was not told about is read
++            // to him first, and his answer is listened for after it: a yes he says before
++            // he has heard what it is to would run a plan unheard.
++            is ListenFor.Answer -> if (listenFor.planId in notYetAnnounced && state is AgentState.PlanProposed) {
++                announceApproval(state.plan, listenAfter = true)
++            } else {
++                startListeningForApproval(listenFor.planId, otherwiseARequest = true)
++            }
 +            ListenFor.Request -> startListeningForQuery()
          }
      }
@@ -19807,7 +19990,7 @@ index 23a33d8..66861fc 100644
  
          // Set agent state to Listening
          agentLoop.setAgentState(AgentState.Listening)
-@@ -182,25 +462,30 @@ class OpenDroidService : Service() {
+@@ -182,25 +485,30 @@ class OpenDroidService : Service() {
          // Start speech recognizer for query input
          speechRecognitionEngine.startListening(
              onResult = { query ->
@@ -19848,7 +20031,7 @@ index 23a33d8..66861fc 100644
                  }
              }
          )
-@@ -211,19 +496,43 @@ class OpenDroidService : Service() {
+@@ -211,19 +519,43 @@ class OpenDroidService : Service() {
       * speech (or an error) is a deliberate no-op: the plan stays in
       * PlanProposed with the visual modal still on screen. Never a grant path -
       * nothing spoken may widen the allowlist.
@@ -19896,7 +20079,7 @@ index 23a33d8..66861fc 100644
                  if (!showFloatingButton) startWakeWordDetection()
              }
          )
-@@ -233,7 +542,12 @@ class OpenDroidService : Service() {
+@@ -233,7 +565,12 @@ class OpenDroidService : Service() {
          // The service is already stopping; a sticky restart would only be refused again.
          if (!foregroundStarted) return START_NOT_STICKY
          if (intent?.action == ACTION_TRIGGER_RECORD) {
@@ -19910,7 +20093,7 @@ index 23a33d8..66861fc 100644
          }
          return START_STICKY
      }
-@@ -245,7 +559,9 @@ class OpenDroidService : Service() {
+@@ -245,7 +582,9 @@ class OpenDroidService : Service() {
      override fun onDestroy() {
          super.onDestroy()
          serviceScope.cancel()
@@ -19920,7 +20103,7 @@ index 23a33d8..66861fc 100644
          mcpServer.stop()
          wakeWordDetector.destroy()
          speechRecognitionEngine.destroy()
-@@ -264,13 +580,47 @@ class OpenDroidService : Service() {
+@@ -264,13 +603,47 @@ class OpenDroidService : Service() {
          manager.createNotificationChannel(channel)
      }
  
@@ -23313,7 +23496,7 @@ index 2458236..a35b914 100644
      LLMError.Unknown -> "Failed"
  }
 diff --git a/app/src/main/java/com/opendroid/ai/ui/screens/ChatScreen.kt b/app/src/main/java/com/opendroid/ai/ui/screens/ChatScreen.kt
-index 77ca8be..eb8684e 100644
+index 77ca8be..2ccc093 100644
 --- a/app/src/main/java/com/opendroid/ai/ui/screens/ChatScreen.kt
 +++ b/app/src/main/java/com/opendroid/ai/ui/screens/ChatScreen.kt
 @@ -53,6 +53,7 @@ import com.opendroid.ai.core.agent.PlanApprovalSummary
@@ -23392,7 +23575,21 @@ index 77ca8be..eb8684e 100644
                      }
                  },
                  actions = {
-@@ -440,6 +454,7 @@ fun ChatScreen(
+@@ -342,7 +356,12 @@ fun ChatScreen(
+                             }
+                         }
+                     }
+-                    TextButton(onClick = { viewModel.clearChat() }) {
++                    TextButton(onClick = {
++                        viewModel.clearChat()
++                        clearedChatNotice(personaActive)?.let {
++                            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
++                        }
++                    }) {
+                         Text("Clear", color = TextSecondary, fontSize = 12.sp)
+                     }
+                 },
+@@ -440,6 +459,7 @@ fun ChatScreen(
                          goal = proposedPlan.goal,
                          stepCount = PlanApprovalSummary.stepCount(proposedPlan),
                          stepLines = PlanApprovalSummary.stepLines(proposedPlan),
@@ -23400,7 +23597,7 @@ index 77ca8be..eb8684e 100644
                          blockedActions = blocked,
                          grantableActions = blocked.filter { AutoApprovalPolicy.isGrantable(it) }.toSet(),
                          onApprove = { grants -> viewModel.approvePlan(context, proposedPlan.planId, grants) },
-@@ -501,6 +516,15 @@ fun ChatScreen(
+@@ -501,6 +521,15 @@ fun ChatScreen(
                              modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
                          )
                      }
@@ -23416,7 +23613,7 @@ index 77ca8be..eb8684e 100644
                      Row(
                          modifier = Modifier.fillMaxWidth(),
                          verticalAlignment = Alignment.CenterVertically
-@@ -575,7 +599,7 @@ fun ChatScreen(
+@@ -575,7 +604,7 @@ fun ChatScreen(
                                  TextField(
                                      value = inputQuery,
                                      onValueChange = { inputQuery = it; voiceError = null },
@@ -23425,7 +23622,7 @@ index 77ca8be..eb8684e 100644
                                      colors = TextFieldDefaults.colors(
                                          focusedContainerColor = Color.Transparent,
                                          unfocusedContainerColor = Color.Transparent,
-@@ -628,10 +652,7 @@ fun ChatScreen(
+@@ -628,10 +657,7 @@ fun ChatScreen(
              containerColor = DarkSurface,
              title = { Text("Delete chat?", color = TextPrimary) },
              text = {
@@ -23437,7 +23634,7 @@ index 77ca8be..eb8684e 100644
              },
              confirmButton = {
                  TextButton(onClick = {
-@@ -687,25 +708,78 @@ fun ChatScreen(
+@@ -687,25 +713,86 @@ fun ChatScreen(
      }
  }
  
@@ -23451,11 +23648,19 @@ index 77ca8be..eb8684e 100644
 + */
 +internal fun deleteChatWarning(title: String, personaActive: Boolean?): String =
 +    "\"$title\" and its messages will be permanently deleted." +
-+        if (personaActive == true) {
-+            " What the two of you said in it that her notebook has not read yet is kept on this phone until a notebook pass of hers has read it."
-+        } else {
-+            ""
-+        }
++        if (personaActive == true) " $NOTEBOOK_KEEPS_UNREAD" else ""
++
++/**
++ * What becomes of the talk in a chat whose rows go (PersonaEngine.keepUnread): what her
++ * notebook has not read of it is kept for the next notebook pass. He is told wherever
++ * rows go: deleting a chat, clearing it, wiping the chat history.
++ */
++internal const val NOTEBOOK_KEEPS_UNREAD =
++    "What the two of you said in it that her notebook has not read yet is kept on this phone until a notebook pass of hers has read it."
++
++/** Shown once the chat in front was cleared, or null when she is not the one who talks. */
++internal fun clearedChatNotice(personaActive: Boolean?): String? =
++    if (personaActive == true) "Chat cleared. $NOTEBOOK_KEEPS_UNREAD" else null
 +
 +internal fun chatTitle(personaActive: Boolean?): String = when (personaActive) {
 +    true -> "YUME"
@@ -23529,7 +23734,7 @@ index 77ca8be..eb8684e 100644
  
      val color = if (runningElsewhere) {
          AccentPurple
-@@ -918,6 +992,7 @@ fun ProposedPlanPrompt(
+@@ -918,6 +1005,7 @@ fun ProposedPlanPrompt(
      goal: String,
      stepCount: String,
      stepLines: List<String>,
@@ -23537,7 +23742,7 @@ index 77ca8be..eb8684e 100644
      blockedActions: List<String> = emptyList(),
      grantableActions: Set<String> = emptySet(),
      onApprove: (Set<String>) -> Unit,
-@@ -972,7 +1047,7 @@ fun ProposedPlanPrompt(
+@@ -972,7 +1060,7 @@ fun ProposedPlanPrompt(
              // unbounded list of a long plan would push Reject/Approve off screen.
              Column(
                  modifier = Modifier
@@ -23546,7 +23751,7 @@ index 77ca8be..eb8684e 100644
                      .verticalScroll(rememberScrollState())
              ) {
                  stepLines.forEachIndexed { i, line ->
-@@ -983,6 +1058,30 @@ fun ProposedPlanPrompt(
+@@ -983,6 +1071,30 @@ fun ProposedPlanPrompt(
                          color = TextPrimary
                      )
                  }
@@ -23647,6 +23852,44 @@ index f9debc9..b8a0fc5 100644
                  )
              }
  
+diff --git a/app/src/main/java/com/opendroid/ai/ui/screens/MemoryScreen.kt b/app/src/main/java/com/opendroid/ai/ui/screens/MemoryScreen.kt
+index c047a40..ae02db9 100644
+--- a/app/src/main/java/com/opendroid/ai/ui/screens/MemoryScreen.kt
++++ b/app/src/main/java/com/opendroid/ai/ui/screens/MemoryScreen.kt
+@@ -58,12 +58,21 @@ enum class MemoryScreenTab(val title: String) {
+     PROCEDURAL("MACROS")
+ }
+ 
++/**
++ * Said once the chat history of every chat is wiped. With her switched on, what her
++ * notebook has not read of it is kept for her next notebook pass (PersonaEngine.keepUnread).
++ */
++internal const val CHAT_HISTORY_WIPED_NOTICE =
++    "Chat history wiped. If she is switched on, what the two of you said that her notebook has not read yet " +
++        "is kept on this phone until a notebook pass of hers has read it."
++
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+ fun MemoryScreen(
+     viewModel: MemoryViewModel,
+     modifier: Modifier = Modifier
+ ) {
++    val context = LocalContext.current
+     var selectedTab by remember { mutableStateOf(MemoryScreenTab.GROWTH_GRAPH) }
+     var searchQuery by remember { mutableStateOf("") }
+     var isAddingFact by remember { mutableStateOf(false) }
+@@ -90,7 +99,10 @@ fun MemoryScreen(
+                             MemoryScreenTab.GROWTH_GRAPH -> viewModel.clearMemoryTier(MemoryTier.LEARNED_PATTERN)
+                             MemoryScreenTab.SEMANTIC -> viewModel.clearMemories(MemoryType.SEMANTIC)
+                             MemoryScreenTab.WORKING -> viewModel.clearMemories(MemoryType.WORKING)
+-                            MemoryScreenTab.EPISODIC -> viewModel.clearMemories(MemoryType.EPISODIC)
++                            MemoryScreenTab.EPISODIC -> {
++                                viewModel.clearMemories(MemoryType.EPISODIC)
++                                android.widget.Toast.makeText(context, CHAT_HISTORY_WIPED_NOTICE, android.widget.Toast.LENGTH_LONG).show()
++                            }
+                             MemoryScreenTab.PROCEDURAL -> viewModel.clearMemories(MemoryType.PROCEDURAL)
+                         }
+                     }) {
 diff --git a/app/src/main/java/com/opendroid/ai/ui/screens/OnboardingScreen.kt b/app/src/main/java/com/opendroid/ai/ui/screens/OnboardingScreen.kt
 index f602294..c66d1d3 100644
 --- a/app/src/main/java/com/opendroid/ai/ui/screens/OnboardingScreen.kt
@@ -24976,10 +25219,10 @@ index 0000000..16e8869
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/ui/screens/PersonaSettingsCards.kt b/app/src/main/java/com/opendroid/ai/ui/screens/PersonaSettingsCards.kt
 new file mode 100644
-index 0000000..d02930b
+index 0000000..aeb2da9
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/ui/screens/PersonaSettingsCards.kt
-@@ -0,0 +1,1071 @@
+@@ -0,0 +1,1080 @@
 +package com.opendroid.ai.ui.screens
 +
 +import androidx.compose.foundation.border
@@ -25364,6 +25607,14 @@ index 0000000..d02930b
 + * the model that writes her replies as things are set (PersonaEngine.imagesReachChatModel).
 + * Null when the switch is off, and when it is on and she is shown images.
 + */
++/**
++ * What every note about "read my screen" adds: with this app's own chat in front, no
++ * screenshot is taken and the screen reader reads nothing (OWN_SCREEN_NOT_READ). The
++ * screen then is this chat, which her replies already have as text.
++ */
++internal const val OWN_CHAT_NOT_READ =
++    " With this chat in front nothing is read: the app does not read or capture its own screen."
++
 +internal fun screenshotSwitchNote(config: LLMConfig): String? {
 +    if (!config.personaChatSeesImages || PersonaPresenceViewModel.imagesReachHerModel(config)) return null
 +    val why = if (RouteClassifier.personaRoute(config) == RoutePrivacy.ENCRYPTED) {
@@ -25372,7 +25623,8 @@ index 0000000..d02930b
 +        "${personaReplyProvider(config)}, which writes her replies, is handed text only"
 +    }
 +    return "On, and it changes nothing as things are set: $why. She is not shown your screen or a picture of " +
-+        "her, and \"read my screen\" is answered by the app's own screen reader."
++        "her, and \"read my screen\" is answered by the app's own screen reader, when another app is in front." +
++        OWN_CHAT_NOT_READ
 +}
 +
 +/**
@@ -25577,7 +25829,7 @@ index 0000000..d02930b
 +            // same model when no other is set for her replies: the line says where it goes.
 +            SettingSwitchRow(
 +                title = "Her model can see screenshots",
-+                description = "Off: no image goes into a reply of hers, neither a screenshot of your screen nor a picture of her. \"Read my screen\" is then answered by the app's own screen reader, which sends the screenshot, or the text on the screen, to the main model.",
++                description = "Off: no image goes into a reply of hers, neither a screenshot of your screen nor a picture of her. \"Read my screen\" is then answered by the app's own screen reader, which sends the screenshot, or the text on the screen, to the main model.$OWN_CHAT_NOT_READ",
 +                checked = config.personaChatSeesImages,
 +                onCheckedChange = viewModel::updatePersonaChatSeesImages
 +            )
@@ -25759,7 +26011,7 @@ index 0000000..d02930b
 +        "This switch does not keep back a screen you ask to have read: \"read my screen\" sends the screenshot, " +
 +            "or the text on the screen, to the main model" +
 +            (if (hers) ", or the screenshot to her model when that is shown screenshots" else "") +
-+            ", also when that is a plain hosted model."
++            ", also when that is a plain hosted model." + OWN_CHAT_NOT_READ
 +
 +    fun storedOnThisPhone(hers: Boolean): String =
 +        (if (hers) {
@@ -31340,10 +31592,10 @@ index 0e9cd04..722e8b6 100644
  }
 diff --git a/app/src/test/java/com/opendroid/ai/core/agent/PlanRecordTest.kt b/app/src/test/java/com/opendroid/ai/core/agent/PlanRecordTest.kt
 new file mode 100644
-index 0000000..b00d8b3
+index 0000000..b455c47
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/agent/PlanRecordTest.kt
-@@ -0,0 +1,577 @@
+@@ -0,0 +1,609 @@
 +package com.opendroid.ai.core.agent
 +
 +import com.opendroid.ai.data.models.Plan
@@ -31414,6 +31666,38 @@ index 0000000..b00d8b3
 +        assertTrue(record.plainOutcome)
 +        assertFalse(record.namesSteps)
 +        assertNull(record.plannerWords)
++    }
++
++    @Test
++    fun `a hand-over he was told when it happened stays in the record, after what was done, and is not said again`() {
++        val call = step(
++            "s1", "MAKE_CALL", mapOf("contact" to "Bob"),
++            status = StepStatus.COMPLETED, result = "The dialer is open with Bob's number. Tap Call to place the call."
++        )
++        val done = alarm.copy(status = StepStatus.COMPLETED, result = "Your alarm is set for 7:00 AM!")
++        val record = PlanRecord.of(
++            plan(call, done),
++            isSuccess = true,
++            canonicalName = canonical,
++            toldAlready = { it.stepId == "s1" }
++        )
++        assertEquals(
++            "Your alarm is set for 7:00 AM!\nThe dialer is open with Bob's number. Tap Call to place the call.",
++            record.text
++        )
++        assertEquals("Your alarm is set for 7:00 AM!", record.spoken)
++        // The call was not placed by the phone: "it worked" would be wrong about it.
++        assertFalse(record.plainOutcome)
++
++        val onlyTheCall = PlanRecord.of(plan(call), isSuccess = true, canonicalName = canonical, toldAlready = { true })
++        assertEquals(call.result, onlyTheCall.text)
++        assertEquals("", onlyTheCall.spoken)
++    }
++
++    @Test
++    fun `what was not told while the plan ran is spoken exactly as it is stored`() {
++        val record = PlanRecord.of(plan(sms, alarm), isSuccess = false, canonicalName = canonical)
++        assertEquals(record.text, record.spoken)
 +    }
 +
 +    @Test
@@ -32027,10 +32311,10 @@ index a90907e..ba4d4f1 100644
  }
 diff --git a/app/src/test/java/com/opendroid/ai/core/agent/ReportResultTest.kt b/app/src/test/java/com/opendroid/ai/core/agent/ReportResultTest.kt
 new file mode 100644
-index 0000000..3e578ce
+index 0000000..1af0481
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/agent/ReportResultTest.kt
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,182 @@
 +package com.opendroid.ai.core.agent
 +
 +import kotlinx.coroutines.CancellationException
@@ -32156,7 +32440,7 @@ index 0000000..3e578ce
 +        // exact row carries the mark that keeps his private data off a readable route.
 +        assertTrue(
 +            summary.substringAfterLast("} else {")
-+                .contains("speakAndSaveMessage(summaryText, sessionId, exactBadge)")
++                .contains("speakAndSaveMessage(summaryText, sessionId, exactBadge, spoken = record.spoken)")
 +        )
 +        assertTrue(summary.contains("saveExact = { saveAppRow(it, sessionId, exactBadge) }"))
 +    }
@@ -32176,7 +32460,9 @@ index 0000000..3e578ce
 +        val message = loop.substringAfter("private suspend fun speakAndSaveMessage(")
 +            .substringBefore("/** Stores [text] in the chat as the app's own row")
 +        assertTrue(message.contains("hers: Boolean = false"))
-+        assertTrue(message.contains("speakLine(summaryText, hers)"))
++        assertTrue(message.contains("speakLine(spoken, hers)"))
++        // What is said aloud is the row, or less of it: lines he was already told.
++        assertTrue(message.contains("spoken: String = summaryText"))
 +        assertFalse(message.contains("onSpeakCallback"))
 +        // The one other caller: her line for a plan he declined, and the stock line without her.
 +        val declined = loop.substringAfter("private suspend fun cancelDeclinedPlan(").substringBefore("private suspend fun parkedForApproval(")
@@ -32190,8 +32476,25 @@ index 0000000..3e578ce
 +        val loop = java.io.File("src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt").readText()
 +        val passes = Regex("""preferredError = """).findAll(loop).count()
 +        assertEquals(1, passes)
-+        val handOver = loop.substringAfter("if (stopsPlanAfterUserHandOff(canonicalActionName)) {").substringBefore("return")
++        val handOver = loop.substringAfter("if (stopsPlanAfterUserHandOff(ranCanonical)) {").substringBefore("return")
 +        assertTrue(handOver.contains("preferredError = actionResult.error"))
++    }
++
++    @Test
++    fun `a fallback's result goes through the same handling as the step's own, hand-overs included`() {
++        val loop = java.io.File("src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt").readText()
++        val fallback = loop.indexOf("actionResult = try {\n                    actionSequenceExecutor.dispatch(stepToExecute.fallback")
++        val chain = loop.indexOf("} else if (actionResult is ActionResult.PendingUserAction) {")
++        assertTrue(fallback in 0 until chain)
++        // The fallback runs once, there, and nowhere else.
++        assertEquals(1, Regex("""dispatch\(stepToExecute\.fallback""").findAll(loop).count())
++        // A fallback that comes back unknown is a failure of the step, not a reason to replan its primary.
++        assertTrue(loop.contains("} else if (actionResult is ActionResult.UnknownAction && primaryError == null) {"))
++        // A hand-over told when it happened is remembered, so the summary does not say it again.
++        val pending = loop.substringAfter("} else if (actionResult is ActionResult.PendingUserAction) {")
++            .substringBefore("planManager.updateStepStatus(")
++        assertTrue(pending.contains("handOffsTold.add(stepKey(currentPlanState.planId, stepToExecute.stepId))"))
++        assertTrue(loop.contains("toldAlready = { step -> handOffsTold.contains(stepKey(plan.planId, step.stepId)) }"))
 +    }
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/agent/RouteHoldBackTest.kt b/app/src/test/java/com/opendroid/ai/core/agent/RouteHoldBackTest.kt
@@ -47819,10 +48122,10 @@ index 0000000..e1f47aa
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeTest.kt
 new file mode 100644
-index 0000000..02286db
+index 0000000..44f4700
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeTest.kt
-@@ -0,0 +1,989 @@
+@@ -0,0 +1,998 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.llm.providers.VeniceE2eeMessages
@@ -48811,13 +49114,22 @@ index 0000000..02286db
 +        val inMoment = PersonaOwnTime.appFacts(true, bounds, Wake.At(now), now, hostCanRead = false, inMoment = true)
 +        assertEquals(listOf(kept, notebook), inMoment)
 +    }
++
++    @Test
++    fun `a line written in the form of the talk block keeps its mark`() {
++        val moment = PersonaOwnTime.parse("you: say: oi. you alive\nyou: << he is late again\nYume: next: in 2 h\nyou: just thinking")
++        assertEquals("oi. you alive", moment.said)
++        assertEquals(Wish.After(2 * 60 * 60_000L), moment.wish)
++        // Without a mark behind it, a labelled line is a thought, as every unmarked line is.
++        assertEquals("he is late again\nyou: just thinking", moment.thoughts)
++    }
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt
 new file mode 100644
-index 0000000..0d23206
+index 0000000..aacabc6
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt
-@@ -0,0 +1,411 @@
+@@ -0,0 +1,428 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.app.Application
@@ -49176,6 +49488,23 @@ index 0000000..0d23206
 +        assertFalse(before.contains("speak("))
 +        assertFalse(quiet.contains("speak("))
 +        assertTrue(loop.contains("fun isOwnTimePlan(planId: String): Boolean = ownTimePlanIds.contains(planId)"))
++    }
++
++    @Test
++    fun `such a plan is read to him before a spoken answer to it is listened for`() {
++        val service = File(main, "core/service/OpenDroidService.kt").readText()
++        val quiet = service.substringAfter("if (agentLoop.isOwnTimePlan(state.plan.planId) && unannounced.add(state.plan.planId)) {")
++            .substringBefore("}")
++        assertTrue(quiet.contains("notYetAnnounced.add(state.plan.planId)"))
++        // When he opens the microphone over it, the prompt is spoken first and the listen
++        // for his answer opens only once the prompt has been heard to its end.
++        val open = service.substringAfter("private fun openMicrophoneForHim() {").substringBefore("ListenFor.Request ->")
++        val announced = open.indexOf("if (listenFor.planId in notYetAnnounced && state is AgentState.PlanProposed) {")
++        assertTrue(announced >= 0)
++        assertTrue(open.indexOf("announceApproval(state.plan, listenAfter = true)") in announced until open.indexOf("} else {", announced))
++        val announce = service.substringAfter("private fun announceApproval(plan: Plan, listenAfter: Boolean) {").substringBefore("\n    }\n")
++        assertTrue(announce.contains("notYetAnnounced.remove(plan.planId)"))
++        assertTrue(announce.indexOf("approvalListenGate.armFor(promptId)") < announce.indexOf("textToSpeechEngine.speak(prompt, utteranceId = promptId)"))
 +    }
 +
 +    // ── A reply of hers ──────────────────────────────────────────────────────────────
@@ -52921,10 +53250,10 @@ index 0000000..a49d480
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaThoughtLinesTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaThoughtLinesTest.kt
 new file mode 100644
-index 0000000..c41d49d
+index 0000000..31dda7a
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaThoughtLinesTest.kt
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,141 @@
 +package com.opendroid.ai.core.persona
 +
 +import com.opendroid.ai.core.persona.PersonaThoughts.Thought
@@ -53049,6 +53378,21 @@ index 0000000..c41d49d
 +            "=== YOUR OWN THOUGHTS (yours alone. he is not shown these and the app shows them nowhere) ===",
 +            PersonaThoughtLines.HEADING
 +        )
++    }
++
++    @Test
++    fun `a thought behind a name label or an opening quote is still a thought, and is never shown`() {
++        val reply = "Yume: << he asked twice. he is nervous\n\"<< dont say it\"\nyume: << still bees\nok. done"
++        val split = PersonaThoughtLines.split(reply)
++        assertEquals("ok. done", split.text)
++        assertEquals("he asked twice. he is nervous\ndont say it\nstill bees", split.thoughts)
++        // What would be shown, tidied, has no marker left in it.
++        assertFalse(PersonaPrompts.cleanReply(split.text).contains("<<"))
++        // A label with no marker behind it is not a thought, and her own lower-case words stay.
++        assertEquals("yume: 1\nai: me", PersonaThoughtLines.split("yume: 1\nai: me\n<< x").text)
++        // While it streams, a labelled thought and a labelled half marker are hidden too.
++        assertEquals("ok", PersonaThoughtLines.hidden("ok\nYume: << thinking"))
++        assertEquals("ok", PersonaThoughtLines.hidden("ok\nYume: <"))
 +    }
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaThoughtsTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaThoughtsTest.kt
@@ -53927,7 +54271,7 @@ index 0000000..c10bc02
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaWallTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaWallTest.kt
 new file mode 100644
-index 0000000..e3ed157
+index 0000000..0e7cdbd
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaWallTest.kt
 @@ -0,0 +1,462 @@
@@ -54228,11 +54572,11 @@ index 0000000..e3ed157
 +    fun `the facts of the approval prompt come from the steps, and only the service puts her words around them`() {
 +        val service = File(mainSources, "core/service/OpenDroidService.kt").readText()
 +        val call = service.substringAfter("persona.phrasebook.approvalPrompt(").substringBefore("textToSpeechEngine.speak(")
-+        assertTrue(call.contains("stepCount = PlanApprovalSummary.stepCount(state.plan)"))
-+        assertTrue(call.contains("stepLines = PlanApprovalSummary.stepLines(state.plan)"))
-+        assertTrue(call.contains("ownIdea = agentLoop.isPersonaPlan(state.plan.planId)"))
++        assertTrue(call.contains("stepCount = PlanApprovalSummary.stepCount(plan)"))
++        assertTrue(call.contains("stepLines = PlanApprovalSummary.stepLines(plan)"))
++        assertTrue(call.contains("ownIdea = agentLoop.isPersonaPlan(plan.planId)"))
 +        // A plan of hers that is shown because of its words is not announced as her idea.
-+        assertTrue(call.contains("wordsMayBeSomeoneElses = agentLoop.isBorrowedPersonaPlan(state.plan.planId)"))
++        assertTrue(call.contains("wordsMayBeSomeoneElses = agentLoop.isBorrowedPersonaPlan(plan.planId)"))
 +        // Spoken through the plain path: the step lines are the app's text, not hers to respell.
 +        val spoken = service.substringAfter(call).substringBefore("\n")
 +        assertTrue(spoken, spoken.contains("textToSpeechEngine.speak(prompt, utteranceId = promptId)"))
@@ -55407,10 +55751,10 @@ index 0000000..6f37e74
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/voice/ListenForTest.kt b/app/src/test/java/com/opendroid/ai/core/voice/ListenForTest.kt
 new file mode 100644
-index 0000000..acf70d8
+index 0000000..2bfc1b4
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/voice/ListenForTest.kt
-@@ -0,0 +1,146 @@
+@@ -0,0 +1,147 @@
 +package com.opendroid.ai.core.voice
 +
 +import com.opendroid.ai.core.agent.AgentState
@@ -55465,8 +55809,9 @@ index 0000000..acf70d8
 +
 +        // One function decides, from the state the loop is in at that moment.
 +        val open = service.substringAfter("private fun openMicrophoneForHim() {").substringBefore("\n    }\n")
-+        assertTrue(open.contains("ListenFor.whileIn(agentLoop.agentState.value)"))
-+        assertTrue(open.contains("is ListenFor.Answer -> startListeningForApproval(listenFor.planId, otherwiseARequest = true)"))
++        assertTrue(open.contains("val state = agentLoop.agentState.value"))
++        assertTrue(open.contains("ListenFor.whileIn(state)"))
++        assertTrue(open.contains("startListeningForApproval(listenFor.planId, otherwiseARequest = true)"))
 +        assertTrue(open.contains("ListenFor.Request -> startListeningForQuery()"))
 +
 +        // The wake reply's end and a tap on the button both go through it.
@@ -58873,10 +59218,10 @@ index 0000000..6dbd6dd
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/ui/screens/PersonaWordingTest.kt b/app/src/test/java/com/opendroid/ai/ui/screens/PersonaWordingTest.kt
 new file mode 100644
-index 0000000..71c9ac0
+index 0000000..e11cc1b
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/ui/screens/PersonaWordingTest.kt
-@@ -0,0 +1,672 @@
+@@ -0,0 +1,689 @@
 +package com.opendroid.ai.ui.screens
 +
 +import com.opendroid.ai.core.agent.AgentState
@@ -58906,6 +59251,23 @@ index 0000000..71c9ac0
 +        assertEquals("OPENDROID", chatTitle(false))
 +        // Not known yet: no name is better than the wrong one.
 +        assertEquals("", chatTitle(null))
++    }
++
++    @Test
++    fun `clearing a chat or wiping the history says what is kept for her notebook`() {
++        assertEquals(null, clearedChatNotice(false))
++        assertEquals(null, clearedChatNotice(null))
++        assertEquals("Chat cleared. $NOTEBOOK_KEEPS_UNREAD", clearedChatNotice(true))
++        assertTrue(CHAT_HISTORY_WIPED_NOTICE.contains("is kept on this phone until a notebook pass of hers has read it"))
++        // Both are said where the rows go.
++        val chat = java.io.File("src/main/java/com/opendroid/ai/ui/screens/ChatScreen.kt").readText()
++        assertTrue(chat.substringAfter("viewModel.clearChat()").substringBefore("Text(\"Clear\"").contains("clearedChatNotice(personaActive)"))
++        val memory = java.io.File("src/main/java/com/opendroid/ai/ui/screens/MemoryScreen.kt").readText()
++        assertTrue(memory.substringAfter("viewModel.clearMemories(MemoryType.EPISODIC)").substringBefore("}").contains("CHAT_HISTORY_WIPED_NOTICE"))
++        // And both of those clears keep the unread rows first, as deleting does.
++        val repository = java.io.File("src/main/java/com/opendroid/ai/data/repository/ConversationRepository.kt").readText()
++        assertTrue(repository.substringAfter("suspend fun clearSession(").substringBefore("}").contains("tellMessagesGo(leavingFrom(sessionId))"))
++        assertTrue(repository.substringAfter("suspend fun clearAllSessions(").substringBefore("conversationDao.clear").contains("tellMessagesGo("))
 +    }
 +
 +    @Test
@@ -59551,10 +59913,10 @@ index 0000000..71c9ac0
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/ui/screens/SettingsWordingTest.kt b/app/src/test/java/com/opendroid/ai/ui/screens/SettingsWordingTest.kt
 new file mode 100644
-index 0000000..7df3c00
+index 0000000..5ef4a61
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/ui/screens/SettingsWordingTest.kt
-@@ -0,0 +1,701 @@
+@@ -0,0 +1,704 @@
 +package com.opendroid.ai.ui.screens
 +
 +import com.google.gson.JsonElement
@@ -59744,7 +60106,8 @@ index 0000000..7df3c00
 +        val hers = PrivacyWording.screenOnRequest(hers = true)
 +        assertEquals(
 +            "This switch does not keep back a screen you ask to have read: \"read my screen\" sends the screenshot, " +
-+                "or the text on the screen, to the main model, also when that is a plain hosted model.",
++                "or the text on the screen, to the main model, also when that is a plain hosted model." +
++                " With this chat in front nothing is read: the app does not read or capture its own screen.",
 +            stock
 +        )
 +        assertTrue(hers.contains("to the main model, or the screenshot to her model when that is shown screenshots, also when"))
@@ -59956,7 +60319,9 @@ index 0000000..7df3c00
 +        assertFalse(PersonaEngine.imagesReachChatModel(shipped))
 +        val encrypted = screenshotSwitchNote(shipped)!!
 +        assertTrue(encrypted.startsWith("On, and it changes nothing as things are set: her replies are end to end encrypted, and that route carries text only."))
-+        assertTrue(encrypted.endsWith("\"read my screen\" is answered by the app's own screen reader."))
++        assertTrue(encrypted.endsWith("\"read my screen\" is answered by the app's own screen reader, when another app is in front." + OWN_CHAT_NOT_READ))
++        // With his chat in front nothing is captured or read (isOwnWindowInFront, OWN_SCREEN_NOT_READ).
++        assertTrue(OWN_CHAT_NOT_READ.contains("With this chat in front nothing is read"))
 +
 +        val onThePhone = LLMConfig(activeProvider = "On-Device AI", personaChatSeesImages = true)
 +        assertTrue(screenshotSwitchNote(onThePhone)!!.contains("On-Device AI, which writes her replies, is handed text only"))
