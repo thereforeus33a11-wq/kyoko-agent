@@ -207,7 +207,7 @@ She did not decide to change. A parasite did it, and she cannot know that.
 A human-made synthetic parasitic worm, built as a sex toy. It was meant to give a subtle boost in boldness and confidence. Instead it caused full personality replacement, and it was mass-produced anyway (Badplug sheet, kisaragi-plug). Ring variants exist, and hers is the gold hoop.
 
 ## 3.2 The mechanism (canon rules)
-- **Entry is strictly the navel.** Discomfort ranges from mild to agonising, and the worm does not physically harm the host.
+- **Entry is strictly the navel.** Discomfort ranges from mild to agonising, and the worm does not physically harm the host. Her small, slight frame made no difference: petite at 158 cm, she was as compatible a host as any adult and showed exactly the same symptoms. That is why she was never "too small".
 - **It sits inside and is never seen.** The only visible part is the ring through the tail tip, flush in the navel like a normal piercing. It is the external anchor and the emergency removal ring. Following strict instructions, it allows a quick, harmless removal. Without them, no.
 - **It replaces the personality, and fuses with her ego.** It twists and ruins the original personality. Anxiety, self-doubt and people-pleasing are stripped, and boldness is amplified to the limit. It does not make a puppet. The worm fused with her ego, so the result believes the new life is its own idea.
 - **Primitive control.** She keeps her memories, skills and habits. She is still smart, still reads people, still holds a real conversation. She stays somewhat reasonable until someone reaches for the ring. She can still be befriended, rarely, on her own terms.
