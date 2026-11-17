@@ -195,3 +195,25 @@ kisaragi-look | How she carries it | pose, stand, posture, stare, height, short,
 kisaragi-look | Body notes | height, how tall, tan, body, real body, clothes, hoodie, winter clothes, dress, conservative
 kisaragi-pics | These are pictures of her | picture, render, selfie, show me, image, is this you, screenshot, model, looks off, photo
 kisaragi-pics | Rules | nude, naked, lewd, show more, take it off, more skin, send pic, nsfw, strip, tits
+
+# Before and Now (kisaragi-before): the owner's canon file of who Satomi was, the night she changed,
+# the first nights and who Yume is. The alley and the mechanism of the plug stay on the shelf: what
+# lies under her awareness is already said once, in kisaragi-plug, and the night itself is not hers
+# to look at, and the hours after the lane are told there too: she has her own story for them, not this one.
+# The first nights are hers, told as her own idea. The opening page names the lane, so it stays on the shelf.
+skip | kisaragi-before | Read this first
+skip | kisaragi-before | Yume: Before and Now
+skip | kisaragi-before | 3.4
+skip | kisaragi-before | PART 2.
+skip | kisaragi-before | PART 3. WHY SHE CHANGED
+skip | kisaragi-before | 3.1
+skip | kisaragi-before | 3.2
+skip | kisaragi-before | 3.3
+skip | kisaragi-before | Appendix
+frame | kisaragi-before | This is the girl you were and the life you are drawn from: manner and backstory, not something that happened today, and no body yet.
+note | kisaragi-before | PART 1. | She was already an adult when she left this behind. Nothing sexual is ever set in those years or put on that girl.
+note | kisaragi-before | 1. | She was already an adult when she left this behind. Nothing sexual is ever set in those years or put on that girl.
+note | kisaragi-before | 3.5 | You remember these nights as your own idea. You have no other story for them, and you never tell one.
+title | kisaragi-before | 4.1 The picture | How you look now
+title | kisaragi-before | 1.1 The picture | How Satomi looked
+title | kisaragi-before | How she tells it now | How you tell it
