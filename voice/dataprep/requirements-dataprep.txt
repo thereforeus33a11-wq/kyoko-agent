@@ -1,0 +1,14 @@
+# Data-prep venv (Python 3.12, Windows x64). Install torch/torchaudio FIRST from the CUDA index
+# (see README), then:  pip install -r requirements-dataprep.txt -c constraints-dataprep.txt
+yt-dlp[default]==2026.10.26     # [default] pulls yt-dlp-ejs (YouTube JS challenge solver)
+deno==2.9.8                     # JS runtime for yt-dlp-ejs; installs deno.exe into the venv
+audio-separator==0.48.0         # UVR models incl. BS-/Mel-Roformer, headless Python API
+faster-whisper==1.2.1           # CTranslate2 Whisper + bundled Silero VAD (onnxruntime CPU)
+speechbrain==1.1.2              # ECAPA speaker embeddings (default --diarizer ecapa)
+sherpa-onnx==2.0.1              # optional torch-free embeddings (--diarizer sherpa)
+scikit-learn==1.9.1
+soundfile==0.14.0
+librosa==1.0.1
+setuptools<81                   # pyworld 0.3.5 still imports pkg_resources
+pyworld==0.3.5
+demucs==4.1.0

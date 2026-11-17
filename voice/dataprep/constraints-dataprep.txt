@@ -1,0 +1,4 @@
+# keep pip from replacing the CUDA builds of torch/torchaudio/torchvision with CPU builds from PyPI
+torch==2.8.0
+torchaudio==2.8.0
+torchvision==0.23.0
