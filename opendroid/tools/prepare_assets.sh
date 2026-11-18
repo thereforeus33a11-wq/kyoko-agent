@@ -58,3 +58,16 @@ if [ -f "$HERE/persona/library_index.txt" ]; then
 fi
 
 echo "Persona assets: card, $(grep -c '|' "$DEST/seed_notes.txt") starting notes, $count library files -> $DEST"
+
+# Her own voice (a real person's voice, used with her agreement): opendroid/own_voice is
+# never committed, and only a build made where it exists carries the voice. Without it
+# her lines are spoken by the phone's own voice, as before.
+VOICE_SRC="$HERE/own_voice"
+VOICE_DEST="$APP/app/src/main/assets/own_voice"
+rm -rf "$VOICE_DEST"
+if [ -f "$VOICE_SRC/VERSION" ]; then
+    cp -r "$VOICE_SRC" "$VOICE_DEST"
+    echo "Her own voice: $(cat "$VOICE_SRC/VERSION") -> $VOICE_DEST"
+else
+    echo "No voice in $VOICE_SRC: this build speaks her lines with the phone's own voice."
+fi

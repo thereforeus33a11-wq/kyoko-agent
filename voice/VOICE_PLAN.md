@@ -80,6 +80,33 @@ Piper exports `model.onnx`. sherpa-onnx's `add_meta_data.py` adds what the phone
 - English: either the same phoneme table, from a dictionary, or English written in katakana and read through OpenJTalk. The katakana route gives her accent by itself.
 - The Exynos NPU is not used. sherpa-onnx has no Samsung NPU path, and the CPU is fast enough for a model this size.
 
+## Status (2026-11-18)
+
+Done on a rented GPU (Runpod, 4x RTX 4090), not on the laptop:
+
+- **Step 2.** GPT-SoVITS v2ProPlus retrained on 8.1 min of her (71 clips from the 12-minute reel plus the first 7 clips).
+  - The sound model (SoVITS) is trained on all 71 clips. The text model (GPT) is trained on the 7 clean clips: the reel's transcripts are rougher, and its text model dropped words.
+  - Both are trained in full precision. Half precision on the GPU made a voice that skipped most of each line.
+  - This GPT-SoVITS commit's CUDA-graph decoder also cuts lines short on the GPU, so `speak.py` turns it off.
+- **Step 3.** About 3,100 practice sentences: the ITA corpus, her casual lines, and everyday sentences from Tatoeba (CC BY 2.0 FR, used only as practice text).
+  - Each clip is checked by Japanese speech recognition; a clip whose words do not match its text is dropped.
+  - Each kept clip is brightened as in VOICE_SETTINGS.md.
+- **Steps 4-5.** Piper is trained on its Japanese phonemes, made with plain pyopenjtalk 0.4.1. That is exactly the front end the phone runs, so the phone gives the voice what it learned from.
+
+Built in the app (step 6), in `core/voice/own`:
+
+- **Open JTalk on the phone** (`app/src/main/cpp`, JNI). Its labels match pyopenjtalk's byte for byte on 498 test lines, numbers, half-width kana and emoji included.
+- **A Kotlin port of Piper's label-to-phoneme step**, tested against Piper's own output.
+- **Her text to kana** (`KanaText`):
+  - English becomes katakana from the CMU dictionary, which gives her accent.
+  - Romaji and her Japanese words become hiragana.
+  - Names in neither are read the Japanese way.
+- **Playback**, sentence by sentence, through sherpa-onnx 2.0.1.
+  - Stop, or a new message, cuts it off mid-word.
+  - Setting: Settings, Persona, "Her own voice", on by default.
+
+The voice files (model, tokens, Open JTalk dictionary, CMU dictionary) go into the APK from `opendroid/own_voice/`, which is never committed. Open JTalk and sherpa-onnx are fetched at pinned versions with checked hashes by `opendroid/tools/fetch_voice_native.sh`.
+
 ## Privacy
 
 - Nothing in steps 1 to 5 sends anything of yours anywhere. The data is her voice and the sentences she reads.

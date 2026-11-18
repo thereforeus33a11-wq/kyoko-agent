@@ -2,3 +2,5 @@
 # Her voice data (a real person's voice): never committed. The repo is public.
 voice/data/
 *.wav
+# Her own phone voice (model, tokens, dictionary): built from her voice, never committed.
+opendroid/own_voice/

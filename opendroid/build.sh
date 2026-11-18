@@ -4,7 +4,7 @@
 # It takes stock OpenDroid at one pinned commit, applies the patch in ./patch, puts
 # her card, her starting notes and all of her files into the app's assets, and builds
 # the APK for the owner's phone. Nothing is downloaded except OpenDroid itself and
-# what Gradle needs.
+# what Gradle needs, and the pinned native parts of her voice.
 #
 # The APK is signed with a key of the owner's own, made on the first run and kept in
 # ./keys (never committed). Keep that folder: a later build signed with the same key
@@ -12,8 +12,11 @@
 # with any other key cannot update it; Android asks to uninstall first, which removes
 # everything she has written down.
 #
-# Needs: git, JDK 21 (with keytool), and the Android SDK (platform 36, build-tools
-# 36.0.0) with ANDROID_HOME pointing at it.
+# Needs: git, curl, JDK 21 (with keytool), and the Android SDK (platform 36, build-tools
+# 36.0.0, NDK 27.2.12479018, CMake 3.22.1) with ANDROID_HOME pointing at it. Her own
+# voice's native parts (Open JTalk, sherpa-onnx) are fetched at pinned versions with
+# checked hashes by tools/fetch_voice_native.sh; her voice files themselves come from
+# ./own_voice, which is never committed.
 #
 # Usage:  ./build.sh [work-directory]
 # Output: ./out/yume.apk
@@ -39,6 +42,7 @@ for patch in "$HERE"/patch/*.patch; do
     git -C "$WORK" apply --whitespace=nowarn "$patch"
 done
 
+"$HERE/tools/fetch_voice_native.sh" "$WORK"
 "$HERE/tools/prepare_assets.sh" "$WORK"
 
 # The owner's key: made once, then reused for every build.
