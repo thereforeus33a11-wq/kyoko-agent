@@ -12603,10 +12603,10 @@ index 0000000..b074e8f
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt
 new file mode 100644
-index 0000000..a044d01
+index 0000000..d11b88b
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt
-@@ -0,0 +1,1856 @@
+@@ -0,0 +1,1861 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.util.Log
@@ -13885,11 +13885,16 @@ index 0000000..a044d01
 +     * reply that is cut short while they are being written leaves the job open: the flag
 +     * is cleared again, and the next reply writes the notes that are still missing
 +     * ([PersonaMemory.seedIfNeeded]).
++     *
++     * Then a starting note that an older build wrote and she never rewrote is given the
++     * wording of this build ([PersonaMemory.refreshStartingNotes]), once for each version.
 +     */
 +    private suspend fun seedOnce() {
 +        if (!seeded.compareAndSet(false, true)) return
 +        try {
-+            memory.seedIfNeeded(store.seedNotes())
++            val seed = store.seedNotes()
++            memory.seedIfNeeded(seed)
++            memory.refreshStartingNotes(seed, store.previousSeedNotes())
 +        } catch (e: CancellationException) {
 +            seeded.set(false)
 +            throw e
@@ -15333,10 +15338,10 @@ index 0000000..52ce7e9
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaMemory.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaMemory.kt
 new file mode 100644
-index 0000000..5bad619
+index 0000000..139a347
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaMemory.kt
-@@ -0,0 +1,570 @@
+@@ -0,0 +1,672 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.util.Log
@@ -15345,6 +15350,7 @@ index 0000000..5bad619
 +import com.opendroid.ai.data.models.MemoryType
 +import com.opendroid.ai.data.repository.MemoryRepository
 +import com.opendroid.ai.data.repository.SessionMessage
++import java.security.MessageDigest
 +import javax.inject.Inject
 +import javax.inject.Singleton
 +import kotlinx.coroutines.sync.Mutex
@@ -15378,6 +15384,10 @@ index 0000000..5bad619
 + * and out of her prompts but for the few notes she let go that her sleep pass lists
 + * ([archivedLately]), and a note she let go she can bring back in her sleep ([restore]).
 + * Only the owner's own act of emptying her notebook deletes it ([empty]).
++ *
++ * Every write that changes what a note says, or whether it is there, takes one lock, so
++ * that a note looked at before it is written over ([refreshStartingNotes]) is still the
++ * note it was when it is written.
 + */
 +@Singleton
 +class PersonaMemory @Inject constructor(
@@ -15407,8 +15417,8 @@ index 0000000..5bad619
 +     * place above it: on the page, where the newest come first, and when threads and
 +     * opinions have to make way, where the oldest go first.
 +     */
-+    suspend fun seedIfNeeded(seed: List<PersonaNotes.Note>) {
-+        if (isStarted()) return
++    suspend fun seedIfNeeded(seed: List<PersonaNotes.Note>) = writeLock.withLock {
++        if (isStarted()) return@withLock
 +        val rows = noteRows()
 +        val present = rows.mapTo(HashSet()) { it.key }
 +        val base = (rows.minOfOrNull { it.timestamp } ?: System.currentTimeMillis()) - seed.size
@@ -15418,6 +15428,55 @@ index 0000000..5bad619
 +            }
 +        }
 +        markStarted()
++    }
++
++    /**
++     * Gives the starting notes she never touched the wording this build has for them.
++     *
++     * A starting note is written once ([seedIfNeeded]). A phone that ran an older build
++     * keeps the wording that build had, also where her files have changed it since; and
++     * what her notebook says counts for more than her card. [earlier] are the wordings
++     * the starting notes had in older builds, any number for a key. A note of [current]
++     * whose stored text is, character for character, one of the earlier wordings of its
++     * key is one she never rewrote: it is given the current wording. Its old text goes to
++     * her archive the way a note written over does, with the mark she had given it, which
++     * leaves the key with it. The note keeps its time: it keeps its place in her notebook
++     * and its age, and is not new.
++     *
++     * Nothing else is touched: a note she changed, a key with no note under it (she let it
++     * go, or it was taken out: it is not written back), a notebook that has not had its
++     * start or was emptied, and keys the current starting notes no longer have (they stay
++     * as they are). Nothing of it counts as her writing: no note is new or newer by it,
++     * and nothing is moved off her page to make room.
++     *
++     * It is done once for each version of the starting notes: a fingerprint of [current]
++     * and [earlier] is kept, and while it is the same nothing more is read. A notebook
++     * handed over from another phone ([handedOver]) is looked over again. Returns how many
++     * notes were given the current wording.
++     */
++    suspend fun refreshStartingNotes(current: List<PersonaNotes.Note>, earlier: List<PersonaNotes.Note>): Int {
++        if (current.isEmpty() || earlier.isEmpty()) return 0
++        val version = seedVersion(current, earlier)
++        if (memoryRepository.getMemory(SEED_VERSION_KEY)?.value == version) return 0
++        return writeLock.withLock {
++            if (!isStarted()) return@withLock 0
++            val wordings = earlier.groupBy({ it.storageKey }, { it.text })
++            val live = noteRows().associateBy { it.key }
++            val marks = how()
++            val refreshed = HashSet<String>()
++            // The last line under a key is the note, as when the starting notes are read.
++            for (note in current.associateBy { it.storageKey }.values) {
++                val row = live[note.storageKey] ?: continue
++                if (row.value == note.text || row.value !in wordings[note.storageKey].orEmpty()) continue
++                archive(row, REPLACED, marks[note.storageKey])
++                memoryRepository.saveMemory(Memory(row.key, note.text, MemoryType.SEMANTIC, row.timestamp))
++                refreshed += row.key
++            }
++            // As when she writes over a note: the mark said how she knew the old text.
++            if (refreshed.any { it in marks }) updateHow { it - refreshed }
++            memoryRepository.saveMemory(Memory(SEED_VERSION_KEY, version, MemoryType.SEMANTIC))
++            refreshed.size
++        }
 +    }
 +
 +    /**
@@ -15432,6 +15491,18 @@ index 0000000..5bad619
 +     */
 +    suspend fun markStarted() {
 +        memoryRepository.saveMemory(Memory(SEEDED_KEY, "1", MemoryType.SEMANTIC))
++    }
++
++    /**
++     * Records that the notebook here was handed over from another phone, where it had its
++     * start. Called once its notes are written in. No starting note is written into it
++     * from now on ([markStarted]), and [refreshStartingNotes] looks over its starting notes
++     * again, whatever version it last looked over here: they are as the build on the other
++     * phone wrote them, or as she wrote them there.
++     */
++    suspend fun handedOver() {
++        memoryRepository.saveMemory(Memory(SEED_VERSION_KEY, HANDED_OVER, MemoryType.SEMANTIC))
++        markStarted()
 +    }
 +
 +    /**
@@ -15460,7 +15531,7 @@ index 0000000..5bad619
 +     * no mark until she gives it one again. A note written again with the very text it
 +     * has is left as it is: it keeps its age and its mark.
 +     */
-+    suspend fun apply(changes: List<PersonaNotes.Note>): Applied {
++    suspend fun apply(changes: List<PersonaNotes.Note>): Applied = writeLock.withLock {
 +        val live = noteRows().associateBy { it.key }
 +        val marks = how()
 +        val base = System.currentTimeMillis()
@@ -15486,7 +15557,7 @@ index 0000000..5bad619
 +        // A mark said how she knew what a note said before: it does not say how she knows what it says now.
 +        if (written.keys.any { it in marks }) updateHow { it - written.keys }
 +        prune(justWritten = changes.mapTo(HashSet()) { it.storageKey })
-+        return Applied(rewritten, added)
++        Applied(rewritten, added)
 +    }
 +
 +    /** What emptying her notebook deleted: her notes, and the rows of her archive. */
@@ -15509,15 +15580,17 @@ index 0000000..5bad619
 +     */
 +    suspend fun empty(): Emptied {
 +        emptiedAtMillis = System.currentTimeMillis()
-+        val rows = noteRows()
-+        rows.forEach { memoryRepository.deleteMemory(it.key) }
-+        val archived = archiveRows()
-+        archived.forEach { memoryRepository.deleteMemory(it.key) }
-+        howLock.withLock { if (memoryRepository.getMemory(HOW_KEY) != null) memoryRepository.deleteMemory(HOW_KEY) }
-+        moodLock.withLock { if (memoryRepository.getMemory(MOOD_KEY) != null) memoryRepository.deleteMemory(MOOD_KEY) }
-+        markStarted()
-+        emptiedAtMillis = System.currentTimeMillis()
-+        return Emptied(rows.size, archived.size)
++        return writeLock.withLock {
++            val rows = noteRows()
++            rows.forEach { memoryRepository.deleteMemory(it.key) }
++            val archived = archiveRows()
++            archived.forEach { memoryRepository.deleteMemory(it.key) }
++            howLock.withLock { if (memoryRepository.getMemory(HOW_KEY) != null) memoryRepository.deleteMemory(HOW_KEY) }
++            moodLock.withLock { if (memoryRepository.getMemory(MOOD_KEY) != null) memoryRepository.deleteMemory(MOOD_KEY) }
++            markStarted()
++            emptiedAtMillis = System.currentTimeMillis()
++            Emptied(rows.size, archived.size)
++        }
 +    }
 +
 +    // ── Her archive ──────────────────────────────────────────────────────────────────
@@ -15545,10 +15618,19 @@ index 0000000..5bad619
 +    /**
 +     * Keeps [row], one version of a note, in her archive. A version is the note's key
 +     * with the time its text was written, so keeping the same version twice writes the
-+     * same row again.
++     * same row again. Another text under the key with the same time (a starting note
++     * given a later wording keeps its time) is another version, and gets a row of its own
++     * beside the first: an old text is never written over in her archive.
 +     */
 +    private suspend fun archive(row: Memory, why: String, how: PersonaNotes.How?, atMillis: Long = System.currentTimeMillis()) {
-+        val key = ARCHIVE_PREFIX + row.key.removePrefix(PersonaNotes.KEY_PREFIX) + "." + row.timestamp
++        val version = ARCHIVE_PREFIX + row.key.removePrefix(PersonaNotes.KEY_PREFIX) + "." + row.timestamp
++        var key = version
++        var other = 0
++        while (true) {
++            val there = memoryRepository.getMemory(key) ?: break
++            if (readArchive(there)?.second?.t == row.value) break
++            key = version + "-" + ++other
++        }
 +        val kept = ArchiveRow(t = row.value, w = row.timestamp, a = atMillis, why = why, how = how?.name)
 +        memoryRepository.saveMemory(Memory(key, json.encodeToString(ArchiveRow.serializer(), kept), MemoryType.SEMANTIC, atMillis))
 +    }
@@ -15557,6 +15639,13 @@ index 0000000..5bad619
 +    private suspend fun letGo(row: Memory, why: String, how: PersonaNotes.How?) {
 +        archive(row, why, how)
 +        memoryRepository.deleteMemory(row.key)
++    }
++
++    /** Which of the versions of a note written at the same time a row of her archive keeps: 0 for the first, then 1, 2 ([archive]). */
++    private fun otherVersion(archiveKey: String): Int {
++        val time = archiveKey.substringAfterLast('.')
++        val dash = time.lastIndexOf('-')
++        return if (dash > 0) time.substring(dash + 1).toIntOrNull() ?: 0 else 0
 +    }
 +
 +    private suspend fun archiveRows(prefix: String = ARCHIVE_PREFIX): List<Memory> =
@@ -15580,7 +15669,7 @@ index 0000000..5bad619
 +     * goes to her archive, off her page and out of her prompts, with its mark, which
 +     * leaves the key with it. Returns how many.
 +     */
-+    suspend fun fade(keys: Collection<String>): Int {
++    suspend fun fade(keys: Collection<String>): Int = writeLock.withLock {
 +        val live = noteRows().associateBy { it.key }
 +        val marks = how()
 +        val gone = HashSet<String>()
@@ -15590,28 +15679,31 @@ index 0000000..5bad619
 +            gone += key
 +        }
 +        if (gone.any { it in marks }) updateHow { it - gone }
-+        return gone.size
++        gone.size
 +    }
 +
 +    /**
 +     * Brings the note under [storageKey] back from her archive: the newest version of it
 +     * that has not been brought back yet, with the mark she had given it. Only into a key
 +     * that is free: a note she has under it now is never written over from here. True
-+     * when a note came back.
++     * when a note came back. Of two versions written at the same time, the newer is the
++     * one that left her page later, or was kept after the other.
 +     */
-+    suspend fun restore(storageKey: String): Boolean {
-+        if (PersonaNotes.fromStorage(storageKey, "-") == null) return false
-+        if (noteRows().any { it.key == storageKey }) return false
++    suspend fun restore(storageKey: String): Boolean = writeLock.withLock {
++        if (PersonaNotes.fromStorage(storageKey, "-") == null) return@withLock false
++        if (noteRows().any { it.key == storageKey }) return@withLock false
 +        val versions = archiveRows(ARCHIVE_PREFIX + storageKey.removePrefix(PersonaNotes.KEY_PREFIX) + ".")
 +            .mapNotNull { row -> readArchive(row)?.let { Triple(row, it.first, it.second) } }
 +            .filter { (_, archived, _) -> archived.note.storageKey == storageKey && archived.backAt == null }
-+        val (row, archived, kept) = versions.maxByOrNull { it.second.writtenAt } ?: return false
++        val (row, archived, kept) = versions.maxWithOrNull(
++            compareBy({ it.second.writtenAt }, { it.second.archivedAt }, { otherVersion(it.first.key) })
++        ) ?: return@withLock false
 +        val now = System.currentTimeMillis()
 +        memoryRepository.saveMemory(Memory(storageKey, archived.note.text, MemoryType.SEMANTIC, now))
 +        memoryRepository.saveMemory(row.copy(value = json.encodeToString(ArchiveRow.serializer(), kept.copy(back = now))))
 +        archived.how?.let { mark -> updateHow { it + (storageKey to mark) } }
 +        prune(justWritten = setOf(storageKey))
-+        return true
++        true
 +    }
 +
 +    /** Every note she let go, or the notebook had no room for, that she can bring back: the newest version under each key, newest first. */
@@ -15853,6 +15945,7 @@ index 0000000..5bad619
 +        if (gone.any { it in marks }) updateHow { it - gone }
 +    }
 +
++    private val writeLock = Mutex()
 +    private val leftBehindLock = Mutex()
 +    private val moodLock = Mutex()
 +    private val howLock = Mutex()
@@ -15885,6 +15978,13 @@ index 0000000..5bad619
 +
 +        /** Records that seeding ran. */
 +        private const val SEEDED_KEY = "${META_PREFIX}seeded"
++
++        /**
++         * The fingerprint of the starting notes and their earlier wordings that
++         * [refreshStartingNotes] last looked over this notebook by, or [HANDED_OVER].
++         */
++        private const val SEED_VERSION_KEY = "${META_PREFIX}seedversion"
++        private const val HANDED_OVER = "handed-over"
 +        private const val REFLECTION_KEY = "${META_PREFIX}lastreflection"
 +
 +        /** What is kept about her own time, as one row ([PersonaOwnTime.State]). */
@@ -15905,6 +16005,13 @@ index 0000000..5bad619
 +        const val REPLACED = "replaced"
 +        const val FADED = "faded"
 +        const val ROOM = "room"
++
++        /** SHA-256, in hex, of the starting notes and their earlier wordings, line by line. */
++        private fun seedVersion(current: List<PersonaNotes.Note>, earlier: List<PersonaNotes.Note>): String {
++            val text = current.joinToString("\n") { it.toLine() } + "\n\n" + earlier.joinToString("\n") { it.toLine() }
++            return MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
++                .joinToString("") { byte -> ((byte.toInt() and 0xff) + 0x100).toString(16).substring(1) }
++        }
 +    }
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaMood.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaMood.kt
@@ -21752,10 +21859,10 @@ index 0000000..27153b2
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaStore.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaStore.kt
 new file mode 100644
-index 0000000..e7a2496
+index 0000000..5db2050
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaStore.kt
-@@ -0,0 +1,240 @@
+@@ -0,0 +1,253 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.content.Context
@@ -21931,6 +22038,18 @@ index 0000000..e7a2496
 +    /** The notes she starts with, from the bundled seed file. */
 +    fun seedNotes(): List<PersonaNotes.Note> = PersonaNotes.parse(shipped("$DIRECTORY/$SEED_FILE"))
 +
++    /**
++     * The wordings her starting notes had in older builds, from the bundled file beside the
++     * seed file, for [PersonaMemory.refreshStartingNotes]. Every line that reads as a note
++     * counts, so a key can have several. Empty when the build ships none, or it cannot be read.
++     */
++    fun previousSeedNotes(): List<PersonaNotes.Note> = try {
++        shipped("$DIRECTORY/$PREVIOUS_SEED_FILE").lineSequence().mapNotNull { PersonaNotes.parseLine(it) }.toList()
++    } catch (e: Exception) {
++        Log.w(TAG, "Earlier wordings of the starting notes could not be read: ${e.javaClass.simpleName}")
++        emptyList()
++    }
++
 +    private fun readOverride(): String? = try {
 +        overrideFile.takeIf { it.isFile }?.readText()?.takeIf { it.isNotBlank() }
 +    } catch (e: Exception) {
@@ -21986,6 +22105,7 @@ index 0000000..e7a2496
 +        const val CARD_FILE = "card.md"
 +        const val CARD_BASE_FILE = "card.base"
 +        const val SEED_FILE = "seed_notes.txt"
++        const val PREVIOUS_SEED_FILE = "seed_notes.previous.txt"
 +        const val UNDER_FILE = "under.txt"
 +
 +        fun readAsset(context: Context, path: String): String = try {
@@ -26220,7 +26340,7 @@ index 0000000..da3fb2c
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/voice/own/KanaText.kt b/app/src/main/java/com/opendroid/ai/core/voice/own/KanaText.kt
 new file mode 100644
-index 0000000..4b87202
+index 0000000..bd4e2ec
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/voice/own/KanaText.kt
 @@ -0,0 +1,367 @@
@@ -26338,7 +26458,7 @@ index 0000000..4b87202
 +         */
 +        val JAPANESE_WORDS: Map<String, String> = mapOf(
 +            "ne" to "ね", "nee" to "ねえ", "nene" to "ねね", "momo" to "もも", "ayame" to "あやめ",
-+            "reina" to "れいな", "satomi" to "さとみ", "yume" to "ゆめ", "kisaragi" to "きさらぎ",
++            "reina" to "れいな", "yume" to "ゆめ", "kisaragi" to "きさらぎ",
 +            "baka" to "ばか", "dame" to "だめ", "hai" to "はい", "oi" to "おい", "tch" to "ちっ",
 +            "chi" to "ちっ", "heh" to "へっ", "hah" to "はっ", "hm" to "ふーん", "hmm" to "ふーん",
 +            "mm" to "んー", "mmm" to "んー", "ugh" to "うっ", "pff" to "ぷっ", "pfft" to "ぷっ",
@@ -32136,10 +32256,10 @@ index 0000000..1405fe2
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaViewModel.kt b/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaViewModel.kt
 new file mode 100644
-index 0000000..6b14998
+index 0000000..f253dfd
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaViewModel.kt
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,347 @@
 +package com.opendroid.ai.ui.viewmodel
 +
 +import androidx.compose.runtime.getValue
@@ -32312,7 +32432,9 @@ index 0000000..6b14998
 +     *
 +     * A notebook that was copied on another phone after its start says so in its first
 +     * line. It is then taken over as the notebook it is: the starting notes are not
-+     * written into it a second time.
++     * written into it a second time. A starting note in it that the build on the other
++     * phone wrote, and she never rewrote, is given the wording of this build, once its
++     * lines are all in ([PersonaMemory.refreshStartingNotes]); what she wrote is hers.
 +     *
 +     * What is said afterwards is what happened: how many lines were added, which lines
 +     * were not because they are no notes, and how many notes were too long and were cut
@@ -32328,7 +32450,10 @@ index 0000000..6b14998
 +            if (notes.isNotEmpty()) {
 +                withContext(Dispatchers.IO) {
 +                    memory.apply(notes)
-+                    if (PersonaNotes.carriesStartedMark(text)) memory.markStarted()
++                    if (PersonaNotes.carriesStartedMark(text)) {
++                        memory.handedOver()
++                        memory.refreshStartingNotes(store.seedNotes(), store.previousSeedNotes())
++                    }
 +                }
 +            }
 +            notesStatus = notesStatusFor(lines.size, notes, notRead, shortened = reading.shortened.size)
@@ -45338,10 +45463,10 @@ index 0000000..1a47f6e
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineNotebookTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineNotebookTest.kt
 new file mode 100644
-index 0000000..383c129
+index 0000000..b463590
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineNotebookTest.kt
-@@ -0,0 +1,1068 @@
+@@ -0,0 +1,1095 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.app.Application
@@ -45507,9 +45632,10 @@ index 0000000..383c129
 +
 +    private fun engine(
 +        builtInCard: String = "You are Yume. {{owner}} built you.\n",
-+        client: OkHttpClient = AppModule.provideOkHttpClient()
++        client: OkHttpClient = AppModule.provideOkHttpClient(),
++        files: Map<String, String> = emptyMap()
 +    ): PersonaEngine {
-+        val store = PersonaStore(context) { path -> if (path.endsWith("card.md")) builtInCard else "" }
++        val store = PersonaStore(context) { path -> if (path.endsWith("card.md")) builtInCard else files[path].orEmpty() }
 +        return PersonaEngine(
 +            store = store,
 +            memory = memory,
@@ -46205,6 +46331,32 @@ index 0000000..383c129
 +        assertFalse(PersonaEngine.repeatsFromNote("read the message from the bank in his inbox", notes))
 +        assertTrue(PersonaEngine.repeatsFromNote("mail support@bank.example", "saw: the bank writes from support@bank.example"))
 +        assertTrue(PersonaEngine.repeatsFromNote("follow @hive_inspector", "saw: the inspector posts as @hive_inspector"))
++    }
++
++    @Test
++    fun `on a phone an older build ran, a starting note she never rewrote is in this build's wording by her first prompt`() {
++        val oldVoice = "i want my own voice; it does not exist yet | open"
++        val voice = "my own voice speaks my lines on the phone now; only a first build | open"
++        runBlocking {
++            // What the older build left: its wording of one starting note, and one she rewrote.
++            memoryRepository.saveMemory(Memory("yume.thread.own-voice", oldVoice, MemoryType.SEMANTIC, 1_000))
++            memoryRepository.saveMemory(Memory("yume.thread.boots", "street story: got the boots | closed", MemoryType.SEMANTIC, 1_001))
++            memory.markStarted()
++        }
++        val engine = engine(
++            files = mapOf(
++                "persona/seed_notes.txt" to "thread | own-voice | $voice\nthread | boots | street story: saving for the boots | open",
++                "persona/seed_notes.previous.txt" to "# earlier wordings\nthread | own-voice | $oldVoice\nthread | boots | street story: saving | open"
++            )
++        )
++
++        val prompt = runBlocking { engine.chatSystemPrompt(config(), "", emptyList(), screenshotAttached = false) }
++
++        assertTrue(prompt, prompt.contains("my own voice speaks my lines on the phone now"))
++        assertFalse(prompt, prompt.contains("it does not exist yet"))
++        assertTrue(prompt, prompt.contains("street story: got the boots | closed"))
++        // It keeps its place among her notes: it is not new.
++        assertEquals(1_000L, runBlocking { memoryRepository.getMemory("yume.thread.own-voice") }!!.timestamp)
 +    }
 +
 +    @Test
@@ -59144,6 +59296,358 @@ index 0000000..8178bc6
 +        assertFalse(turn.contains('>'))
 +    }
 +}
+diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaSeedRefreshTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaSeedRefreshTest.kt
+new file mode 100644
+index 0000000..80fb74a
+--- /dev/null
++++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaSeedRefreshTest.kt
+@@ -0,0 +1,346 @@
++package com.opendroid.ai.core.persona
++
++import android.app.Application
++import androidx.room.Room
++import androidx.test.core.app.ApplicationProvider
++import com.opendroid.ai.core.persona.PersonaNotes.Kind
++import com.opendroid.ai.core.persona.PersonaNotes.Note
++import com.opendroid.ai.data.db.MigrationTestApplication
++import com.opendroid.ai.data.db.OpenDroidDatabase
++import com.opendroid.ai.data.db.dao.MemoryDao
++import com.opendroid.ai.data.db.entities.MemoryEntity
++import com.opendroid.ai.data.models.Memory
++import com.opendroid.ai.data.models.MemoryType
++import com.opendroid.ai.data.repository.MemoryRepository
++import kotlinx.coroutines.runBlocking
++import org.junit.After
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Before
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++import java.io.IOException
++
++/**
++ * A phone that ran an older build keeps that build's wording of a starting note: a
++ * starting note is written once. Where her files have changed it since, the note she
++ * never rewrote is given the wording of this build, and nothing else of her notebook is
++ * touched: what she wrote is hers, what she let go stays gone, and an emptied notebook
++ * stays empty.
++ */
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [35], application = MigrationTestApplication::class)
++class PersonaSeedRefreshTest {
++
++    private val context = ApplicationProvider.getApplicationContext<Application>()
++    private lateinit var database: OpenDroidDatabase
++    private lateinit var dao: CountedDao
++    private lateinit var repository: MemoryRepository
++    private lateinit var memory: PersonaMemory
++
++    @Before
++    fun setUp() {
++        database = Room.inMemoryDatabaseBuilder(context, OpenDroidDatabase::class.java)
++            .allowMainThreadQueries()
++            .build()
++        dao = CountedDao(database.memoryDao())
++        repository = MemoryRepository(memoryDao = dao, taskHistoryDao = database.taskHistoryDao(), macroDao = database.macroDao())
++        memory = PersonaMemory(repository)
++    }
++
++    @After
++    fun tearDown() {
++        database.close()
++    }
++
++    /** Another phone: a notebook of its own. */
++    private fun anotherPhone() {
++        database.close()
++        setUp()
++    }
++
++    /** Counts how often her notebook is read by prefix and how often a row is written or deleted. */
++    private class CountedDao(private val dao: MemoryDao) : MemoryDao by dao {
++        var prefixReads = 0
++        var writes = 0
++
++        override suspend fun getMemoriesByKeyPrefix(prefix: String): List<MemoryEntity> {
++            prefixReads++
++            return dao.getMemoriesByKeyPrefix(prefix)
++        }
++
++        override suspend fun insertOrUpdateMemory(memory: MemoryEntity) {
++            writes++
++            dao.insertOrUpdateMemory(memory)
++        }
++
++        override suspend fun deleteMemory(key: String) {
++            writes++
++            dao.deleteMemory(key)
++        }
++    }
++
++    // Two earlier wordings of one starting note, and the one this build has.
++    private val oldestVoice = Note(
++        Kind.THREAD, "own-voice",
++        "she wants her own synthesized voice: low for her size, slow, a little raspy, with a grin in it; it does not exist yet | open"
++    )
++    private val oldVoice = Note(
++        Kind.THREAD, "own-voice",
++        "i want my own synthesized voice: low for my size, slow, a little raspy, with a grin in it; it does not exist yet | open"
++    )
++    private val voice = Note(
++        Kind.THREAD, "own-voice",
++        "my own voice speaks my lines on the phone now, made there from my words. only a first build; i want it finished | open"
++    )
++    private val oldBoots = Note(Kind.THREAD, "boots", "street story: left boot lost a gold buckle; i am 13,000 short | open")
++    private val boots = Note(Kind.THREAD, "boots", "street story: left boot lost a gold buckle; i have 11,000 yen toward the pair | open")
++    private val oldBuilder = Note(Kind.USER, "builder", "he has been around about two months, building her and poking at her model")
++    private val builder = Note(Kind.USER, "builder", "he has been around about two months, building me and poking at my model")
++    private val miku = Note(Kind.OPINION, "miku", "a singing girl who never gets tired is a little funny")
++
++    /** What an older build wrote as her starting notes. */
++    private val olderBuild = listOf(oldBuilder, miku, oldBoots, oldVoice)
++
++    /** The starting notes of this build, and the file of their earlier wordings, comments and all. */
++    private val thisBuild = listOf(builder, miku, boots, voice)
++    private val previousFile = """
++        # Earlier wordings of her starting notes, from older builds.
++        ${oldestVoice.toLine()}
++        ${oldBoots.toLine()}
++        ${oldBuilder.toLine()}
++        ${oldVoice.toLine()}
++    """.trimIndent()
++    private val earlier = PersonaStore(context) { path -> if (path == "persona/seed_notes.previous.txt") previousFile else "" }.previousSeedNotes()
++
++    private suspend fun stored(note: Note): Memory? = repository.getMemory(note.storageKey)
++
++    private suspend fun archived(note: Note): List<Memory> {
++        val prefix = PersonaMemory.ARCHIVE_PREFIX + note.storageKey.removePrefix(PersonaNotes.KEY_PREFIX) + "."
++        return repository.getMemoriesByKeyPrefix(prefix).filter { it.key.startsWith(prefix) }
++    }
++
++    @Test
++    fun `the file of earlier wordings keeps every wording of a key, and comments are no notes`() {
++        assertEquals(listOf(oldestVoice, oldBoots, oldBuilder, oldVoice), earlier)
++    }
++
++    @Test
++    fun `a starting note she never rewrote is given this build's wording, keeps its place and age, and its old text goes to her archive`() = runBlocking {
++        memory.seedIfNeeded(olderBuild)
++        // A note of her own, newer than every starting note, and a mark she gave the old wording.
++        memory.apply(listOf(Note(Kind.ME, "soda", "melon soda is mine")))
++        memory.updateHow { mapOf(oldVoice.storageKey to PersonaNotes.How.LIVED, miku.storageKey to PersonaNotes.How.LIVED) }
++        val writtenAt = memory.writtenAt()
++        val order = memory.notes().map { it.key }
++
++        assertEquals(3, memory.refreshStartingNotes(thisBuild, earlier))
++
++        assertEquals(voice.text, stored(voice)!!.value)
++        assertEquals(boots.text, stored(boots)!!.value)
++        assertEquals(builder.text, stored(builder)!!.value)
++        // Its place and its age: nothing of it is new.
++        assertEquals(order, memory.notes().map { it.key })
++        assertEquals(writtenAt, memory.writtenAt())
++        // The old text is in her archive, the way a note written over is, with her mark.
++        val kept = archived(voice).single()
++        assertEquals("yume.meta.archive.thread.own-voice.${writtenAt.getValue(voice.storageKey)}", kept.key)
++        assertTrue(kept.value, kept.value.contains("\"t\":\"${oldVoice.text}\""))
++        assertTrue(kept.value, kept.value.contains("\"why\":\"replaced\""))
++        assertTrue(kept.value, kept.value.contains("\"how\":\"LIVED\""))
++        assertEquals(3, memory.archiveCount())
++        // The mark said how she knew the old text, and went with it; the note that did not change keeps its own.
++        assertEquals(mapOf(miku.storageKey to PersonaNotes.How.LIVED), memory.how())
++        // It is not something she let go, and nothing is there to bring back.
++        assertTrue(memory.archivedLately(10).isEmpty())
++        assertTrue(memory.restorableKeys().isEmpty())
++        assertEquals(5, memory.notes().size)
++    }
++
++    @Test
++    fun `a starting note she rewrote is hers and is left as she wrote it`() = runBlocking {
++        memory.seedIfNeeded(olderBuild)
++        memory.apply(listOf(Note(Kind.THREAD, "own-voice", "he got me a voice on the phone. a first build | open")))
++        // A status she changed is a change of hers too.
++        memory.apply(listOf(oldBoots.copy(text = oldBoots.text.replace("| open", "| stalled"))))
++        val voiceRow = stored(voice)
++        val bootsRow = stored(boots)
++        val archivedBefore = memory.archiveCount()
++
++        assertEquals(1, memory.refreshStartingNotes(thisBuild, earlier))
++
++        assertEquals(voiceRow, stored(voice))
++        assertEquals(bootsRow, stored(boots))
++        assertEquals(builder.text, stored(builder)!!.value)
++        assertEquals(archivedBefore + 1, memory.archiveCount())
++    }
++
++    @Test
++    fun `a starting note that is not in her notebook is not written back`() = runBlocking {
++        memory.seedIfNeeded(olderBuild)
++        // She let one go, and one is gone some other way.
++        memory.fade(listOf(oldVoice.storageKey))
++        repository.deleteMemory(oldBoots.storageKey)
++
++        assertEquals(1, memory.refreshStartingNotes(thisBuild, earlier))
++
++        assertEquals(setOf("builder", "miku"), memory.notes().map { it.key }.toSet())
++        // What she let go is in her archive as she let it go.
++        assertEquals(setOf(oldVoice.storageKey), memory.restorableKeys())
++        assertEquals(oldVoice.text, memory.archivedLately(10).single().note.text)
++    }
++
++    @Test
++    fun `an emptied notebook stays empty`() = runBlocking {
++        memory.seedIfNeeded(olderBuild)
++        memory.empty()
++
++        assertEquals(0, memory.refreshStartingNotes(thisBuild, earlier))
++
++        assertTrue(memory.notes().isEmpty())
++        assertEquals(0, memory.archiveCount())
++        assertTrue(memory.isStarted())
++    }
++
++    @Test
++    fun `a notebook that has not had its start is not looked over until it has`() = runBlocking {
++        // What a first reply of an older build that was cut short leaves: a row, no marker.
++        repository.saveMemory(Memory(oldVoice.storageKey, oldVoice.text, MemoryType.SEMANTIC, 1_000))
++
++        assertEquals(0, memory.refreshStartingNotes(thisBuild, earlier))
++        assertEquals(oldVoice.text, stored(voice)!!.value)
++
++        // Its start: the row that is there is not written over by seeding, and the refresh after it does it.
++        memory.seedIfNeeded(thisBuild)
++        assertEquals(1, memory.refreshStartingNotes(thisBuild, earlier))
++        assertEquals(voice.text, stored(voice)!!.value)
++        assertEquals(1_000L, stored(voice)!!.timestamp)
++    }
++
++    @Test
++    fun `it runs once for each version of the starting notes, and a later start reads and writes nothing`() = runBlocking {
++        memory.seedIfNeeded(olderBuild)
++        assertEquals(3, memory.refreshStartingNotes(thisBuild, earlier))
++        val reads = dao.prefixReads
++        val writes = dao.writes
++
++        assertEquals(0, memory.refreshStartingNotes(thisBuild, earlier))
++        // The app started again.
++        assertEquals(0, PersonaMemory(repository).refreshStartingNotes(thisBuild, earlier))
++
++        assertEquals(reads, dao.prefixReads)
++        assertEquals(writes, dao.writes)
++        // What it keeps is no note of hers, and is not copied out with them.
++        assertEquals(4, memory.notes().size)
++        assertFalse(PersonaNotes.export(memory.notes(), started = true).contains("seedversion"))
++
++        // A later build changes the note again: this build's wording is one of its earlier ones.
++        val nextVoice = voice.copy(text = "my own voice is on the phone and it gets better | open")
++        assertEquals(1, memory.refreshStartingNotes(listOf(builder, miku, boots, nextVoice), earlier + voice))
++        assertEquals(nextVoice.text, stored(voice)!!.value)
++        // Both earlier texts are in her archive: the one written at the same time does not take the other's row.
++        assertEquals(setOf(oldVoice.text, voice.text), archived(voice).map { row -> earlierText(row) }.toSet())
++    }
++
++    @Test
++    fun `a refreshed note she lets go comes back with the wording it had last, and both texts stay in her archive`() = runBlocking {
++        memory.seedIfNeeded(olderBuild)
++        memory.refreshStartingNotes(thisBuild, earlier)
++
++        memory.fade(listOf(voice.storageKey))
++        assertEquals(setOf(oldVoice.text, voice.text), archived(voice).map { row -> earlierText(row) }.toSet())
++
++        assertTrue(memory.restore(voice.storageKey))
++        assertEquals(voice.text, stored(voice)!!.value)
++    }
++
++    @Test
++    fun `each earlier wording of a key is refreshed, and only a wording that is listed word for word`() = runBlocking {
++        for (old in listOf(oldestVoice, oldVoice)) {
++            anotherPhone()
++            memory.seedIfNeeded(listOf(old))
++            assertEquals(old.text, 1, memory.refreshStartingNotes(thisBuild, earlier))
++            assertEquals(voice.text, stored(voice)!!.value)
++        }
++        // Close to an earlier wording is not one of them.
++        anotherPhone()
++        val close = oldVoice.copy(text = oldVoice.text.replace("it does not exist yet", "it does not exist yet, not really"))
++        memory.seedIfNeeded(listOf(close))
++        assertEquals(0, memory.refreshStartingNotes(thisBuild, earlier))
++        assertEquals(close.text, stored(voice)!!.value)
++    }
++
++    @Test
++    fun `a build without the file of earlier wordings, or with one that cannot be read, refreshes nothing`() = runBlocking {
++        val seedFile = thisBuild.joinToString("\n") { it.toLine() }
++        val without = PersonaStore(context) { path -> if (path == "persona/seed_notes.txt") seedFile else "" }
++        val unreadable = PersonaStore(context) { path ->
++            if (path == "persona/seed_notes.previous.txt") throw IOException("cannot be read") else seedFile
++        }
++        assertEquals(thisBuild, without.seedNotes())
++        assertTrue(without.previousSeedNotes().isEmpty())
++        assertTrue(unreadable.previousSeedNotes().isEmpty())
++        memory.seedIfNeeded(olderBuild)
++
++        assertEquals(0, memory.refreshStartingNotes(without.seedNotes(), without.previousSeedNotes()))
++
++        assertEquals(olderBuild.map { it.text }.toSet(), memory.notes().map { it.text }.toSet())
++        assertEquals(0, memory.archiveCount())
++    }
++
++    @Test
++    fun `private notes after the public ones are touched only where their exact earlier wording is listed`() = runBlocking {
++        // A build with his notes baked in: they come after the public starting notes.
++        val bees = Note(Kind.USER, "bees", "he keeps bees and sells the honey")
++        val hivesOld = Note(Kind.USER, "hives", "he has two hives")
++        val hives = Note(Kind.USER, "hives", "he has three hives now")
++        val walks = Note(Kind.USER, "walks", "he walks at night")
++        memory.seedIfNeeded(olderBuild + Note(Kind.USER, "bees", "he keeps bees") + hivesOld + walks)
++
++        assertEquals(4, memory.refreshStartingNotes(thisBuild + bees + hives + walks, earlier + hivesOld))
++
++        // An older wording that is not listed is left; the one that is, is refreshed; the same one is the same.
++        assertEquals("he keeps bees", stored(bees)!!.value)
++        assertEquals(hives.text, stored(hives)!!.value)
++        assertEquals(walks.text, stored(walks)!!.value)
++        assertEquals(1, archived(hives).size)
++        assertTrue(archived(bees).isEmpty())
++        assertTrue(archived(walks).isEmpty())
++    }
++
++    @Test
++    fun `keys the starting notes no longer have are left as they are`() = runBlocking {
++        memory.seedIfNeeded(olderBuild)
++
++        assertEquals(2, memory.refreshStartingNotes(listOf(builder, voice), earlier))
++
++        assertEquals(oldBoots.text, stored(boots)!!.value)
++        assertEquals(miku.text, stored(miku)!!.value)
++        assertEquals(4, memory.notes().size)
++    }
++
++    @Test
++    fun `with the files this build ships, a phone holding any earlier wording of a starting note it still has gets the current one`() = runBlocking {
++        val assets = java.io.File("src/main/assets")
++        val shipped = PersonaStore(context) { path -> java.io.File(assets, path).takeIf { it.isFile }?.readText().orEmpty() }
++        val current = shipped.seedNotes().associateBy { it.storageKey }
++        val previous = shipped.previousSeedNotes()
++        // A build made without her files has nothing to look at.
++        if (current.isEmpty() || previous.isEmpty()) return@runBlocking
++        val lines = java.io.File(assets, "persona/seed_notes.previous.txt").readLines()
++            .filter { it.isNotBlank() && !it.trim().startsWith("#") }
++        assertEquals("every line of the file is a note", lines.size, previous.size)
++
++        for (old in previous.filter { it.storageKey in current }) {
++            anotherPhone()
++            memory.seedIfNeeded(listOf(old))
++            memory.refreshStartingNotes(current.values.toList(), previous)
++            assertEquals(old.toLine(), current.getValue(old.storageKey).text, stored(old)!!.value)
++        }
++    }
++
++    private fun earlierText(row: Memory): String = Regex("\"t\":\"([^\"]*)\"").find(row.value)!!.groupValues[1]
++}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaSelfPicturesTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaSelfPicturesTest.kt
 new file mode 100644
 index 0000000..45edd06
@@ -69886,10 +70390,10 @@ index 0000000..2e5dcab
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/ui/viewmodel/PersonaViewModelTest.kt b/app/src/test/java/com/opendroid/ai/ui/viewmodel/PersonaViewModelTest.kt
 new file mode 100644
-index 0000000..5f33e69
+index 0000000..6315762
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/ui/viewmodel/PersonaViewModelTest.kt
-@@ -0,0 +1,458 @@
+@@ -0,0 +1,512 @@
 +package com.opendroid.ai.ui.viewmodel
 +
 +import android.app.Application
@@ -70107,6 +70611,60 @@ index 0000000..5f33e69
 +            memory.seedIfNeeded(startingNotes + Note(Kind.OPINION, "hosts", "hosts are scammers with good hair"))
 +            assertEquals(listOf("bees", "boots", "stage"), memory.notes().map { it.key })
 +            assertEquals("street story: got the boots | closed", memory.notes().single { it.key == "boots" }.text)
++        }
++    }
++
++    // A starting note as an older build wrote it, as this build has it, and the file of its earlier wordings.
++    private val oldVoice = Note(Kind.THREAD, "own-voice", "i want my own voice; it does not exist yet | open")
++    private val voice = Note(Kind.THREAD, "own-voice", "my own voice speaks my lines on the phone now; only a first build | open")
++    private val oldBoots = Note(Kind.THREAD, "boots", "street story: saving for the boots, 13,000 short | open")
++    private val thisBuild = listOf(Note(Kind.REL, "stage", "at ease, not romance"), oldBoots.copy(text = "street story: saving for the boots | open"), voice)
++
++    /** The store of a build that ships [thisBuild] and the earlier wordings of its starting notes. */
++    private fun storeWithEarlierWordings() = PersonaStore(context) { path ->
++        when {
++            path.endsWith("card.md") -> "You are Yume.\n"
++            path.endsWith("seed_notes.txt") -> thisBuild.joinToString("\n") { it.toLine() }
++            path.endsWith("seed_notes.previous.txt") -> "# earlier wordings\n${oldVoice.toLine()}\n${oldBoots.toLine()}"
++            else -> ""
++        }
++    }
++
++    @Test
++    fun `a notebook handed over from a phone with an older build gets this build's wording of what she never rewrote, and keeps what she did`() {
++        // The old phone, on an older build: its starting notes, and she rewrote one.
++        runBlocking {
++            memory.seedIfNeeded(listOf(Note(Kind.REL, "stage", "at ease, not romance"), oldBoots, oldVoice))
++            memory.apply(listOf(Note(Kind.THREAD, "boots", "street story: got the boots, gold buckle and all | closed")))
++        }
++        var copied: String? = null
++        viewModel(store("You are Yume.\n")).copyNotebook { copied = it }
++        await("the notebook to be copied") { copied != null }
++
++        // Handed over before her first reply on the new phone, and after it: there her first
++        // reply wrote this build's starting notes and looked them over already.
++        for (repliedFirst in listOf(false, true)) {
++            database.close()
++            setUp()
++            val store = storeWithEarlierWordings()
++            if (repliedFirst) runBlocking {
++                memory.seedIfNeeded(store.seedNotes())
++                assertEquals(0, memory.refreshStartingNotes(store.seedNotes(), store.previousSeedNotes()))
++            }
++            val model = viewModel(store)
++            model.onNotesDraftChange(copied!!)
++            model.giveNotes()
++            await("the hand-over") { model.notesStatus.isNotEmpty() }
++
++            runBlocking {
++                val stored = memory.notes().associate { it.key to it.text }
++                assertEquals("$repliedFirst", voice.text, stored["own-voice"])
++                assertEquals("$repliedFirst", "street story: got the boots, gold buckle and all | closed", stored["boots"])
++                // Her next start there changes nothing more, and writes no starting note in.
++                memory.seedIfNeeded(store.seedNotes())
++                assertEquals(0, memory.refreshStartingNotes(store.seedNotes(), store.previousSeedNotes()))
++                assertEquals(stored, memory.notes().associate { it.key to it.text })
++            }
 +        }
 +    }
 +
