@@ -47065,7 +47065,7 @@ index 0000000..d0595f8
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaLibraryShelfCheckTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaLibraryShelfCheckTest.kt
 new file mode 100644
-index 0000000..23df069
+index 0000000..19b983d
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaLibraryShelfCheckTest.kt
 @@ -0,0 +1,232 @@
@@ -47214,7 +47214,7 @@ index 0000000..23df069
 +            // The months between school and the street, which a title that named it used to take along.
 +            "The gap between school and the street",
 +            "she left school at eighteen, in the autumn of 2025",
-+            "She changed in the summer of 2026, about three months before now",
++            "She changed in June 2026, in the rainy season, about five months before now",
 +            // How she landed there, without the night she cannot play back.
 +            "one night she was in the neon with a gold ring in her navel and no wish to go home",
 +            "She slept first in a manga cafe booth",
