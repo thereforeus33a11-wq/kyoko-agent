@@ -33,6 +33,17 @@ if [ "${YUME_BAKE_PRIVATE_NOTES:-0}" = "1" ] && [ -f "$HERE/persona/seed_notes.p
     cat "$HERE/persona/seed_notes.private.txt" >> "$DEST/seed_notes.txt"
 fi
 
+# The wordings her starting notes had in older builds, beside the starting notes. On a
+# phone that still holds one of them word for word (she never rewrote it), the app gives
+# that note the current wording, once, and keeps the old text in her archive. The file is
+# committed and holds no private note, so a private note is left as it is unless its exact
+# earlier wording is listed. Without the file nothing is refreshed.
+EARLIER=0
+if [ -f "$HERE/persona/seed_notes.previous.txt" ]; then
+    cp "$HERE/persona/seed_notes.previous.txt" "$DEST/seed_notes.previous.txt"
+    EARLIER="$(grep -c '^[a-z].*|' "$DEST/seed_notes.previous.txt" || true)"
+fi
+
 # The name the files call him by: YUME_OWNER_NAME if set, else the one in the heading
 # "## With <name>" of her core file. With neither, the files are copied unchanged.
 NAME="${YUME_OWNER_NAME:-}"
@@ -57,7 +68,7 @@ if [ -f "$HERE/persona/library_index.txt" ]; then
     cp "$HERE/persona/library_index.txt" "$DEST/library_index.txt"
 fi
 
-echo "Persona assets: card, $(grep -c '|' "$DEST/seed_notes.txt") starting notes, $count library files -> $DEST"
+echo "Persona assets: card, $(grep -c '|' "$DEST/seed_notes.txt") starting notes ($EARLIER earlier wordings), $count library files -> $DEST"
 
 # Her own voice (a real person's voice, used with her agreement): opendroid/own_voice is
 # never committed, and only a build made where it exists carries the voice. Without it
