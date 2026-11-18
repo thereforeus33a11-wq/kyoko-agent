@@ -24,6 +24,9 @@ def main():
     ap.add_argument("--lines", required=True)
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--start", type=int, default=0, help="skip the first N lines (resume)")
+    ap.add_argument("--speed", type=float, default=1.0, help="speaking speed factor (1.1 = 10%% faster)")
+    ap.add_argument("--temperature", type=float, default=1.0, help="more = livelier, less = steadier")
+    ap.add_argument("--top-k", type=int, default=15)
     args = ap.parse_args()
 
     from TTS_infer_pack.TTS import TTS, TTS_Config
@@ -55,9 +58,9 @@ def main():
         for sr, audio in tts.run({
             "text": text, "text_lang": lang,
             "ref_audio_path": args.ref, "prompt_text": args.ref_text, "prompt_lang": "ja",
-            "top_k": 15, "top_p": 1, "temperature": 1, "text_split_method": "cut5",
+            "top_k": args.top_k, "top_p": 1, "temperature": args.temperature, "text_split_method": "cut5",
             "batch_size": 1, "seed": args.seed + n, "repetition_penalty": 1.35,
-            "parallel_infer": False, "speed_factor": 1.0,
+            "parallel_infer": False, "speed_factor": args.speed,
         }):
             chunks.append(audio)
         audio = np.concatenate(chunks) if chunks else np.zeros(1, dtype=np.int16)
