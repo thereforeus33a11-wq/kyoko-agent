@@ -1,2 +1,5 @@
-social/.env
+__pycache__/
+*.pyc
 social_data/
+social_bridge.json
+.pytest_cache/
