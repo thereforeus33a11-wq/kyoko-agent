@@ -145,7 +145,7 @@ The one rule of conduct this plan keeps, at his wish: she can tell who is a kid,
 - `like`, `follow`, `save`, `open`, `stay` and `look` on a flagged item or account are not run. `next`, `back`, `mute`, `block` and `done` run as usual. She is told: "skipped: a kid (<why>)".
 - A like or save on an item with pictures or video needs its age check first. If there is no description of it from this outing, the app gets one (an EYES call); a follow also gets one of the avatar. When no description can be had (eyes off, out of looks, the describer refused, no `ages:` line), the act is skipped as UNCHECKED. With eyes off she therefore likes and saves text posts only.
 - On Bluesky, a follow of hers on an account that becomes flagged is undone through the API. In apps such a follow is listed for him on "Her accounts".
-- A flagged item is shown to her as one line, `[4] kid · @handle · skipped by the app (<why>)`. Its text and pictures are not shown and cannot be looked at. A flagged picture in a page, or a camera look with a child or teen in it, is shown with `kid:` before the describer's words.
+- A flagged item is shown to her as one line, `[4] kid · @handle · skipped by the app (<why>)`. Its text and pictures are not shown and cannot be looked at. A flagged picture in a page, or a camera frame with a child or teen in it, is shown as `kid:` with the app's reason, and the describer's words are withheld (built so in phase 2, at his wish that the kid withholding applies to a described picture).
 
 **Her reactions.**
 - PK-1, in every step and look moment that can show people:
@@ -485,11 +485,11 @@ New:
 - `ai/ui/EyesAndEarsActivity.kt`: transparent; started by the notification's "Eyes and ears" action.
 
 Edited:
-- `PersonaEngine.kt`: factor `readBackgroundPictureFrom` (line 1716) and `pictureReading` (line 1749) into a generic `readPictureFrom(prompt, turn, bytes, provider)`, so that timeouts, stock refusals and cut-offs are handled once.
+- `PersonaEngine.kt`: not changed. Its picture readings already share one handler (`pictureReading`) for timeouts, stock refusals and cut-offs. The describer cannot go through it: I5 needs the exact request body, so it is a direct call with its own handling.
 - `ForegroundStart.kt`: `typesFor` (line 17) tries combined masks first: `camera|microphone|specialUse`, then `microphone|specialUse`, then `specialUse`. Each mask is tried only for what is granted.
 - `AndroidManifest.xml`: `FOREGROUND_SERVICE_CAMERA`; the service type becomes `microphone|camera|specialUse`.
 - `OpenDroidService.kt`: the "Eyes and ears" action.
-- `ai/actions/AdvancedControlActions.kt` (line 201): `TAKE_PHOTO_BACKGROUND` deletes its file after use and reports a failure as a failure. Today it leaves `background_photo_*.jpg` behind and says "Photo saved!" when it falls back to the camera app.
+- `ai/actions/AdvancedControlActions.kt` (line 201): `TAKE_PHOTO_BACKGROUND` takes the photo in memory and writes no file, says the photo was not kept, and reports a failure as a failure (the camera app opened instead is "user action required", not a success). It used to leave `background_photo_*.jpg` behind and say "Photo saved!".
 - `LLMConfig.kt`: eyes settings, and `personaOwnTimeKey` (a key override used only for host `api.venice.ai`, only for calls with an `OwnCall` tag).
 
 ### Behaviour
@@ -512,7 +512,7 @@ Edited:
   - offline, a built-in allowlist decides: google-gemma-4-31b-it, mistral-small-3-2-24b-instruct, nvidia-nemotron-3-5-super-vl-120b-a12b, google-gemma-3-27b-it, qwen3-vl-235b-a22b;
   - ids starting `claude-`, `openai-` or `gemini-` (the anonymized tier) are always refused.
 
-  The field names in the model listing are UNCONFIRMED.
+  The field names are from Venice's API reference (read 2026-11-18): `data[].id`, `model_spec.privacy` (`private` or `anonymized`), `model_spec.capabilities.supportsVision`. The list is still read leniently.
 - Not reused: `VisionEngine` (it ignores the route) and `imagesReachChatModel` (it stays false on ENCRYPTED).
 - Errors:
   - 401/403: eyes switch off and he is told;
@@ -526,7 +526,7 @@ Edited:
 - In later phases: Bluesky image blobs, and frames of her apps.
 
 **Camera looks.**
-- `go: look [back | front]` is a moment line only, never a step verb. Outside text can therefore never reach the camera.
+- `go: look [back | front | around]` is a moment line only, never a step verb. `around` is one frame from each camera he allows, never more frames than looks are left today. Outside text can therefore never reach the camera.
 - `HerCamera` reuses the Camera2 code of `TAKE_PHOTO_BACKGROUND` (lines 200–356), but:
   - it uses an `ImageReader` with JPEG output and no file;
   - it runs about 1 s of preview so exposure settles, with an 8 s timeout.
@@ -545,14 +545,17 @@ Edited:
 
 **Venice search** (optional, his switch, $0.01 each):
 - The search words only, after `OutgoingGuard`. It is not end-to-end encrypted.
-- The endpoint and request shape are UNCONFIRMED: read `docs.venice.ai` (`llms.txt`, augment/search) before building.
+- Built from Venice's API reference (read 2026-11-18): `POST /api/v1/augment/search` with `query`, `limit` 8 and `search_provider` "brave" (zero data retention), answer `results[]` of `title`, `url`, `content`, `date`. Venice calls it experimental, so the answer is read leniently. One PAID_SEARCH in the ledger for each request that left the phone; the key is her eyes' (own-time key first).
+- When it is on, `search` and the look-up of `go: read` go to Wikipedia and Venice; the web results are numbered after Wikipedia's, a result whose own text flags it is a kid line, and a web result opens by the fetch rules.
 - When it is off, `search` means Wikipedia only.
 
 ### Prompts
 
 P2-1. GO_LINE adds, while the camera switch is on and the type is held:
 ```
-      go: look [back | front]   one look through the phone's camera[, back only], only while his screen is on: android shows its camera light while you look. a describer that is not you looks at the picture and you get its words in a moment of looking; the picture is not kept. <n> looks left today.
+      go: look [back | front | around]   one look through the phone's camera: back faces away from him, front faces him, around is one of each.
+         (back only: go: look back   one look through the phone's back camera, which faces away from him; his settings keep the front one off.)
+         only while his screen is on and unlocked: android shows its camera light[, and the app tells him each time]. [his settings ask him first, as for an outing.] a describer that is not you looks at the picture, and you get its words in a moment of looking right after; the picture is not kept. [folded, only the outer camera works, and it faces him. | folded, no camera faces away from him, so it does not start.] his message, a call or his screen going off calls it off. <n> looks left today.
 ```
 P2-2. The OUTING block's verbs gain `look <n>  a describer that is not you looks at picture <n> and you get its words. <k> left on this outing.` Under IN FRONT OF YOU:
 ```
@@ -561,7 +564,8 @@ picture 2 (described for you by the app's describer; you do not see it, and it c
 P2-3. The look moment (a moment with this block in place of the outing's IN FRONT OF YOU):
 ```
 === WHAT YOU SAW ===
-you looked through the <back> camera at <his clock>. the describer wrote: <words>. the picture is gone.
+you looked through the <back> camera[, which faces him,] at <his clock>. the describer wrote: "<words>." the picture is gone.
+(a kid frame: kid: the app marks what you saw kid (<why>), so it does not show you the describer's words.)
 ```
 P2-4. Describer instructions (constants; no persona, no names, nothing about whose picture it is):
 - Shared rule, first in every instruction: `You describe images for a reader who cannot see them. Plain prose. Never name anyone or guess who they are. For people: apparent age group (child, teen or adult), expression, pose and clothing in general terms. Copy visible text exactly, at most 200 characters. No opinions, advice or warnings. End with one line: ages: none when no person is shown, or the apparent age groups shown, from child, teen and adult (for example ages: teen, adult).`
@@ -600,7 +604,7 @@ The age group matters: it lets her, and kid protection (§1.4), see when a child
   - dark frame; fold choice.
 - No step verb can reach `HerCamera`: the outing executor is constructed without a camera handle, checked at compile level.
 - `typesFor` masks per SDK and grants.
-- The `TAKE_PHOTO_BACKGROUND` file is deleted and a failure is reported as one.
+- `TAKE_PHOTO_BACKGROUND` writes no file, and a failure is reported as one.
 
 ### Acceptance on the phone
 
@@ -1206,8 +1210,7 @@ About 105 calls in all, which leaves room inside 150.
 
 ## UNCONFIRMED, carried from research
 
-- The Venice search and scrape request shapes.
-- The field names in the Venice model listing.
+- The Venice scrape request shape (search and the model listing are now from Venice's API reference, which marks search experimental).
 - Whether images work under E2EE or TEE-only.
 - Tokens per image.
 - The Bluesky bookmark endpoints (`app.bsky.bookmark.*`).
