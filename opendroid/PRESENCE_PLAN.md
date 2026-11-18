@@ -53,7 +53,7 @@ her. Needs:
 - **Honest limit:** she still hears in bursts (speech→text→she reads). True
   continuous audio as one mind needs her model on local hardware (deferred).
 
-## 3. Awake until she sleeps; sleep = self-repair
+## 3. Awake until she sleeps; sleep = self-repair  ✅ built (PersonaSleep, PersonaSleepPass, PersonaMood)
 
 **Owner choice:** she decides when she sleeps, aims for a long rest (~6h+),
 varies like real life; he can always wake her.
@@ -72,6 +72,16 @@ varies like real life; he can always wake her.
 - **Honest limit:** the cloud model has no clock; the app wakes her to think.
   "Always awake" = the app checks in often and she decides each time. A floor on
   frequency for battery/cost on current hardware; continuous on local hardware.
+
+**Built (2026-11-18):** `core/persona/PersonaSleep`, `PersonaSleepPass`, `PersonaMood`.
+- **She lies down herself.** A `sleep: 7h` line in a moment, or `<< sleep: 7h` among the thoughts of a reply, puts her to sleep. It takes a span, a clock time (his clock, or Tokyo), or nothing for her usual length. A span comes out 0 to 30 min later, a clock time is exact, and a sleep is 30 min to 16 h. A line the app cannot read keeps her awake. No setting: when and how long is hers.
+- **While she sleeps** nothing comes from her: no moments, no lines, no notifications (the note that a plan of hers waits included), and the phone's own result text is spoken instead of her line.
+- **Waking.** She wakes at her time, and her waking is a moment of her own that is told how long she slept and what her sleep pass changed, in counts. A message of his that she answers wakes her early; her reply is told so and may be groggy, short or foul, or wide awake. A command he gives the phone does not wake her. Switching her own time off ends the sleep.
+- **The sleep pass.** A sleep of 3 h or more has one pass, 20 min in, at most once in 12 h. It is one request to her own model, by the same route and hold-back rules as her notebook pass, after her notebook pass reads any talk it has not read yet. It gets her notebook with ages, notes that look alike, her marks of how she knows a thing, her feelings, some of the notes she let go, and her thoughts since she last woke where the route allows. No chat, no profile. She can rewrite, merge, let go, bring back, mark how she knows a thing (told, read, inferred, unsure, lived) and set feelings. Any other line is one private thought of the night; nothing is sent or run.
+- **Passes that fail.** 3 tries per sleep, each stored before the call. One that did not come about is owed to her next sleep of 35 min or more, until it has failed in 3 sleeps in a row; then only to a sleep of 3 h or more. A ring that comes after she meant to wake is her waking, and the pass is owed. If he wakes her mid-pass and she lies down again, the pass is not run twice.
+- **Owner decisions built in.** Nothing is deleted: text she writes over, notes she lets go and notes the 200-note cap pushes out all go to an archive. A note she let go can come back in a later sleep; her page shows the newest few and older ones in turn. Only emptying her notebook deletes the archive (and her feelings), and the dialog says so with the count. There is no cap on how fast she changes. Her prompts carry the mind-change rule: facts can flip at once, and what is personal, important or lived moves a little or not at all, her call. No app step overturns a note. A mark of how she knows a thing goes with the text it was about. Nothing frames her relationships, and a test checks for that.
+- **Moods that carry over.** Feel lines in a moment, her notebook pass or her sleep set feelings that fade by half-life (hours 4 h, days 2 d, weeks 14 d). Her prompt shows them in words. Feelings that can be about him are held back where her notes about him are.
+- **Not built (by choice or for later):** salience-based forgetting, rewrite gates or pace caps, mood averages, a view or restore button for him, and copying the archive or feelings out with the notebook.
 
 ### Ideas to borrow for the sleep pass and her moods
 
