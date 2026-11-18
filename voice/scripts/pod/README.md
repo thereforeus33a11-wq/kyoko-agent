@@ -26,3 +26,16 @@ Two traps worth knowing:
 - GPT-SoVITS at this commit: on GPU, its CUDA-graph decoder cuts lines short. `speak.py` turns
   it off.
 - Half-precision training made a voice that skipped most words. Train in full precision.
+
+Added after the phone voice was finished:
+- `morning.sh`: after training, exports her phone voice on the pod, fetches it, scores 25 new lines
+  (`her_test.txt`) with `asr_kana.py` (Japanese ASR, kana error rate, 0.3 s of silence padded on
+  each side so the recognizer does not miss a first phrase), and packs it with
+  `opendroid/tools/make_own_voice.sh`.
+- `laughs.sh`, `laugh_lines.txt`, `pack_laughs.py`: her laughs and small sounds from the teacher
+  voice, three takes per line from four references, packed one file per sound with pitch per take.
+- `make_ab.py`, `ab_speak.py`: English A/B. A sends English words through katakana as the phone
+  does; B splices English IPA (from CMU ARPAbet) between her Japanese phonemes, since her phone
+  voice was warm-started from an English voice and still has those phoneme ids.
+- `podio.py` waits out the API's rate limit with a growing backoff, and uses a precomputed
+  `<file>.sha256` for files too big to hash within one exec call.

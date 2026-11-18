@@ -5,7 +5,8 @@ The key is read from /tmp/claude-0/secret/rp_key and never printed.
   python podio.py up   <pod> <local file> <remote file>
   python podio.py down <pod> <remote file> <local file>
 """
-import base64, hashlib, json, os, sys, time, urllib.error, urllib.request
+import base64
+import random, hashlib, json, os, sys, time, urllib.error, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 API = "https://api.runpod.io/v2"
@@ -15,7 +16,7 @@ ARGS_PER_CALL = 23  # keeps the request body under the 100 KB limit
 DOWN_BYTES = 720 * 1024  # stdout cap is 1 MiB; base64 of this fits
 
 
-def call(method, path, body=None, tries=8):
+def call(method, path, body=None, tries=12):
     data = json.dumps(body).encode() if body is not None else None
     for t in range(tries):
         req = urllib.request.Request(API + path, data=data, method=method, headers={
@@ -27,7 +28,8 @@ def call(method, path, body=None, tries=8):
         except urllib.error.HTTPError as e:
             msg = e.read().decode(errors="replace")[:300]
             if e.code in (409, 429, 500, 502, 503, 504) and t < tries - 1:
-                time.sleep(float(e.headers.get("Retry-After") or 2 + 2 * t)); continue
+                # back off for real: the API's Retry-After is often 1 s, too short when several transfers share the limit
+                time.sleep(max(float(e.headers.get("Retry-After") or 0), min(2 ** t, 60)) + random.random()); continue
             raise RuntimeError(f"{method} {path}: HTTP {e.code} {msg}")
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             if t < tries - 1:
@@ -73,7 +75,8 @@ def upload(pod, local, remote):
 
 
 def download(pod, remote, local):
-    r = sh(pod, f"stat -c %s '{remote}' && sha256sum '{remote}'")
+    # A big file's hash can take longer than one call may run: use a precomputed <file>.sha256 when there is one.
+    r = sh(pod, f"stat -c %s '{remote}' && (cat '{remote}.sha256' 2>/dev/null || sha256sum '{remote}')")
     lines = r["stdout"].split()
     size, digest = int(lines[0]), lines[1]
     n = (size + DOWN_BYTES - 1) // DOWN_BYTES
@@ -87,7 +90,7 @@ def download(pod, remote, local):
         return base64.b64decode(r["stdout"])
 
     t0 = time.time()
-    with ThreadPoolExecutor(6) as ex:
+    with ThreadPoolExecutor(4) as ex:
         chunks = []
         for k, c in enumerate(ex.map(get, range(n))):
             chunks.append(c)
