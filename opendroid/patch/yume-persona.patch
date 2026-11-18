@@ -12603,10 +12603,10 @@ index 0000000..b074e8f
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt
 new file mode 100644
-index 0000000..d11b88b
+index 0000000..cf3baa5
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaEngine.kt
-@@ -0,0 +1,1861 @@
+@@ -0,0 +1,1872 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.util.Log
@@ -12716,7 +12716,8 @@ index 0000000..d11b88b
 +        }
 +    )
 +    private val reflecting = AtomicBoolean(false)
-+    private val seeded = AtomicBoolean(false)
++    private val seedLock = Mutex()
++    @Volatile private var seeded = false
 +
 +    /**
 +     * What time it is, for the things in her prompts that go by the clock: how old a note
@@ -13146,6 +13147,8 @@ index 0000000..d11b88b
 +    internal suspend fun reflect(page: PersonaNotebookTalk.Page): Boolean {
 +        val config = settingsRepository.llmConfig.first()
 +        if (!isActive(config)) return false
++        // Her notebook as this build has it, before she reads it: a pass can be the first thing a new build does.
++        seedOnce()
 +        val heldBack = config.holdsBackDetails(RouteClassifier.personaRoute(config))
 +        // Only what the two of them said. App rows can carry notification or screen text.
 +        // A reply she wrote with his screen in front of her is labelled as read off the
@@ -13723,6 +13726,8 @@ index 0000000..d11b88b
 +        // One pass over her notebook at a time: one that is busy costs this try.
 +        if (!reflecting.compareAndSet(false, true)) return PersonaSleep.Repair.failed(nowMillis)
 +        try {
++            // Her notebook as this build has it, before she goes over it: a new build can start in her sleep.
++            seedOnce()
 +            val started = System.currentTimeMillis()
 +            val heldBack = config.holdsBackDetails(RouteClassifier.personaRoute(config))
 +            val owner = ownerName()
@@ -13881,25 +13886,31 @@ index 0000000..d11b88b
 +        (userProfileStore.read() as? ProfileStoreResult.Success)?.value?.name.orEmpty()
 +
 +    /**
-+     * Writes her starting notes the first time a prompt is built in this process. A
-+     * reply that is cut short while they are being written leaves the job open: the flag
-+     * is cleared again, and the next reply writes the notes that are still missing
-+     * ([PersonaMemory.seedIfNeeded]).
++     * Writes her starting notes the first time in this process that her notebook is put
++     * in front of her: a prompt of hers, her notebook pass or her sleep pass, whichever
++     * comes first (a new build can start in her sleep). A reply that is cut short while
++     * they are being written leaves the job open, and the next one writes the notes that
++     * are still missing ([PersonaMemory.seedIfNeeded]).
 +     *
 +     * Then a starting note that an older build wrote and she never rewrote is given the
 +     * wording of this build ([PersonaMemory.refreshStartingNotes]), once for each version.
++     * A call that comes while this runs waits for it, so that no page of hers is read
++     * from her notebook as it was before.
 +     */
 +    private suspend fun seedOnce() {
-+        if (!seeded.compareAndSet(false, true)) return
-+        try {
-+            val seed = store.seedNotes()
-+            memory.seedIfNeeded(seed)
-+            memory.refreshStartingNotes(seed, store.previousSeedNotes())
-+        } catch (e: CancellationException) {
-+            seeded.set(false)
-+            throw e
-+        } catch (e: Exception) {
-+            Log.w(TAG, "Seed notes were not written: ${e.javaClass.simpleName}")
++        if (seeded) return
++        seedLock.withLock {
++            if (seeded) return
++            try {
++                val seed = store.seedNotes()
++                memory.seedIfNeeded(seed)
++                memory.refreshStartingNotes(seed, store.previousSeedNotes())
++            } catch (e: CancellationException) {
++                throw e
++            } catch (e: Exception) {
++                Log.w(TAG, "Seed notes were not written: ${e.javaClass.simpleName}")
++            }
++            seeded = true
 +        }
 +    }
 +
@@ -15338,10 +15349,10 @@ index 0000000..52ce7e9
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaMemory.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaMemory.kt
 new file mode 100644
-index 0000000..139a347
+index 0000000..32a93a3
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaMemory.kt
-@@ -0,0 +1,672 @@
+@@ -0,0 +1,677 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.util.Log
@@ -15620,7 +15631,9 @@ index 0000000..139a347
 +     * with the time its text was written, so keeping the same version twice writes the
 +     * same row again. Another text under the key with the same time (a starting note
 +     * given a later wording keeps its time) is another version, and gets a row of its own
-+     * beside the first: an old text is never written over in her archive.
++     * after the others: an old text is never written over in her archive. Only the last
++     * of those rows is written again, so they stay in the order they were kept in,
++     * whatever the clock said ([restore]).
 +     */
 +    private suspend fun archive(row: Memory, why: String, how: PersonaNotes.How?, atMillis: Long = System.currentTimeMillis()) {
 +        val version = ARCHIVE_PREFIX + row.key.removePrefix(PersonaNotes.KEY_PREFIX) + "." + row.timestamp
@@ -15628,8 +15641,10 @@ index 0000000..139a347
 +        var other = 0
 +        while (true) {
 +            val there = memoryRepository.getMemory(key) ?: break
-+            if (readArchive(there)?.second?.t == row.value) break
-+            key = version + "-" + ++other
++            val next = version + "-" + (other + 1)
++            if (readArchive(there)?.second?.t == row.value && memoryRepository.getMemory(next) == null) break
++            key = next
++            other++
 +        }
 +        val kept = ArchiveRow(t = row.value, w = row.timestamp, a = atMillis, why = why, how = how?.name)
 +        memoryRepository.saveMemory(Memory(key, json.encodeToString(ArchiveRow.serializer(), kept), MemoryType.SEMANTIC, atMillis))
@@ -15687,7 +15702,8 @@ index 0000000..139a347
 +     * that has not been brought back yet, with the mark she had given it. Only into a key
 +     * that is free: a note she has under it now is never written over from here. True
 +     * when a note came back. Of two versions written at the same time, the newer is the
-+     * one that left her page later, or was kept after the other.
++     * one that was kept in her archive after the other, by the order of their rows and
++     * not by the clock, which can have been set back in between ([archive]).
 +     */
 +    suspend fun restore(storageKey: String): Boolean = writeLock.withLock {
 +        if (PersonaNotes.fromStorage(storageKey, "-") == null) return@withLock false
@@ -15696,7 +15712,7 @@ index 0000000..139a347
 +            .mapNotNull { row -> readArchive(row)?.let { Triple(row, it.first, it.second) } }
 +            .filter { (_, archived, _) -> archived.note.storageKey == storageKey && archived.backAt == null }
 +        val (row, archived, kept) = versions.maxWithOrNull(
-+            compareBy({ it.second.writtenAt }, { it.second.archivedAt }, { otherVersion(it.first.key) })
++            compareBy({ it.second.writtenAt }, { otherVersion(it.first.key) })
 +        ) ?: return@withLock false
 +        val now = System.currentTimeMillis()
 +        memoryRepository.saveMemory(Memory(storageKey, archived.note.text, MemoryType.SEMANTIC, now))
@@ -32256,10 +32272,10 @@ index 0000000..1405fe2
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaViewModel.kt b/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaViewModel.kt
 new file mode 100644
-index 0000000..f253dfd
+index 0000000..bdeef40
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/ui/viewmodel/PersonaViewModel.kt
-@@ -0,0 +1,347 @@
+@@ -0,0 +1,352 @@
 +package com.opendroid.ai.ui.viewmodel
 +
 +import androidx.compose.runtime.getValue
@@ -32449,8 +32465,13 @@ index 0000000..f253dfd
 +            val notRead = lines.filter { PersonaNotes.parseLine(it) == null }
 +            if (notes.isNotEmpty()) {
 +                withContext(Dispatchers.IO) {
++                    val handedOver = PersonaNotes.carriesStartedMark(text)
++                    // Started before its lines go in: a first start of hers here that comes in between
++                    // would write in the starting notes she let go on the other phone.
++                    if (handedOver) memory.markStarted()
 +                    memory.apply(notes)
-+                    if (PersonaNotes.carriesStartedMark(text)) {
++                    // Only once its lines are in: a look over the notebook from before them must not count for them.
++                    if (handedOver) {
 +                        memory.handedOver()
 +                        memory.refreshStartingNotes(store.seedNotes(), store.previousSeedNotes())
 +                    }
@@ -48430,10 +48451,10 @@ index 0000000..988d7e9
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineSleepTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineSleepTest.kt
 new file mode 100644
-index 0000000..ca72be9
+index 0000000..bcaa4f7
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaEngineSleepTest.kt
-@@ -0,0 +1,648 @@
+@@ -0,0 +1,689 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.app.Application
@@ -48453,6 +48474,8 @@ index 0000000..ca72be9
 +import com.opendroid.ai.data.models.ChatMessage
 +import com.opendroid.ai.data.models.ChatMessage.Sender
 +import com.opendroid.ai.data.models.LLMConfig
++import com.opendroid.ai.data.models.Memory
++import com.opendroid.ai.data.models.MemoryType
 +import com.opendroid.ai.data.models.RoutePolicy
 +import com.opendroid.ai.data.repository.ConversationRepository
 +import com.opendroid.ai.data.repository.MemoryRepository
@@ -48537,8 +48560,9 @@ index 0000000..ca72be9
 +        directory.deleteRecursively()
 +    }
 +
-+    private fun engine(client: okhttp3.OkHttpClient = AppModule.provideOkHttpClient()): PersonaEngine {
-+        val store = PersonaStore(context)
++    /** The engine; with [shipped], a build whose bundled files of hers are these. */
++    private fun engine(client: okhttp3.OkHttpClient = AppModule.provideOkHttpClient(), shipped: Map<String, String>? = null): PersonaEngine {
++        val store = if (shipped == null) PersonaStore(context) else PersonaStore(context) { path -> shipped[path].orEmpty() }
 +        store.saveCard("You are Yume. {{owner}} built you.")
 +        return PersonaEngine(
 +            store = store,
@@ -48705,6 +48729,44 @@ index 0000000..ca72be9
 +        assertEquals(1, server.requestCount)
 +        assertTrue(messages(server.takeRequest())[0].second.endsWith(PersonaSleepPass.SLEEP_SYSTEM_PROMPT))
 +        assertTrue(state().lastRepair!!.ok)
++    }
++
++    @Test
++    fun `a new build whose first work is her sleep shows her notebook pass and her sleep pass the starting note she never rewrote in its wording`() {
++        val oldVoice = "i want my own synthesized voice; it does not exist yet | open"
++        val voice = "my own voice speaks my lines on the phone now; only a first build | open"
++        val writtenAt = now - 30 * 24 * hour
++        // What the older build left: its wording of a starting note, and her asleep with talk unread.
++        runBlocking {
++            MemoryRepository(database.memoryDao(), database.taskHistoryDao(), database.macroDao())
++                .saveMemory(Memory("yume.thread.own-voice", oldVoice, MemoryType.SEMANTIC, writtenAt))
++            talk.forEach { conversations.insertMessage("chat-1", it) }
++        }
++        save(asleep())
++        // The new build: the ring of her sleep is the first thing it does; no prompt of hers was built.
++        engine = engine(
++            shipped = mapOf(
++                "persona/seed_notes.txt" to "thread | own-voice | $voice",
++                "persona/seed_notes.previous.txt" to "# earlier wordings\nthread | own-voice | $oldVoice"
++            )
++        )
++        answer("NONE")
++        answer("NONE")
++
++        assertNull(moment(at = now + 20 * minute))
++
++        assertEquals(2, server.requestCount)
++        val notebookPass = messages(server.takeRequest(5, TimeUnit.SECONDS)).joinToString("\n") { it.second }
++        val sleepPass = messages(server.takeRequest(5, TimeUnit.SECONDS)).joinToString("\n") { it.second }
++        assertTrue(notebookPass, notebookPass.contains("the second hive is up"))
++        assertTrue(sleepPass, sleepPass.contains(PersonaSleepPass.SLEEP_SYSTEM_PROMPT))
++        for (page in listOf(notebookPass, sleepPass)) {
++            assertTrue(page, page.contains("my own voice speaks my lines on the phone now"))
++            assertFalse(page, page.contains("it does not exist yet"))
++        }
++        // It keeps its place and its age.
++        assertEquals(voice, notes().getValue("own-voice").text)
++        assertEquals(writtenAt, runBlocking { memory.writtenAt() }.getValue("yume.thread.own-voice"))
 +    }
 +
 +    // ── From a reply ─────────────────────────────────────────────────────────────────
@@ -59298,10 +59360,10 @@ index 0000000..8178bc6
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaSeedRefreshTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaSeedRefreshTest.kt
 new file mode 100644
-index 0000000..80fb74a
+index 0000000..684b7ba
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaSeedRefreshTest.kt
-@@ -0,0 +1,346 @@
+@@ -0,0 +1,379 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.app.Application
@@ -59559,6 +59621,39 @@ index 0000000..80fb74a
 +
 +        assertTrue(memory.restore(voice.storageKey))
 +        assertEquals(voice.text, stored(voice)!!.value)
++    }
++
++    @Test
++    fun `a refreshed note she lets go after the clock was set back comes back as she let it go`() = runBlocking {
++        memory.seedIfNeeded(olderBuild)
++        memory.refreshStartingNotes(thisBuild, earlier)
++        // The look-over ran while the phone's clock was a year ahead; it has been set right since.
++        val replaced = archived(voice).single()
++        val ahead = replaced.value.replace(Regex("\"a\":\\d+"), "\"a\":${System.currentTimeMillis() + 365L * 24 * 60 * 60_000}")
++        assertFalse(ahead == replaced.value)
++        repository.saveMemory(replaced.copy(value = ahead))
++
++        memory.fade(listOf(voice.storageKey))
++        assertEquals(voice.text, memory.archivedLately(10).single().note.text)
++
++        assertTrue(memory.restore(voice.storageKey))
++        assertEquals(voice.text, stored(voice)!!.value)
++    }
++
++    @Test
++    fun `a wording a later build goes back to, let go, comes back as that wording and not the one between`() = runBlocking {
++        memory.seedIfNeeded(listOf(oldVoice))
++        assertEquals(1, memory.refreshStartingNotes(listOf(voice), listOf(oldVoice)))
++        // The build after that goes back to the old wording.
++        assertEquals(1, memory.refreshStartingNotes(listOf(oldVoice), listOf(voice)))
++        assertEquals(oldVoice.text, stored(voice)!!.value)
++
++        memory.fade(listOf(voice.storageKey))
++        // Each time a text left her page it was kept in a row of its own, in that order.
++        assertEquals(3, archived(voice).size)
++
++        assertTrue(memory.restore(voice.storageKey))
++        assertEquals(oldVoice.text, stored(voice)!!.value)
 +    }
 +
 +    @Test
@@ -70390,10 +70485,10 @@ index 0000000..2e5dcab
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/ui/viewmodel/PersonaViewModelTest.kt b/app/src/test/java/com/opendroid/ai/ui/viewmodel/PersonaViewModelTest.kt
 new file mode 100644
-index 0000000..6315762
+index 0000000..88f2873
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/ui/viewmodel/PersonaViewModelTest.kt
-@@ -0,0 +1,512 @@
+@@ -0,0 +1,556 @@
 +package com.opendroid.ai.ui.viewmodel
 +
 +import android.app.Application
@@ -70408,6 +70503,8 @@ index 0000000..6315762
 +import com.opendroid.ai.core.persona.PersonaStore
 +import com.opendroid.ai.data.db.MigrationTestApplication
 +import com.opendroid.ai.data.db.OpenDroidDatabase
++import com.opendroid.ai.data.db.dao.MemoryDao
++import com.opendroid.ai.data.db.entities.MemoryEntity
 +import com.opendroid.ai.data.repository.MemoryRepository
 +import kotlinx.coroutines.runBlocking
 +import org.junit.After
@@ -70665,6 +70762,48 @@ index 0000000..6315762
 +                assertEquals(0, memory.refreshStartingNotes(store.seedNotes(), store.previousSeedNotes()))
 +                assertEquals(stored, memory.notes().associate { it.key to it.text })
 +            }
++        }
++    }
++
++    @Test
++    fun `her first start on the new phone, coming once the handed-over lines are in, writes back no starting note she let go`() {
++        // The old phone: its starting notes, one of them she let go, and one note of her own.
++        runBlocking {
++            memory.seedIfNeeded(startingNotes)
++            memory.fade(listOf(startingNotes.single { it.key == "boots" }.storageKey))
++            memory.apply(listOf(Note(Kind.USER, "bees", "he keeps bees")))
++        }
++        var copied: String? = null
++        viewModel(store("You are Yume.\n")).copyNotebook { copied = it }
++        await("the notebook to be copied") { copied != null }
++
++        // The new phone, where she has not had her start yet. Her first reply there starts
++        // her notebook just as the hand-over is recorded, its lines all in by then.
++        database.close()
++        setUp()
++        val rows = database.memoryDao()
++        var startCame = false
++        lateinit var persona: PersonaMemory
++        val hooked = object : MemoryDao by rows {
++            override suspend fun insertOrUpdateMemory(memory: MemoryEntity) {
++                if (memory.key == "yume.meta.seedversion" && !startCame) {
++                    startCame = true
++                    persona.seedIfNeeded(startingNotes)
++                }
++                rows.insertOrUpdateMemory(memory)
++            }
++        }
++        persona = PersonaMemory(MemoryRepository(memoryDao = hooked, taskHistoryDao = database.taskHistoryDao(), macroDao = database.macroDao()))
++        memory = persona
++        val model = viewModel(store("You are Yume.\n"))
++        model.onNotesDraftChange(copied!!)
++        model.giveNotes()
++        await("the hand-over") { model.notesStatus.isNotEmpty() }
++
++        assertTrue(startCame)
++        runBlocking {
++            assertEquals(setOf("bees", "stage"), memory.notes().map { it.key }.toSet())
++            assertTrue(memory.isStarted())
 +        }
 +    }
 +
