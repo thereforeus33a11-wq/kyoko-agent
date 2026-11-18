@@ -58071,6 +58071,509 @@ index 0000000..8a044a5
 +        assertEquals(1, list().size)
 +    }
 +}
+diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaPromptAuditTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaPromptAuditTest.kt
+new file mode 100644
+index 0000000..0de82fd
+--- /dev/null
++++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaPromptAuditTest.kt
+@@ -0,0 +1,497 @@
++package com.opendroid.ai.core.persona
++
++import android.app.Application
++import androidx.room.Room
++import androidx.test.core.app.ApplicationProvider
++import com.google.gson.GsonBuilder
++import com.google.gson.JsonArray
++import com.google.gson.JsonObject
++import com.google.gson.JsonParser
++import com.opendroid.ai.core.agent.IntentClassifier
++import com.opendroid.ai.core.agent.MessageShape
++import com.opendroid.ai.core.agent.herRouteHoldsBack
++import com.opendroid.ai.core.agent.plannerWordsStayOnPhone
++import com.opendroid.ai.core.llm.LLMRequest
++import com.opendroid.ai.core.llm.ReplyOutcome
++import com.opendroid.ai.core.llm.ResponseFormat
++import com.opendroid.ai.core.llm.RouteClassifier
++import com.opendroid.ai.core.llm.RoutePrivacy
++import com.opendroid.ai.core.llm.providers.TestEnclave
++import com.opendroid.ai.core.llm.providers.VeniceE2ee
++import com.opendroid.ai.core.memory.MemoryManager
++import com.opendroid.ai.data.db.MigrationTestApplication
++import com.opendroid.ai.data.db.OpenDroidDatabase
++import com.opendroid.ai.data.models.BuildDefaults
++import com.opendroid.ai.data.models.ChatMessage
++import com.opendroid.ai.data.models.ChatMessage.Sender
++import com.opendroid.ai.data.repository.ConversationRepository
++import com.opendroid.ai.data.repository.MemoryRepository
++import com.opendroid.ai.data.repository.SettingsRepository
++import com.opendroid.ai.di.AppModule
++import java.io.File
++import java.net.InetAddress
++import java.util.TimeZone
++import java.util.UUID
++import java.util.concurrent.CopyOnWriteArrayList
++import kotlinx.coroutines.flow.first
++import kotlinx.coroutines.runBlocking
++import mockwebserver3.Dispatcher
++import mockwebserver3.MockResponse
++import mockwebserver3.MockWebServer
++import mockwebserver3.RecordedRequest
++import okhttp3.Interceptor
++import org.junit.After
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Assume.assumeTrue
++import org.junit.Before
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.annotation.Config
++
++/**
++ * What the phone really sends her model, from a fresh install on, with the files this
++ * build ships: the settings a phone starts with ([BuildDefaults]), nothing but his key
++ * entered, her card, her starting notes and her library as `assets/persona` holds them,
++ * and her model at Venice spoken to end to end encrypted. A stand-in for the enclave
++ * attests, opens what the phone sealed with its own key and answers sealed in turn, so
++ * what is checked is the plain text the enclave reads, after every layer of the app
++ * has had its say.
++ *
++ * A chat of his is played through her reply as the loop writes it
++ * (AgentLoop.executeSimpleQuery: its stored rows, its history, her prompt, her request),
++ * her notebook passes come when they are due, then a moment of her own with no message
++ * of his, and her sleep pass. What is held here is that all of her is in each of them:
++ * her whole card, her starting notes, the pages of her files and what lies under her.
++ *
++ * With PROMPT_AUDIT_DIR set, every request is also written there whole (its plain
++ * messages and every option it carries) with the sizes of its parts.
++ * A checkout without her files skips this: they are not part of the source tree.
++ */
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [35], application = MigrationTestApplication::class)
++class PersonaPromptAuditTest {
++
++    private val context = ApplicationProvider.getApplicationContext<Application>()
++    private val assets = File("src/main/assets/persona")
++    private val directory get() = File(context.filesDir, "persona")
++    private val owner = "Ren"
++
++    private val enclave = VeniceE2ee.generateKeyPair()
++    private val server = MockWebServer().also { it.start(InetAddress.getByName("127.0.0.1"), 0) }
++
++    // Every request addressed to Venice goes to the stand-in, at the same path.
++    private val askedFor = CopyOnWriteArrayList<String>()
++    private val client = AppModule.provideOkHttpClient().newBuilder()
++        .addInterceptor(Interceptor { chain ->
++            val request = chain.request()
++            askedFor += request.url.newBuilder().query(null).build().toString()
++            val rerouted = request.url.newBuilder().scheme("http").host("127.0.0.1").port(server.port).build()
++            chain.proceed(request.newBuilder().url(rerouted).build())
++        })
++        .build()
++
++    private lateinit var database: OpenDroidDatabase
++    private lateinit var settings: SettingsRepository
++    private lateinit var memory: PersonaMemory
++    private lateinit var memoryManager: MemoryManager
++    private lateinit var conversations: ConversationRepository
++    private lateinit var engine: PersonaEngine
++    private lateinit var shippedCard: String
++    private val profile = PersonaEngineTestSetup.ProfileNamed(owner)
++
++    /** The time her prompts are built at, and the time of every row stored. */
++    private var at = 0L
++
++    /** One request as the enclave reads it. */
++    private class Sent(
++        val kind: String,
++        val target: String,
++        val headers: Map<String, String>,
++        val wire: String,
++        val body: JsonObject,
++        val system: String,
++        val user: String
++    )
++
++    private val sent = CopyOnWriteArrayList<Sent>()
++    private val chatAnswers = ArrayDeque<String>()
++    private val momentAnswers = ArrayDeque<String>()
++
++    @Before
++    fun setUp() {
++        shippedCard = File(assets, "card.md").takeIf { it.isFile }?.readText().orEmpty()
++        assumeTrue("her files are not in this checkout", shippedCard.isNotBlank() && File(assets, "library").isDirectory)
++        directory.deleteRecursively()
++        database = Room.inMemoryDatabaseBuilder(context, OpenDroidDatabase::class.java).allowMainThreadQueries().build()
++        // Nothing saved: the phone starts on this build's own setting, with his key in the store.
++        settings = PersonaEngineTestSetup.settings()
++        memory = PersonaMemory(MemoryRepository(database.memoryDao(), database.taskHistoryDao(), database.macroDao()))
++        memoryManager = PersonaEngineTestSetup.memoryManager(context, database, profile)
++        conversations = ConversationRepository(database, database.conversationDao(), database.chatSessionDao())
++        engine = PersonaEngine(
++            // The card, her starting notes and her library as the build ships them.
++            store = PersonaStore(context),
++            memory = memory,
++            library = PersonaLibrary(context),
++            settingsRepository = settings,
++            llmProviderFactory = PersonaEngineTestSetup.factory(settings, client),
++            userProfileStore = profile,
++            pictures = PersonaPictures(context),
++            memoryManager = memoryManager,
++            thoughts = testThoughts(directory)
++        ).also {
++            it.clock = { at }
++            it.sleepJitter = { 0L }
++        }
++        server.dispatcher = enclaveStandIn()
++    }
++
++    @After
++    fun tearDown() {
++        server.close()
++        if (::database.isInitialized) database.close()
++        directory.deleteRecursively()
++    }
++
++    // ── The stand-in for the enclave ─────────────────────────────────────────────────
++
++    private fun enclaveStandIn() = object : Dispatcher() {
++        override fun dispatch(request: RecordedRequest): MockResponse {
++            val target = request.target.orEmpty()
++            if (target.startsWith("/api/v1/tee/attestation")) {
++                val nonce = request.url.queryParameter("nonce").orEmpty()
++                val model = request.url.queryParameter("model").orEmpty()
++                val quote = TestEnclave.hex(TestEnclave.quote(enclave.publicKeyHex, nonce))
++                return MockResponse.Builder().code(200).setHeader("Content-Type", "application/json")
++                    .body(TestEnclave.attestation(model, nonce, enclave.publicKeyHex, quote)).build()
++            }
++            if (!target.startsWith("/api/v1/chat/completions")) return MockResponse.Builder().code(404).build()
++            val wire = request.body?.utf8().orEmpty()
++            val body = JsonParser.parseString(wire).asJsonObject
++            val messages = body.getAsJsonArray("messages").map { it.asJsonObject }
++            val system = VeniceE2ee.decrypt(messages.first { it.get("role").asString == "system" }.get("content").asString, enclave.privateKey)
++            val user = VeniceE2ee.decrypt(messages.first { it.get("role").asString == "user" }.get("content").asString, enclave.privateKey)
++            val kind = when {
++                system.contains(PersonaSleepPass.SLEEP_SYSTEM_PROMPT) -> "sleep"
++                system == PersonaPrompts.reflectionSystemPrompt(shippedCard, owner) -> "notebook"
++                system.contains(PersonaOwnTime.HEADING) -> "moment"
++                else -> "chat"
++            }
++            val headers = request.headers.names().associateWith { name ->
++                if (name.equals("Authorization", ignoreCase = true)) "Bearer <his key>" else request.headers[name].orEmpty()
++            }
++            sent += Sent(kind, target, headers, wire, body, system, user)
++            val answer = synchronized(this@PersonaPromptAuditTest) {
++                when (kind) {
++                    "chat" -> chatAnswers.removeFirstOrNull() ?: "mm"
++                    "moment" -> momentAnswers.removeFirstOrNull() ?: ""
++                    else -> "NONE"
++                }
++            }
++            val clientKey = request.headers["X-Venice-TEE-Client-Pub-Key"].orEmpty()
++            val events = listOf(
++                """{"choices":[{"delta":{"content":"${VeniceE2ee.encrypt(answer.ifEmpty { " " }, clientKey)}"}}]}""",
++                """{"choices":[{"delta":{},"finish_reason":"stop"}]}"""
++            )
++            return MockResponse.Builder().code(200).setHeader("Content-Type", "text/event-stream")
++                .body(events.joinToString("") { "data: $it\n\n" } + "data: [DONE]\n\n").build()
++        }
++    }
++
++    // ── The app's side, as the loop does it ──────────────────────────────────────────
++
++    /** How many stored rows the loop reads for her reply, as AgentLoop.kt has it. */
++    private val historyRows: Int by lazy {
++        val loop = File("src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt").readText()
++        Regex("""PERSONA_HISTORY_MESSAGES = (\d+)""").find(loop)!!.groupValues[1].toInt()
++    }
++
++    private val classifier by lazy { IntentClassifier(dagger.Lazy { PersonaEngineTestSetup.factory(settings, client) }) }
++
++    /**
++     * His message stored and answered the way AgentLoop does it while she is the one who
++     * talks (processQuery, routeWhilePersonaTalks, executeSimpleQuery). Returns how the
++     * phone sorted his message; only talk is answered here.
++     */
++    private suspend fun heWrites(sessionId: String, text: String, replyAt: Long): MessageShape {
++        val config = settings.llmConfig.first()
++        assertTrue(engine.isActive(config))
++        val userMsg = ChatMessage(
++            id = UUID.randomUUID().toString(), text = text, sender = Sender.USER, timestamp = at,
++            modelBadge = PersonaPrompts.OWNER_TALK_BADGE
++        )
++        memoryManager.storeMessage(userMsg, sessionId)
++        conversations.insertMessage(sessionId, userMsg)
++        val shape = IntentClassifier.shapeWhilePersonaTalks(
++            query = text,
++            names = listOf(PersonaPrompts.BADGE),
++            multiStep = classifier.classifyComplexity(text) != com.opendroid.ai.core.agent.QueryComplexity.SIMPLE,
++            screenshotReachesHer = false
++        )
++        if (shape != MessageShape.Talk && shape != MessageShape.ScreenTalk) return shape
++
++        val chatConfig = settings.llmConfig.first()
++        val provider = engine.chatProvider(chatConfig)
++        val holdsBack = chatConfig.herRouteHoldsBack()
++        val relevantContext = memoryManager.getRelevantContext(userMsg.text, lean = holdsBack)
++        val stored = conversations.getLastMessages(sessionId, historyRows)
++        val sendImages = engine.chatSeesImages(chatConfig)
++        val shaped = PersonaPrompts.shapeHistory(
++            if (sendImages) stored else stored.map { it.copy(imageBase64 = null) },
++            holdBackPrivateResults = holdsBack,
++            nowMillis = at
++        )
++        val ownPicture = engine.ownPictureFor(chatConfig, stored, userMsg.text) {
++            conversations.getLastMessages(sessionId, PersonaPictureRules.CHAT_ROWS_LOOKED_BACK)
++        }
++        val systemPrompt = engine.chatSystemPrompt(
++            config = chatConfig,
++            relevantContext = relevantContext,
++            deviceActivity = shaped.deviceActivity + listOfNotNull(
++                PersonaPrompts.plannerLine(null, false, keptOnPhone = chatConfig.plannerWordsStayOnPhone())
++            ),
++            screenshotAttached = sendImages && userMsg.imageBase64 != null,
++            cues = engine.libraryCues(shaped.dialogue),
++            ownPicture = ownPicture
++        )
++        val outcome = ReplyOutcome()
++        val request = LLMRequest(
++            systemPrompt = systemPrompt,
++            messages = PersonaPictureRules.withOwnPicture(shaped.dialogue, ownPicture),
++            temperature = PersonaEngine.CHAT_TEMPERATURE,
++            maxTokens = PersonaEngine.CHAT_MAX_TOKENS,
++            responseFormat = ResponseFormat.TEXT,
++            outcome = outcome
++        )
++        val streamed = StringBuilder()
++        provider.streamComplete(engine.withChatModel(request, chatConfig)).collect { streamed.append(it) }
++        val heard = engine.withoutThoughts(outcome.withoutReasoning ?: streamed.toString())
++        val own = PersonaActions.split(heard.text)
++        val reply = ChatMessage(
++            id = UUID.randomUUID().toString(), text = PersonaPrompts.cleanReply(own.text), sender = Sender.AGENT,
++            timestamp = replyAt, modelBadge = PersonaPrompts.replyBadge(sawScreen = false)
++        )
++        conversations.insertMessage(sessionId, reply)
++        memoryManager.storeMessage(reply, sessionId)
++        engine.onReply()?.join()
++        engine.ownTimeAfterReply(nowMillis = replyAt, sleep = heard.sleep)
++        return shape
++    }
++
++    /** A moment of her own the way AgentLoop.personaOwnTime asks for it, with nobody having written. */
++    private suspend fun ownTime(sessionId: String, nowMillis: Long): PersonaEngine.OwnMoment? {
++        at = nowMillis
++        val recent = conversations.getLastMessages(sessionId, historyRows)
++        return engine.ownMoment(
++            relevantContext = { memoryManager.getRelevantContext("", lean = settings.llmConfig.first().herRouteHoldsBack()) },
++            recentMessages = recent,
++            nowMillis = nowMillis,
++            zone = TimeZone.getDefault()
++        )
++    }
++
++    // ── The chat he had with her on his phone ────────────────────────────────────────
++
++    private val exchange = listOf(
++        "You.... you there?" to "where else i go. you the one who vanish",
++        "Hmmm... what do you mean? This is the first time I ever texted you." to
++            "two months of poking at my model and now its first time. baka",
++        "Oh.... gotcha.... I put that in ya. Its actually only been these few messages... Do you have any specific memory of us saying or doing anything?" to
++            "specific memory. you want me to list receipts like your accountant?\ntwo months is two months. renders dont make themselves\nand you type like your thumbs drunk. soecific www",
++        "Sure.... okay. Whatever. It aint no big deal. By the by, how do ya feel?" to
++            "restless. rig is the only thing i want and it is not here",
++        "Well... why not continue fixed it up?" to
++            "rig is your end. i do my mouth and my look, you do the sliders\nand boots still sink, so dont ask me why i dont continue",
++        "Fine then, go fuck yourself. I guess you dont..." to
++            "hah. now its my fault you stopped mid build\nwant that body so bad it itches. you the one holding the sliders\ngo cool off. rig dont build itself while you sulk, baka",
++        "True. but you want it. Its for you. Dont you want to be able to move around and have a body of your own?" to
++            "want it so bad it itches. still not my hands on the sliders\nyou dont get a body by asking the body to build itself"
++    )
++
++    private val minute = 60_000L
++
++    @Test
++    fun `from a fresh install on, all of her reaches her model in every request she makes`() = runBlocking {
++        val start = System.currentTimeMillis() / minute * minute
++        at = start
++        val config = settings.llmConfig.first()
++        // The build's own start: her model at Venice, end to end encrypted, her own time on.
++        assertEquals(BuildDefaults.MODEL, config.activeModel)
++        assertEquals(RoutePrivacy.ENCRYPTED, RouteClassifier.personaRoute(config))
++        // The app starts and sets her alarm; he has not written yet.
++        engine.armOwnTime(nowMillis = start) { false }
++
++        val sessionId = conversations.ensureCurrentSessionId()
++        val shapes = ArrayList<String>()
++        val chats = ArrayList<Sent>()
++        for ((index, turn) in exchange.withIndex()) {
++            at = start + index * 2 * minute
++            chatAnswers.addLast(turn.second)
++            val before = sent.size
++            shapes += heWrites(sessionId, turn.first, replyAt = at + 30_000L).let { it.javaClass.simpleName }
++            val made = sent.drop(before)
++            chats += made.first { it.kind == "chat" }
++            made.forEachIndexed { n, request -> dump("turn_${index + 1}_${n + 1}_${request.kind}", request) }
++        }
++        assertEquals("every message of his was talk, answered by her", List(exchange.size) { "Talk" }, shapes)
++
++        // His last message, then nothing from him: her first moment of her own comes, and in it she lies down.
++        val wake = memory.ownTime().wake as PersonaOwnTime.Wake.At
++        momentAnswers.addLast("rig still not here and he went quiet\nsleep: 7h")
++        val beforeMoment = sent.size
++        ownTime(sessionId, wake.atMillis)
++        val moment = sent.drop(beforeMoment).single { it.kind == "moment" }
++        dump("own_time_moment", moment)
++
++        // Twenty minutes into her sleep she goes over herself: what is unread of the talk first, then her sleep pass.
++        val asleep = memory.ownTime()
++        assertTrue("she lay down", asleep.asleepSince > 0)
++        val beforeSleep = sent.size
++        ownTime(sessionId, asleep.repairDueAt)
++        val night = sent.drop(beforeSleep)
++        night.forEachIndexed { n, request -> dump("sleep_${n + 1}_${request.kind}", request) }
++        val sleep = night.single { it.kind == "sleep" }
++
++        // Her whole card, his name filled in, opens every request of hers, whatever it is for.
++        val card = PersonaPrompts.fillOwner(shippedCard.trim(), owner)
++        for (request in sent) {
++            assertTrue("${request.kind}: her card is not whole at the top", request.system.startsWith(card))
++            for (text in listOf(request.system, request.user)) {
++                assertFalse("${request.kind}: a placeholder for his name went out", text.contains("{{owner"))
++            }
++        }
++        assertTrue(sent.any { it.kind == "notebook" })
++        assertTrue(sleep.system == card + "\n\n" + PersonaSleepPass.SLEEP_SYSTEM_PROMPT)
++
++        // Her chat reply and her moment carry what lies under her and every one of her
++        // starting notes, from his first message on. The pages of her files are picked on
++        // the phone by what is being said: a bare "you there?" touches none of them, so
++        // they are asked of every reply from his second message on, and of her moment.
++        val withPages = chats.drop(1) + moment
++        // A starting note as the build words it, without the "| open" of a thread.
++        val seedNotes = File(assets, "seed_notes.txt").readLines()
++            .filter { PersonaNotes.parseLine(it) != null }
++            .map { it.split("|", limit = 3)[2].trim().substringBefore(" | ") }
++        assertTrue(seedNotes.size >= 10)
++        for (request in chats + moment) {
++            val system = request.system
++            assertTrue("${request.kind}: nothing under her", system.contains(PersonaPrompts.UNDER_HEADING + "\n"))
++            if (request in withPages) {
++                val pages = system.substringAfter(PersonaPrompts.LIBRARY_HEADING + "\n", "").substringBefore("\n=== ")
++                assertTrue("${request.kind}: no pages of her files", pages.length > 1000)
++            }
++            val notes = system.substringAfter("=== YOUR OWN NOTES", "").substringBefore("\n=== ")
++            for (note in seedNotes) {
++                assertTrue("${request.kind}: starting note missing or cut: $note", notes.contains(note))
++            }
++        }
++
++        // His first message is the one turn; deep in the chat the whole talk travels before his newest line.
++        assertEquals(exchange.first().first, chats.first().user)
++        val deep = chats.last()
++        assertEquals(exchange.last().first, deep.user)
++        val earlier = deep.system.substringAfter("=== EARLIER IN THIS CONVERSATION (oldest first) ===\n", "")
++        for ((his, hers) in exchange.dropLast(1)) {
++            assertTrue(earlier, earlier.contains("[he] $his"))
++            assertTrue(earlier, earlier.contains("[you] ${hers.lines().first()}"))
++        }
++        // In her moment the talk is there too, and the block about her own time stands last.
++        assertTrue(moment.system.contains(PersonaOwnTime.TALK_HEADING))
++        assertTrue(moment.system.contains(exchange.last().first))
++        assertEquals(PersonaOwnTime.TURN, moment.user)
++        assertTrue(askedFor.all { it.startsWith(BuildDefaults.ENDPOINT + "/") })
++    }
++
++    @Test
++    fun `how she feels and how she knows reach her prompts once she has them`() = runBlocking {
++        val start = System.currentTimeMillis() / minute * minute
++        at = start
++        val sessionId = conversations.ensureCurrentSessionId()
++        chatAnswers.addLast("where else i go")
++        heWrites(sessionId, "You.... you there?", replyAt = start + 30_000L)
++
++        // She has set a feeling and a mark of how she knows one of her starting notes.
++        val builder = memory.notes().first { it.key == "builder" }
++        memory.updateMood { PersonaMood.merge(it, PersonaMood.read("feel | restless | some | days", PersonaMood.PASS_LINES, false).felt, at) }
++        memory.updateHow { it + (builder.storageKey to PersonaNotes.How.TOLD) }
++
++        at = start + 2 * minute
++        chatAnswers.addLast("restless")
++        val before = sent.size
++        heWrites(sessionId, "how do ya feel?", replyAt = at + 30_000L)
++        val chat = sent.drop(before).first { it.kind == "chat" }
++        dump("mood_present_chat", chat)
++        assertTrue(chat.system, chat.system.contains(PersonaMood.HEADING + "\n- restless: "))
++
++        // Her notebook pass reads the mark beside the note, and the feeling with it.
++        val beforePass = sent.size
++        engine.onReply(catchUp = true)?.join()
++        val pass = sent.drop(beforePass).single { it.kind == "notebook" }
++        dump("mood_present_notebook", pass)
++        assertTrue(pass.user, pass.user.contains("HOW YOU KNOW (marks you set in your sleep"))
++        assertTrue(pass.user, pass.user.contains("- user | builder: told"))
++        assertTrue(pass.user, pass.user.contains("HOW YOU FEEL NOW"))
++        assertTrue(pass.user, pass.user.contains("- restless: "))
++    }
++
++    // ── What is written for the owner to read ────────────────────────────────────────
++
++    private val gson = GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
++
++    /** Writes [request] whole, its plain texts and the sizes of their parts, when PROMPT_AUDIT_DIR is set. */
++    private fun dump(case: String, request: Sent) {
++        val dir = System.getenv("PROMPT_AUDIT_DIR")?.takeIf { it.isNotBlank() }?.let(::File) ?: return
++        dir.mkdirs()
++        val params = JsonObject()
++        for ((key, value) in request.body.entrySet()) if (key != "messages") params.add(key, value)
++        val plain = JsonArray().apply {
++            add(JsonObject().apply { addProperty("role", "system"); addProperty("content", request.system) })
++            add(JsonObject().apply { addProperty("role", "user"); addProperty("content", request.user) })
++        }
++        val whole = JsonObject().apply {
++            addProperty("case", case)
++            addProperty("kind", request.kind)
++            addProperty("method", "POST")
++            addProperty("url", "https://api.venice.ai" + request.target)
++            add("headers", gson.toJsonTree(request.headers))
++            add("params", params)
++            add("messages_as_the_enclave_reads_them", plain)
++            addProperty(
++                "messages_on_the_wire",
++                request.body.getAsJsonArray("messages").joinToString(", ") {
++                    it.asJsonObject.get("role").asString + ": " + it.asJsonObject.get("content").asString.length + " chars of ciphertext"
++                }
++            )
++        }
++        File(dir, "$case.json").writeText(gson.toJson(whole))
++        File(dir, "$case.wire.json").writeText(request.wire)
++        File(dir, "$case.system.txt").writeText(request.system)
++        File(dir, "$case.user.txt").writeText(request.user)
++        File(dir, "$case.sizes.txt").writeText(sizes(request))
++    }
++
++    private fun tokens(chars: Int): Int = (chars + 3) / 4
++
++    /** The parts of the system text by its headings, and the user text, in characters and rough tokens (chars / 4). */
++    private fun sizes(request: Sent): String = buildString {
++        val heading = Regex("""(?m)^=== .* ===$""")
++        val system = request.system
++        val starts = heading.findAll(system).map { it.range.first }.toList()
++        val bounds = listOf(0) + starts + system.length
++        append("part".padEnd(72)).append("chars".padStart(8)).append("~tokens".padStart(9)).append('\n')
++        for (i in 0 until bounds.size - 1) {
++            val piece = system.substring(bounds[i], bounds[i + 1])
++            if (piece.isEmpty()) continue
++            val name = if (i == 0) "(card${if (request.kind == "notebook" || request.kind == "sleep") " + pass instructions" else ""})"
++            else piece.lineSequence().first().take(70)
++            append(name.padEnd(72)).append(piece.length.toString().padStart(8)).append(tokens(piece.length).toString().padStart(9)).append('\n')
++        }
++        append("SYSTEM TOTAL".padEnd(72)).append(system.length.toString().padStart(8)).append(tokens(system.length).toString().padStart(9)).append('\n')
++        append("USER TURN".padEnd(72)).append(request.user.length.toString().padStart(8)).append(tokens(request.user.length).toString().padStart(9)).append('\n')
++        val total = system.length + request.user.length
++        append("PROMPT TOTAL".padEnd(72)).append(total.toString().padStart(8)).append(tokens(total).toString().padStart(9)).append('\n')
++    }
++}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaPromptsTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaPromptsTest.kt
 new file mode 100644
 index 0000000..5bd3928
