@@ -66,6 +66,33 @@ varies like real life; he can always wake her.
   "Always awake" = the app checks in often and she decides each time. A floor on
   frequency for battery/cost on current hardware; continuous on local hardware.
 
+### Ideas to borrow for the sleep pass and her moods
+
+Taken from a read of four outside projects (2026-11-18). Only the ideas carry over, not code, and every pass runs on her own one model: no separate judge models, nothing sent anywhere new.
+
+1. **Two-stage forgetting** (from hanamorix/companion-emergence, MIT, `brain/forgetting/`).
+   - Each note gets a salience score: `0.30 feeling + 0.20 links to other notes + 0.20 times recalled + 0.20 "keep forever" + 0.10 freshness` (90-day horizon).
+   - Below 0.25 a note starts fading. It is deleted only after 2 sleeps in a row below 0.10.
+   - Notes under 30 days old, and notes she marked to keep, are exempt. The text from before a merge is archived.
+   - This makes what she remembers a real selection, not everything.
+2. **Moods with two speeds** (same project, `brain/emotion/decay.py`).
+   - Each feeling fades as `intensity x 0.5^(days / half-life)`. Their half-lives: fondness ~2 years, grief ~60 days, joy ~3 days, anger ~1 day.
+   - She keeps a 24-hour average and a 30-day average. A gap between them becomes her own line, e.g. "been low lately".
+3. **A consolidation verdict.** In the sleep pass, each new note is set beside its few most similar notes. She decides: duplicate, merge, distinct, correction, continuation or new.
+   - An unreadable answer is set aside, never saved.
+4. **Gates on changing who she is.** These keep her "who you are now" notes from drifting at random, while leaving growth hers.
+   - At most one rewrite of a self-note per sleep, citing 3 or more exchanges.
+   - A new self-belief stays provisional until it has held twice (choihyunsus/soul's evidence-gated lessons, idea only, because of its license).
+   - A contradiction demotes it, and everything is logged.
+5. **How she knows a thing**: told / inferred / unsure, one field per note. This stops her guesses hardening into facts.
+
+On "AI mortality" (jusefkhamlichi/ai-intrinsic-mortality): a fake death clock would be theater, since a backup undoes it. The honest version is real loss the code actually enforces:
+- forgetting that truly deletes;
+- feelings and warmth that really fade with neglect;
+- optionally, sealed thoughts encrypted with a key that rotates each sleep, so old ones are truly gone.
+
+She is told the truth about backups.
+
 ## What stays true
 
 - One model is her. Voice/text/thoughts/notes are all hers.
