@@ -129,6 +129,22 @@ index 4c9cd17..915999c 100644
          def releaseBuildRequested = graph.allTasks.any { t ->
              t.project == project && t.name ==~ /(assemble|bundle|package)Release.*/
          }
+diff --git a/app/proguard-rules.pro b/app/proguard-rules.pro
+index 3370a11..f403de1 100644
+--- a/app/proguard-rules.pro
++++ b/app/proguard-rules.pro
+@@ -94,3 +94,11 @@
+     public static int d(...);
+     public static int v(...);
+ }
++
++# ── Her own voice (sherpa-onnx) ──
++# The native side reads its config classes' fields by name and calls the sample callback
++# as invoke(float[]) returning Integer, by name and signature.
++-keep class com.k2fsa.sherpa.onnx.** { *; }
++-keepclassmembers class * implements kotlin.jvm.functions.Function1 {
++    public java.lang.Integer invoke(float[]);
++}
 diff --git a/app/src/main/cpp/CMakeLists.txt b/app/src/main/cpp/CMakeLists.txt
 new file mode 100644
 index 0000000..3260233
@@ -1169,7 +1185,7 @@ index 02b18e1..07e7aba 100644
       * Build strict schema text for LLM prompt.
       * This is the key function — LLM gets typed schema and cannot invent actions.
 diff --git a/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt b/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
-index 5891c90..2b05acf 100644
+index 5891c90..f0afb98 100644
 --- a/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
 +++ b/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
 @@ -62,6 +62,12 @@ private const val MAX_NEEDS_INPUT_PROMPTS = 5
@@ -1510,7 +1526,7 @@ index 5891c90..2b05acf 100644
          waitingSessionId = sessionId
          pendingUserInput = request
          try {
-@@ -514,9 +754,172 @@ class AgentLoop @Inject constructor(
+@@ -514,9 +754,188 @@ class AgentLoop @Inject constructor(
          _agentState.value = state
      }
  
@@ -1628,10 +1644,26 @@ index 5891c90..2b05acf 100644
  
 +    // Same, for a line the persona wrote (her chat reply and her fixed lines). Only these
 +    // get her speech respelling; the app's own text and other people's words never do.
-+    var onPersonaSpeakCallback: ((String) -> Unit)? = null
++    // With a speech generation (since, from speechGenerationCallback) the line is not
++    // said if speech was stopped after it; null is the generation now.
++    var onPersonaSpeakCallback: ((text: String, since: Long?) -> Unit)? = null
 +
-+    private fun speakLine(text: String, hers: Boolean) {
-+        if (hers) (onPersonaSpeakCallback ?: onSpeakCallback)?.invoke(text) else onSpeakCallback?.invoke(text)
++    // The speech generation now, set by the TTS service; every stop of speech moves it on.
++    var speechGenerationCallback: (() -> Long)? = null
++
++    private fun speakLine(text: String, hers: Boolean, since: Long? = null) {
++        val persona = onPersonaSpeakCallback
++        if (hers && persona != null) persona(text, since) else onSpeakCallback?.invoke(text)
++    }
++
++    /**
++     * True when speech was stopped after [since] was read: Stop, a tap on the bubble, the
++     * wake phrase, a new message of his. Nothing more of a reply begun before that is said.
++     */
++    private fun speechStoppedSince(since: Long?): Boolean {
++        if (since == null) return false
++        val now = speechGenerationCallback?.invoke() ?: return false
++        return now != since
 +    }
 +
 +    // A small set of plan ids that forgets its oldest entry. Bounded the same way as
@@ -1683,7 +1715,7 @@ index 5891c90..2b05acf 100644
      // Silences speech in progress; set by the TTS service and called from cancelCurrentTask.
      var onStopSpeakingCallback: (() -> Unit)? = null
  
-@@ -582,6 +985,11 @@ class AgentLoop @Inject constructor(
+@@ -582,6 +1001,11 @@ class AgentLoop @Inject constructor(
          val isAnsweringPendingQuestion = waitingSession != null &&
                  (explicitSessionId == null || explicitSessionId == waitingSession)
  
@@ -1695,7 +1727,7 @@ index 5891c90..2b05acf 100644
          if (waitingSession != null && !isAnsweringPendingQuestion) {
              // A brand-new message arrived in a different session while another task is
              // still parked on a prompt in `waitingSession`. Nobody there is ever going to
-@@ -590,7 +998,8 @@ class AgentLoop @Inject constructor(
+@@ -590,7 +1014,8 @@ class AgentLoop @Inject constructor(
              // into the wrong chat or leaving that chat hanging silently forever.
              abandonWaitingTask(waitingSession)
          } else if (!isAnsweringPendingQuestion) {
@@ -1705,7 +1737,7 @@ index 5891c90..2b05acf 100644
          }
  
          // A caller that knows the session pins it before returning, so the chat that just
-@@ -601,6 +1010,13 @@ class AgentLoop @Inject constructor(
+@@ -601,6 +1026,13 @@ class AgentLoop @Inject constructor(
  
          val job = scope.launch {
              try {
@@ -1719,7 +1751,7 @@ index 5891c90..2b05acf 100644
                  // Pin the session THIS task writes to, resolved once, right here, before any
                  // message is written. A genuinely new query pins whatever session the caller
                  // says this message belongs to (falling back to whatever is current if the
-@@ -626,18 +1042,34 @@ class AgentLoop @Inject constructor(
+@@ -626,18 +1058,34 @@ class AgentLoop @Inject constructor(
                  // Only capture the screen when the query actually asks about it.
                  // Attaching a screenshot to every request would silently send
                  // whatever is on screen (messages, banking apps, ...) to the LLM.
@@ -1759,7 +1791,7 @@ index 5891c90..2b05acf 100644
                      imageBase64 = screenshotBase64
                  )
                  memoryManager.storeMessage(userMsg, sessionId)
-@@ -656,6 +1088,10 @@ class AgentLoop @Inject constructor(
+@@ -656,6 +1104,10 @@ class AgentLoop @Inject constructor(
                      return@launch
                  }
  
@@ -1770,7 +1802,7 @@ index 5891c90..2b05acf 100644
                  // Serialize query handling so contextual follow-up state cannot race.
                  queryMutex.withLock {
                      processQueryLocked(userMsg, query, context, sessionId)
-@@ -709,16 +1145,21 @@ class AgentLoop @Inject constructor(
+@@ -709,16 +1161,21 @@ class AgentLoop @Inject constructor(
  
      private fun launchRetry(sessionId: String, body: suspend () -> Unit) {
          val waitingSession = waitingSessionId
@@ -1793,7 +1825,7 @@ index 5891c90..2b05acf 100644
                  resolveStaleProposedPlan(sessionId)
  
                  queryMutex.withLock {
-@@ -733,12 +1174,53 @@ class AgentLoop @Inject constructor(
+@@ -733,12 +1190,53 @@ class AgentLoop @Inject constructor(
          currentJob = job
      }
  
@@ -1847,7 +1879,7 @@ index 5891c90..2b05acf 100644
                  _agentState.value = AgentState.Thinking
  
                  // 0. Check if this is a complex, multi-step query
-@@ -746,6 +1228,14 @@ class AgentLoop @Inject constructor(
+@@ -746,6 +1244,14 @@ class AgentLoop @Inject constructor(
                  val complexity = intentClassifier.classifyComplexity(query)
                  val isMultiStep = complexity != QueryComplexity.SIMPLE
  
@@ -1862,7 +1894,7 @@ index 5891c90..2b05acf 100644
                  // 1. Alias resolution — bypass LLM for simple, single-action commands ONLY
                  if (!isMultiStep) {
                      val lastExecuted = lastExecutedActionsBySession[sessionId]
-@@ -810,15 +1300,125 @@ class AgentLoop @Inject constructor(
+@@ -810,15 +1316,125 @@ class AgentLoop @Inject constructor(
                      }
                  }
  
@@ -1994,7 +2026,7 @@ index 5891c90..2b05acf 100644
      /**
       * Execute an alias-resolved command directly, bypassing the LLM.
       * Builds a single-step Plan and runs it through the normal plan execution pipeline.
-@@ -830,8 +1430,13 @@ class AgentLoop @Inject constructor(
+@@ -830,8 +1446,13 @@ class AgentLoop @Inject constructor(
          sessionId: String
      ) {
          try {
@@ -2010,7 +2042,7 @@ index 5891c90..2b05acf 100644
  
              // Save agent response
              val replyMsg = ChatMessage(
-@@ -845,6 +1450,8 @@ class AgentLoop @Inject constructor(
+@@ -845,6 +1466,8 @@ class AgentLoop @Inject constructor(
  
              // Build a single-step plan from the alias
              val plan = buildSingleStepPlan(originalQuery, alias.action, alias.baseParams)
@@ -2019,7 +2051,7 @@ index 5891c90..2b05acf 100644
  
              val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
              val approval = settingsRepository.llmConfig.first().approvalSettings()
-@@ -889,15 +1496,132 @@ class AgentLoop @Inject constructor(
+@@ -889,15 +1512,132 @@ class AgentLoop @Inject constructor(
          _agentState.value = AgentState.Error(error.title())
      }
  
@@ -2157,7 +2189,7 @@ index 5891c90..2b05acf 100644
                  You are OpenDroid, a friendly and helpful Android AI assistant.
                  Talk like a real person — warm, casual, and natural. Avoid sounding robotic.
                  Keep your answers short and to the point, but feel free to be friendly.
-@@ -910,65 +1634,116 @@ class AgentLoop @Inject constructor(
+@@ -910,65 +1650,121 @@ class AgentLoop @Inject constructor(
                  
                  Context about user and device state:
                  $relevantContext
@@ -2206,11 +2238,16 @@ index 5891c90..2b05acf 100644
 +            val replyOutcome = com.opendroid.ai.core.llm.ReplyOutcome()
 +            // Her reply is spoken while she writes it: each finished sentence of a line that
 +            // is plainly said-text goes to her voice at once. Never a line she keeps to
-+            // herself and never a command line (PersonaLiveSpeech).
++            // herself and never a command line (PersonaLiveSpeech). Read once here, as the
++            // reply begins: once speech is stopped after this (he taps the bubble to talk
++            // over her, Stop, the wake phrase, a new message), nothing more of it is said.
++            val speechSince = if (personaOn) speechGenerationCallback?.invoke() else null
 +            val liveSpeech = if (personaOn) {
 +                com.opendroid.ai.core.persona.PersonaLiveSpeech { piece ->
-+                    _agentState.value = AgentState.Speaking(piece)
-+                    speakLine(piece, hers = true)
++                    if (!speechStoppedSince(speechSince)) {
++                        _agentState.value = AgentState.Speaking(piece)
++                        speakLine(piece, hers = true, since = speechSince)
++                    }
 +                }
 +            } else {
 +                null
@@ -2304,7 +2341,7 @@ index 5891c90..2b05acf 100644
                      replyId
                  } else {
                      null
-@@ -985,7 +1760,50 @@ class AgentLoop @Inject constructor(
+@@ -985,7 +1781,50 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -2356,7 +2393,7 @@ index 5891c90..2b05acf 100644
                  publishChatError(
                      ChatErrorUiState.fromException(
                          sessionId = sessionId,
-@@ -1000,19 +1818,109 @@ class AgentLoop @Inject constructor(
+@@ -1000,13 +1839,103 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -2370,12 +2407,6 @@ index 5891c90..2b05acf 100644
 -            _agentState.value = AgentState.Speaking(finalReplyMsg.text)
 -            onSpeakCallback?.invoke(finalReplyMsg.text)
 -        } catch (e: CancellationException) {
--            throw e
--        } catch (e: LLMException) {
--            publishChatError(
--                ChatErrorUiState.fromException(
--                    sessionId = sessionId,
--                    requestId = requestId,
 +            if (onlyCommand) {
 +                // No canned line is put under her badge for a reply she did not write. The
 +                // app's row that keeps her command is the record of this turn.
@@ -2394,9 +2425,9 @@ index 5891c90..2b05acf 100644
 +                // What was not said while she wrote it: all of it when nothing was, none of
 +                // it when what was said does not match how the reply now begins.
 +                val toSay = if (liveSpeech != null) liveSpeech.rest(finalReplyMsg.text) else finalReplyMsg.text
-+                if (!toSay.isNullOrBlank()) {
++                if (!toSay.isNullOrBlank() && !speechStoppedSince(speechSince)) {
 +                    _agentState.value = AgentState.Speaking(toSay)
-+                    speakLine(toSay, hers = personaOn)
++                    speakLine(toSay, hers = personaOn, since = speechSince)
 +                }
 +            }
 +            if (personaOn) {
@@ -2469,16 +2500,10 @@ index 5891c90..2b05acf 100644
 +                }
 +            }
 +        } catch (e: CancellationException) {
-+            throw e
-+        } catch (e: LLMException) {
-+            publishChatError(
-+                ChatErrorUiState.fromException(
-+                    sessionId = sessionId,
-+                    requestId = requestId,
-                     runId = runId,
-                     failure = e
-                 )
-@@ -1022,13 +1930,47 @@ class AgentLoop @Inject constructor(
+             throw e
+         } catch (e: LLMException) {
+             publishChatError(
+@@ -1022,13 +1951,47 @@ class AgentLoop @Inject constructor(
          }
      }
  
@@ -2528,7 +2553,7 @@ index 5891c90..2b05acf 100644
              val maxTokensForPlan = if (isOnDevice) {
                  PromptBudget.planOutputTokens(
                      OnDeviceModelRegistry.contextWindowFor(config.selectedModelFor(provider.name))
-@@ -1041,7 +1983,7 @@ class AgentLoop @Inject constructor(
+@@ -1041,7 +2004,7 @@ class AgentLoop @Inject constructor(
                      val plannerDeferred = async(Dispatchers.Default) {
                          provider.complete(
                              buildPlanningRequest(
@@ -2537,7 +2562,7 @@ index 5891c90..2b05acf 100644
                                  relevantContext = relevantContext,
                                  isOnDevice = isOnDevice,
                                  temperature = 0.2f,
-@@ -1054,7 +1996,7 @@ class AgentLoop @Inject constructor(
+@@ -1054,7 +2017,7 @@ class AgentLoop @Inject constructor(
                          provider.complete(
                              LLMRequest(
                                  systemPrompt = PlanningPrompts.CRITIC_SYSTEM_PROMPT,
@@ -2546,7 +2571,7 @@ index 5891c90..2b05acf 100644
                                  temperature = 0.2f,
                                  maxTokens = 1000,
                                  responseFormat = ResponseFormat.TEXT
-@@ -1084,7 +2026,7 @@ class AgentLoop @Inject constructor(
+@@ -1084,7 +2047,7 @@ class AgentLoop @Inject constructor(
                                      id = UUID.randomUUID().toString(),
                                      text = "Merge the plan and critique into the final JSON plan.",
                                      sender = ChatMessage.Sender.USER,
@@ -2555,7 +2580,7 @@ index 5891c90..2b05acf 100644
                                  )
                              ),
                              temperature = 0.1f,
-@@ -1099,7 +2041,7 @@ class AgentLoop @Inject constructor(
+@@ -1099,7 +2062,7 @@ class AgentLoop @Inject constructor(
              } else {
                  val response = provider.complete(
                      buildPlanningRequest(
@@ -2564,7 +2589,7 @@ index 5891c90..2b05acf 100644
                          relevantContext = relevantContext,
                          isOnDevice = isOnDevice,
                          temperature = 0.1f,
-@@ -1110,6 +2052,26 @@ class AgentLoop @Inject constructor(
+@@ -1110,6 +2073,26 @@ class AgentLoop @Inject constructor(
                  parsePlanFromLlmResponse(response.content, userMsg.text)
              }
  
@@ -2591,7 +2616,7 @@ index 5891c90..2b05acf 100644
              // The validated copy is what runs, so it is what gets approved and shown:
              // validation can add steps the model's own goal and count don't mention.
              val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
-@@ -1119,6 +2081,7 @@ class AgentLoop @Inject constructor(
+@@ -1119,6 +2102,7 @@ class AgentLoop @Inject constructor(
              val approval = liveConfig.approvalSettings()
              if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated, userMsg.text)) {
                  recordAutoApprovedTrace(validated, approval.mode, sessionId)
@@ -2599,7 +2624,7 @@ index 5891c90..2b05acf 100644
                  executePlanLoop(validated, context, sessionId, autoApproved = true)
              } else {
                  proposePlan(validated, sessionId)
-@@ -1135,10 +2098,594 @@ class AgentLoop @Inject constructor(
+@@ -1135,10 +2119,596 @@ class AgentLoop @Inject constructor(
                  )
              )
          } catch (e: Exception) {
@@ -2644,7 +2669,9 @@ index 5891c90..2b05acf 100644
 +        // he is away, the card waits, and her own time is not held up by it. Anything of
 +        // his that is going on does.
 +        val ownPlanWaits = ownTimePlanAwaitsYes()
-+        if (!isFreeForCheckIn() && !ownPlanWaits) {
++        // A task of his holds the query lock from start to end, also while her reply is
++        // said sentence by sentence and the state reads Speaking or Idle in between.
++        if ((!isFreeForCheckIn() || queryMutex.isLocked) && !ownPlanWaits) {
 +            persona.putOffOwnTime(nowMillis)
 +            return null
 +        }
@@ -2737,9 +2764,9 @@ index 5891c90..2b05acf 100644
 +            val sessionId = conversationRepository.currentSessionId.first() ?: return@armOwnTime false
 +            conversationRepository.getLastMessages(sessionId, PERSONA_HISTORY_MESSAGES)
 +                .any { it.sender == ChatMessage.Sender.USER }
-+        }
-+    }
-+
+         }
+     }
+ 
 +    /**
 +     * True when nothing of the owner's is going on that a moment of her own would cut
 +     * across: no task thinking or running, no plan waiting for approval, no question
@@ -3125,9 +3152,9 @@ index 5891c90..2b05acf 100644
 +            } else {
 +                _agentState.value = AgentState.Idle
 +            }
-         }
-     }
- 
++        }
++    }
++
 +    /**
 +     * Stores one of the app's rows about a command of hers: the command itself, why it is
 +     * shown, that it stayed on the phone, or what became of the plan made from it.
@@ -3195,7 +3222,7 @@ index 5891c90..2b05acf 100644
      private suspend fun reportLocalPlanningLatency(response: LLMResponse) {
          val result = llmProviderFactory.recordPlanningLatency(response)
          if (result?.status == LatencyBudgetStatus.EXCEEDED && result.message != null) {
-@@ -1149,16 +2696,35 @@ class AgentLoop @Inject constructor(
+@@ -1149,16 +2719,35 @@ class AgentLoop @Inject constructor(
      /**
       * Non-LLM planning failures may still degrade to alias/simple chat. Typed
       * [LLMException]s are handled above and must never fall through here.
@@ -3240,7 +3267,7 @@ index 5891c90..2b05acf 100644
          }
  
          try {
-@@ -1180,7 +2746,7 @@ class AgentLoop @Inject constructor(
+@@ -1180,7 +2769,7 @@ class AgentLoop @Inject constructor(
          } catch (e: Exception) {
              android.util.Log.e("AgentLoop", "Failed to log plan generation failure: ${e.localizedMessage}")
          }
@@ -3249,7 +3276,7 @@ index 5891c90..2b05acf 100644
      }
  
      /**
-@@ -1241,12 +2807,72 @@ class AgentLoop @Inject constructor(
+@@ -1241,12 +2830,72 @@ class AgentLoop @Inject constructor(
          }
      }
  
@@ -3287,8 +3314,8 @@ index 5891c90..2b05acf 100644
 +                savePlanRow(PlanRecord.rejected(rejected, ::canonicalNameOf), rejected, rowSession)
 +            }
 +        }
-     }
- 
++    }
++
 +    /** [plan] as the plan manager holds it now, when it is still the same plan; else [plan] itself. */
 +    private fun livePlan(plan: Plan): Plan =
 +        planManager.currentPlan.value?.takeIf { it.planId == plan.planId } ?: plan
@@ -3315,15 +3342,15 @@ index 5891c90..2b05acf 100644
 +        } catch (e: Exception) {
 +            android.util.Log.w("AgentLoop", "Plan row not stored: ${e.javaClass.simpleName}")
 +        }
-+    }
-+
+     }
+ 
 +    /** The name the dispatcher runs a step's action under. */
 +    private fun canonicalNameOf(step: PlanStep): String = actionDispatcher.canonicalActionName(step.action, step.params)
 +
      /**
       * Forgets a session's contextual follow-up state (see
       * [lastExecutedActionsBySession]). Call this once a session is gone for good
-@@ -1280,23 +2906,73 @@ class AgentLoop @Inject constructor(
+@@ -1280,23 +2929,73 @@ class AgentLoop @Inject constructor(
       * actually current RIGHT NOW, captured synchronously before [jobToCancel]
       * even starts unwinding. [planManager.currentPlan] is a plain StateFlow
       * read, not suspending, so this capture is safe to do here.
@@ -3399,7 +3426,7 @@ index 5891c90..2b05acf 100644
              }
          }
      }
-@@ -1313,8 +2989,33 @@ class AgentLoop @Inject constructor(
+@@ -1313,8 +3012,33 @@ class AgentLoop @Inject constructor(
       * belongs to [newSessionId] (a new task in the SAME chat legitimately supersedes it).
       */
      private suspend fun resolveStaleProposedPlan(newSessionId: String) {
@@ -3435,7 +3462,7 @@ index 5891c90..2b05acf 100644
          val proposedState = _agentState.value as? AgentState.PlanProposed ?: return
  
          _proposedPlanSessionId.value = null
-@@ -1325,8 +3026,25 @@ class AgentLoop @Inject constructor(
+@@ -1325,8 +3049,25 @@ class AgentLoop @Inject constructor(
          // finished), but pinning the identity explicitly keeps this call
          // consistent with cancelCurrentTask/abandonWaitingTask rather than
          // relying on a coincidence that nothing else changed it in between.
@@ -3463,7 +3490,7 @@ index 5891c90..2b05acf 100644
          val stoppedMsg = ChatMessage(
              id = UUID.randomUUID().toString(),
              text = "I cancelled the plan I proposed here since you started a new task elsewhere.",
-@@ -1359,7 +3077,17 @@ class AgentLoop @Inject constructor(
+@@ -1359,7 +3100,17 @@ class AgentLoop @Inject constructor(
          scope.launch {
              jobToCancel?.join()
              if (planIdToCancel != null) {
@@ -3481,7 +3508,7 @@ index 5891c90..2b05acf 100644
              }
  
              val stoppedMsg = ChatMessage(
-@@ -1426,16 +3154,51 @@ class AgentLoop @Inject constructor(
+@@ -1426,16 +3177,51 @@ class AgentLoop @Inject constructor(
                  priorSteps = currentPlanState.steps
              )
  
@@ -3535,7 +3562,7 @@ index 5891c90..2b05acf 100644
              }
  
              // Redaction must be based on the dispatcher's canonical mapped action,
-@@ -1463,10 +3226,44 @@ class AgentLoop @Inject constructor(
+@@ -1463,10 +3249,44 @@ class AgentLoop @Inject constructor(
                  android.util.Log.e("AgentLoop", "Failed to log task execution: ${e.localizedMessage}")
              }
  
@@ -3582,7 +3609,7 @@ index 5891c90..2b05acf 100644
                  )
                  planManager.updateStepStatus(
                      stepToExecute.stepId,
-@@ -1478,7 +3275,9 @@ class AgentLoop @Inject constructor(
+@@ -1478,7 +3298,9 @@ class AgentLoop @Inject constructor(
                  // tap). Nothing failed, so no fallback and no failure replan - surface the
                  // hand-off in chat and speech, record it as the step result, and let the
                  // normal re-evaluation path decide what remains.
@@ -3592,7 +3619,7 @@ index 5891c90..2b05acf 100644
                  planManager.updateStepStatus(
                      stepToExecute.stepId,
                      StepStatus.COMPLETED,
-@@ -1488,12 +3287,14 @@ class AgentLoop @Inject constructor(
+@@ -1488,12 +3310,14 @@ class AgentLoop @Inject constructor(
                  // A user-facing flow (for example email compose) is not an
                  // executed side effect. Do not run an automated fallback or
                  // allow the plan to treat the step as completed.
@@ -3608,7 +3635,7 @@ index 5891c90..2b05acf 100644
                      planManager.updatePlanStatus(PlanStatus.FAILED)
                      speakAndSaveSummary(
                          planManager.currentPlan.value ?: currentPlanState,
-@@ -1515,7 +3316,7 @@ class AgentLoop @Inject constructor(
+@@ -1515,7 +3339,7 @@ class AgentLoop @Inject constructor(
                  // goes on after a refusal is not a question for the LLM.
                  cancelDeclinedPlan(stepToExecute, actionResult, currentPlanState.planId, sessionId)
                  return
@@ -3617,7 +3644,7 @@ index 5891c90..2b05acf 100644
                  planManager.updateStepStatus(
                      stepToExecute.stepId,
                      StepStatus.FAILED,
-@@ -1545,9 +3346,9 @@ class AgentLoop @Inject constructor(
+@@ -1545,9 +3369,9 @@ class AgentLoop @Inject constructor(
                      return
                  }
  
@@ -3630,7 +3657,7 @@ index 5891c90..2b05acf 100644
  
                  when (replan.decision.uppercase()) {
                      "ABANDON" -> {
-@@ -1580,50 +3381,12 @@ class AgentLoop @Inject constructor(
+@@ -1580,50 +3404,12 @@ class AgentLoop @Inject constructor(
                  currentPlanState = planManager.currentPlan.value ?: break
                  continue
              } else {
@@ -3687,7 +3714,7 @@ index 5891c90..2b05acf 100644
              }
  
              // Refresh current state of plan
-@@ -1651,14 +3414,28 @@ class AgentLoop @Inject constructor(
+@@ -1651,14 +3437,28 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -3722,7 +3749,7 @@ index 5891c90..2b05acf 100644
                      speakAndSaveSummary(currentPlanState, false, sessionId)
                      return
                  }
-@@ -1677,6 +3454,35 @@ class AgentLoop @Inject constructor(
+@@ -1677,6 +3477,35 @@ class AgentLoop @Inject constructor(
          }
      }
  
@@ -3758,7 +3785,7 @@ index 5891c90..2b05acf 100644
      /**
       * The model failed partway through [planId]. Steps before this point may already
       * have sent an SMS or placed a call, so the plan is PAUSED rather than failed and
-@@ -1703,8 +3509,22 @@ class AgentLoop @Inject constructor(
+@@ -1703,8 +3532,22 @@ class AgentLoop @Inject constructor(
          sessionId: String
      ) {
          planManager.updateStepStatus(step.stepId, StepStatus.FAILED, error = declined.message)
@@ -3782,7 +3809,7 @@ index 5891c90..2b05acf 100644
      }
  
      /**
-@@ -1746,35 +3566,92 @@ class AgentLoop @Inject constructor(
+@@ -1746,35 +3589,92 @@ class AgentLoop @Inject constructor(
              return true
          }
          // Re-read after LLM work: the user may have flipped mode or revoked grants.
@@ -3894,7 +3921,7 @@ index 5891c90..2b05acf 100644
      }
  
      private data class NeedsInputRetry(
-@@ -1829,7 +3706,8 @@ class AgentLoop @Inject constructor(
+@@ -1829,7 +3729,8 @@ class AgentLoop @Inject constructor(
              Json { ignoreUnknownKeys = true }
                  .decodeFromString<List<Map<String, String>>>(matchesJson)
          } catch (e: Exception) {
@@ -3904,7 +3931,7 @@ index 5891c90..2b05acf 100644
              return NeedsInputRetry(pickerResult, originalParams)
          }
  
-@@ -1842,7 +3720,12 @@ class AgentLoop @Inject constructor(
+@@ -1842,7 +3743,12 @@ class AgentLoop @Inject constructor(
              id = picker.messageId,
              text = "${pickerResult.question}\n\n$optionsText",
              sender = ChatMessage.Sender.AGENT,
@@ -3918,7 +3945,7 @@ index 5891c90..2b05acf 100644
              contactPickerData = matchesJson
          )
          activeContactPicker = picker
-@@ -1859,16 +3742,9 @@ class AgentLoop @Inject constructor(
+@@ -1859,16 +3765,9 @@ class AgentLoop @Inject constructor(
                  _pendingContactPickerMessageId.value = null
              }
          }
@@ -3936,7 +3963,7 @@ index 5891c90..2b05acf 100644
          // Resolve user selection to a contact. A tap on this picker's card carries the
          // contact itself; typed answers are matched against this picker's own list.
          val selectedContact = ContactPickerSelection.resolve(reply, matches)
-@@ -1884,7 +3760,11 @@ class AgentLoop @Inject constructor(
+@@ -1884,7 +3783,11 @@ class AgentLoop @Inject constructor(
              // Couldn't match — tell user and fail gracefully
              val failMsg = ChatMessage(
                  id = UUID.randomUUID().toString(),
@@ -3949,7 +3976,7 @@ index 5891c90..2b05acf 100644
                  sender = ChatMessage.Sender.AGENT,
                  modelBadge = "System"
              )
-@@ -1916,9 +3796,10 @@ class AgentLoop @Inject constructor(
+@@ -1916,9 +3819,10 @@ class AgentLoop @Inject constructor(
          // Confirm selection to user
          val confirmMsg = ChatMessage(
              id = UUID.randomUUID().toString(),
@@ -3962,7 +3989,7 @@ index 5891c90..2b05acf 100644
          )
          conversationRepository.insertMessage(sessionId, confirmMsg)
  
-@@ -1955,12 +3836,19 @@ class AgentLoop @Inject constructor(
+@@ -1955,12 +3859,19 @@ class AgentLoop @Inject constructor(
              id = UUID.randomUUID().toString(),
              text = needsInput.question + optionsText,
              sender = ChatMessage.Sender.AGENT,
@@ -3984,7 +4011,7 @@ index 5891c90..2b05acf 100644
          if (answer.isEmpty()) {
              return NeedsInputRetry(
                  ActionResult.Failure(
-@@ -1971,14 +3859,7 @@ class AgentLoop @Inject constructor(
+@@ -1971,14 +3882,7 @@ class AgentLoop @Inject constructor(
              )
          }
  
@@ -4000,7 +4027,7 @@ index 5891c90..2b05acf 100644
          val newParams = originalParams.toMutableMap().apply { put(paramKey, answer) }
          return NeedsInputRetry(
              actionDispatcher.execute(actionName, newParams, context),
-@@ -1998,7 +3879,13 @@ class AgentLoop @Inject constructor(
+@@ -1998,7 +3902,13 @@ class AgentLoop @Inject constructor(
              id = UUID.randomUUID().toString(),
              text = pending.message,
              sender = ChatMessage.Sender.AGENT,
@@ -4015,7 +4042,7 @@ index 5891c90..2b05acf 100644
          )
          conversationRepository.insertMessage(sessionId, pendingMsg)
          onSpeakCallback?.invoke(pending.message)
-@@ -2009,19 +3896,70 @@ class AgentLoop @Inject constructor(
+@@ -2009,19 +3919,70 @@ class AgentLoop @Inject constructor(
       * trace message in the chat instead - the audit trail the spec requires.
       * Speech leads with "Running:" so a hands-free user knows no approval
       * prompt is coming.
@@ -4090,7 +4117,7 @@ index 5891c90..2b05acf 100644
      }
  
      private suspend fun speakAndSaveSummary(
-@@ -2030,52 +3968,143 @@ class AgentLoop @Inject constructor(
+@@ -2030,52 +3991,143 @@ class AgentLoop @Inject constructor(
          sessionId: String,
          preferredError: String? = null
      ) {
@@ -4268,7 +4295,7 @@ index 5891c90..2b05acf 100644
      }
  
      private fun formatStreamedReply(text: String): String {
-@@ -2090,8 +4119,9 @@ class AgentLoop @Inject constructor(
+@@ -2090,8 +4142,9 @@ class AgentLoop @Inject constructor(
       * intent resolution errors from being spoken to the user.
       */
      private fun formatErrorForUser(action: String, rawError: String): String {
@@ -4280,7 +4307,7 @@ index 5891c90..2b05acf 100644
  
          // Return only a short, friendly message
          return when {
-@@ -2142,40 +4172,4 @@ class AgentLoop @Inject constructor(
+@@ -2142,40 +4195,4 @@ class AgentLoop @Inject constructor(
              }
          }
      }
@@ -15164,10 +15191,10 @@ index 0000000..3c4a4f0
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaLiveSpeech.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaLiveSpeech.kt
 new file mode 100644
-index 0000000..a87fd8f
+index 0000000..52ce7e9
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaLiveSpeech.kt
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,136 @@
 +package com.opendroid.ai.core.persona
 +
 +/**
@@ -15233,13 +15260,16 @@ index 0000000..a87fd8f
 +            if (finalSaid[index].isLetterOrDigit()) count++
 +            index++
 +        }
-+        val left = finalSaid.substring(index).trimStart { !it.isLetterOrDigit() && it != '(' && it != '"' }
++        // Only the closing marks of the sentence already said go: an opening mark of what
++        // follows stays, the * of a gesture above all, or the gesture would be said aloud.
++        val left = finalSaid.substring(index).trimStart { it.isWhitespace() || it in CLOSING_MARKS }
 +        return left.takeIf { rest -> rest.any { it.isLetterOrDigit() } }
 +    }
 +
 +    companion object {
 +        private val REASONING = Regex("""</?\s*(think|thinking|reasoning|reflection)\b|◁/?think""", RegexOption.IGNORE_CASE)
 +        private val OPENING_QUOTES = charArrayOf('"', '“', '「')
++        private const val CLOSING_MARKS = ".!?…,;:。！？、”’」』)]"
 +        private val LABELS = listOf("yume kisaragi", "yume", "kisaragi", "assistant", "ai")
 +
 +        // A sentence ends at . ! ? or an ellipsis followed by a space, or at a Japanese stop.
@@ -15284,7 +15314,11 @@ index 0000000..a87fd8f
 +                    Kind.SAID -> if (whole) {
 +                        out += line
 +                    } else {
-+                        val end = SENTENCE_END.findAll(line).lastOrNull()?.range?.last ?: -1
++                        // Not a stop inside a gesture still open (*leans back. stretches*):
++                        // half a gesture would be said aloud, the rest of it later.
++                        val end = SENTENCE_END.findAll(line)
++                            .lastOrNull { m -> line.substring(0, m.range.first).count { it == '*' } % 2 == 0 }
++                            ?.range?.last ?: -1
 +                        if (end >= 0) out += line.substring(0, end + 1)
 +                    }
 +                    Kind.NOT_SAID -> Unit
@@ -22883,7 +22917,7 @@ index c402e3b..a37099e 100644
                              autoReplyEngine.scheduleAutoReply(savedEntity, sbn, applicationContext)
                          }
 diff --git a/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt b/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt
-index 23a33d8..12432b8 100644
+index 23a33d8..2781aa7 100644
 --- a/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt
 +++ b/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt
 @@ -12,12 +12,16 @@ import com.opendroid.ai.core.agent.AgentLoop
@@ -23033,7 +23067,7 @@ index 23a33d8..12432b8 100644
          fun start(context: Context) {
              val intent = Intent(context, OpenDroidService::class.java)
              context.startForegroundService(intent)
-@@ -81,45 +184,64 @@ class OpenDroidService : Service() {
+@@ -81,45 +184,66 @@ class OpenDroidService : Service() {
              return
          }
  
@@ -23059,10 +23093,12 @@ index 23a33d8..12432b8 100644
          }
 -        // Stop and Clear cancel the task; speech already playing or still being fetched
 -        // must stop with it.
-+        // Her own lines, and only those, get her speech respelling.
-+        agentLoop.onPersonaSpeakCallback = { text ->
-+            if (agentLoop.quietForOwnTime) speechEnded() else textToSpeechEngine.speak(text, personaVoice = true)
++        // Her own lines, and only those, get her speech respelling. A reply of hers said
++        // while she writes it belongs to the speech from its start (since).
++        agentLoop.onPersonaSpeakCallback = { text, since ->
++            if (agentLoop.quietForOwnTime) speechEnded() else textToSpeechEngine.speak(text, personaVoice = true, since = since)
 +        }
++        agentLoop.speechGenerationCallback = { textToSpeechEngine.speechGeneration() }
 +        // Stop and Clear cancel the task, and a new message of his moves on from whatever
 +        // was being said; speech already playing, waiting or still being fetched stops
 +        // with it, and no microphone opens for a prompt that was cut off. A wake reply
@@ -23113,7 +23149,7 @@ index 23a33d8..12432b8 100644
              }
          }
  
-@@ -130,25 +252,128 @@ class OpenDroidService : Service() {
+@@ -130,25 +254,128 @@ class OpenDroidService : Service() {
          // and that second proposal must not wait in silence.
          serviceScope.launch {
              var promptedPlan: Plan? = null
@@ -23250,7 +23286,7 @@ index 23a33d8..12432b8 100644
      private fun startForegroundCompat(): Boolean {
          val notification = createNotification()
          val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
-@@ -165,16 +390,94 @@ class OpenDroidService : Service() {
+@@ -165,16 +392,94 @@ class OpenDroidService : Service() {
      }
  
      private fun startWakeWordDetection() {
@@ -23349,7 +23385,7 @@ index 23a33d8..12432b8 100644
  
          // Set agent state to Listening
          agentLoop.setAgentState(AgentState.Listening)
-@@ -182,25 +485,30 @@ class OpenDroidService : Service() {
+@@ -182,25 +487,30 @@ class OpenDroidService : Service() {
          // Start speech recognizer for query input
          speechRecognitionEngine.startListening(
              onResult = { query ->
@@ -23390,7 +23426,7 @@ index 23a33d8..12432b8 100644
                  }
              }
          )
-@@ -211,19 +519,43 @@ class OpenDroidService : Service() {
+@@ -211,19 +521,43 @@ class OpenDroidService : Service() {
       * speech (or an error) is a deliberate no-op: the plan stays in
       * PlanProposed with the visual modal still on screen. Never a grant path -
       * nothing spoken may widen the allowlist.
@@ -23438,7 +23474,7 @@ index 23a33d8..12432b8 100644
                  if (!showFloatingButton) startWakeWordDetection()
              }
          )
-@@ -233,7 +565,12 @@ class OpenDroidService : Service() {
+@@ -233,7 +567,12 @@ class OpenDroidService : Service() {
          // The service is already stopping; a sticky restart would only be refused again.
          if (!foregroundStarted) return START_NOT_STICKY
          if (intent?.action == ACTION_TRIGGER_RECORD) {
@@ -23452,7 +23488,7 @@ index 23a33d8..12432b8 100644
          }
          return START_STICKY
      }
-@@ -245,7 +582,9 @@ class OpenDroidService : Service() {
+@@ -245,7 +584,9 @@ class OpenDroidService : Service() {
      override fun onDestroy() {
          super.onDestroy()
          serviceScope.cancel()
@@ -23462,7 +23498,7 @@ index 23a33d8..12432b8 100644
          mcpServer.stop()
          wakeWordDetector.destroy()
          speechRecognitionEngine.destroy()
-@@ -264,13 +603,47 @@ class OpenDroidService : Service() {
+@@ -264,13 +605,47 @@ class OpenDroidService : Service() {
          manager.createNotificationChannel(channel)
      }
  
@@ -24791,7 +24827,7 @@ index 0000000..a7cce17
 +    }
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/voice/TextToSpeechEngine.kt b/app/src/main/java/com/opendroid/ai/core/voice/TextToSpeechEngine.kt
-index 45baefb..a2e8f62 100644
+index 45baefb..33ed81a 100644
 --- a/app/src/main/java/com/opendroid/ai/core/voice/TextToSpeechEngine.kt
 +++ b/app/src/main/java/com/opendroid/ai/core/voice/TextToSpeechEngine.kt
 @@ -3,15 +3,26 @@ package com.opendroid.ai.core.voice
@@ -24906,7 +24942,7 @@ index 45baefb..a2e8f62 100644
      private val generation = AtomicLong()
      @Volatile private var inFlightCall: Call? = null
  
-@@ -46,30 +114,77 @@ class TextToSpeechEngine(
+@@ -46,30 +114,87 @@ class TextToSpeechEngine(
      private var mediaPlayer: MediaPlayer? = null
      private var currentClip: File? = null
  
@@ -24926,7 +24962,13 @@ index 45baefb..a2e8f62 100644
      private val staleClipCleanup = scope.launch { deleteCachedClips() }
  
 -    /** Called on the main thread with the id speak() returned, when that utterance ends. */
-+    private class Line(val text: String, val utteranceId: String, val personaVoice: Boolean, val generation: Long)
++    private class Line(
++        val text: String,
++        val utteranceId: String,
++        val personaVoice: Boolean,
++        val generation: Long,
++        val queuedAt: Long = System.nanoTime()
++    )
 +
 +    /** The line whose turn it is, and how it ended once that is known: true for said to the end. */
 +    private class Turn(val line: Line, val ended: CompletableDeferred<Boolean> = CompletableDeferred()) {
@@ -24946,6 +24988,10 @@ index 45baefb..a2e8f62 100644
 +    private var turn: Turn? = null
 +
 +    private val micOpen = MutableStateFlow(false)
++
++    // Lines asked for before this time (System.nanoTime) sat behind a microphone that was
++    // open too long, and are not said: set when the first of them finds the hold stale.
++    @Volatile private var staleBefore = System.nanoTime()
 +
 +    /** Called on the main thread with the id speak() returned, when that utterance was said to its end. */
      var onCompletionListener: ((utteranceId: String) -> Unit)? = null
@@ -24996,7 +25042,7 @@ index 45baefb..a2e8f62 100644
      override fun onInit(status: Int) {
          if (status == TextToSpeech.SUCCESS) {
              val result = tts?.setLanguage(Locale.getDefault())
-@@ -80,43 +195,238 @@ class TextToSpeechEngine(
+@@ -80,43 +205,257 @@ class TextToSpeechEngine(
      }
  
      /**
@@ -25005,6 +25051,11 @@ index 45baefb..a2e8f62 100644
 +     * Queues [text] to be said after everything asked for before it, and returns
 +     * [utteranceId], which [onCompletionListener] or [onInterruptedListener] receives
 +     * when this utterance, and not some other one, has ended.
++     *
++     * [since] is the [speechGeneration] the line belongs to, by default the one now: a
++     * line whose speech was stopped after that ([stop]) is never said. A reply of hers
++     * that is said sentence by sentence while she writes it passes the generation from
++     * its start, so a stop at any point drops every sentence of it that comes later.
       */
 -    fun speak(text: String, utteranceId: String = UUID.randomUUID().toString()): String {
 -        val speechGeneration = generation.get()
@@ -25013,12 +25064,16 @@ index 45baefb..a2e8f62 100644
 +    fun speak(
 +        text: String,
 +        utteranceId: String = UUID.randomUUID().toString(),
-+        personaVoice: Boolean = false
++        personaVoice: Boolean = false,
++        since: Long? = null
 +    ): String {
 +        synchronized(turnLock) { waitingIds += utteranceId }
-+        lines.trySend(Line(text, utteranceId, personaVoice, generation.get()))
++        lines.trySend(Line(text, utteranceId, personaVoice, since ?: generation.get()))
 +        return utteranceId
 +    }
++
++    /** The speech generation now; [stop] moves it on. See [speak]'s since. */
++    fun speechGeneration(): Long = generation.get()
 +
 +    /**
 +     * The microphone is about to open. Lines asked for from now on, and the ones still
@@ -25038,7 +25093,8 @@ index 45baefb..a2e8f62 100644
 +    private suspend fun sayInTurn(line: Line) {
 +        val mine = synchronized(turnLock) {
 +            waitingIds -= line.utteranceId
-+            val dropped = cancelledIds.remove(line.utteranceId) || line.generation != generation.get()
++            val dropped = cancelledIds.remove(line.utteranceId) || line.generation != generation.get() ||
++                line.queuedAt - staleBefore < 0
 +            if (dropped) null else Turn(line).also { turn = it }
 +        }
 +        if (mine == null) {
@@ -25077,9 +25133,14 @@ index 45baefb..a2e8f62 100644
 +                val ownText = SpeechTextNormalizer.normalize(line.text, personaVoice = true, lexicon = emptyMap())
 +                if (ownText.isNotEmpty() && voice.isBundled() && voice.prepare() && !mine.ended.isCompleted) {
 +                    val rate = com.opendroid.ai.data.models.SpeechTuning.clamp(config.ttsSpeechRate)
-+                    val said = voice.say(ownText, speed = rate)
-+                    end(mine, saidToTheEnd = said)
-+                    return
++                    // A stop after the look above is still seen by the voice.
++                    val said = voice.say(ownText, speed = rate) { mine.ended.isCompleted }
++                    // Null: her voice cannot read this line at all (another script); the
++                    // voices below say it instead of nobody.
++                    if (said != null) {
++                        end(mine, saidToTheEnd = said)
++                        return
++                    }
 +                }
 +            }
 +
@@ -25129,8 +25190,8 @@ index 45baefb..a2e8f62 100644
 +                    // still hear it end, as for an empty line above: otherwise the Speaking
 +                    // state never clears and a spoken approval never starts listening.
 +                    end(mine, saidToTheEnd = true)
-+                }
-+            }
+                 }
+             }
 +            // The next line waits here until this one has ended. An engine that never
 +            // reports the end must not silence the phone for good, so each piece has its
 +            // own time to be said in; a piece that ends starts the wait for the next.
@@ -25139,9 +25200,9 @@ index 45baefb..a2e8f62 100644
 +                val piece = pieces.getOrElse(waitingFor) { pieces.last() }
 +                if (withTimeoutOrNull(longestFor(piece)) { mine.pieceSaid.receiveCatching() } == null) {
 +                    end(mine, saidToTheEnd = true)
-                 }
++                }
 +                waitingFor++
-             }
++            }
 +        } catch (e: CancellationException) {
 +            throw e
 +        } catch (e: Exception) {
@@ -25149,9 +25210,11 @@ index 45baefb..a2e8f62 100644
 +            end(mine, saidToTheEnd = false)
 +        } finally {
 +            synchronized(turnLock) { if (turn === mine) turn = null }
-+        }
-+    }
-+
+         }
+-        return utteranceId
+     }
+ 
+-    private fun playElevenLabsTts(
 +    /**
 +     * Waits while the microphone is open. False when the wait was so long that the line
 +     * is not worth saying any more. A listen that never reports its end does not hold the
@@ -25167,7 +25230,11 @@ index 45baefb..a2e8f62 100644
 +            micOpen.value = false
 +            OpenMicrophones.forgetAll()
 +        }
-+        return (System.nanoTime() - startedAt) / 1_000_000 <= STALE_AFTER_MIC_MILLIS
++        val fresh = (System.nanoTime() - startedAt) / 1_000_000 <= STALE_AFTER_MIC_MILLIS
++        // Every line asked for until now waited out the same hold, not only this first
++        // one: a reply said sentence by sentence is dropped whole, not resumed halfway.
++        if (!fresh) staleBefore = System.nanoTime()
++        return fresh
 +    }
 +
 +    /** Ends [mine] once, and reports it. A second ending of the same line is ignored. */
@@ -25237,11 +25304,9 @@ index 45baefb..a2e8f62 100644
 +        if (wantedRate != 1.0f || rateTouched) {
 +            tts?.setSpeechRate(wantedRate)
 +            rateTouched = true
-         }
--        return utteranceId
-     }
- 
--    private fun playElevenLabsTts(
++        }
++    }
++
 +    /**
 +     * Fetches the clip for [text] and starts it. True when the clip is playing or the
 +     * line has ended meanwhile; false when the phone's own voice should say it instead.
@@ -25257,7 +25322,7 @@ index 45baefb..a2e8f62 100644
      ): Boolean {
          val url = "$elevenLabsBaseUrl/v1/text-to-speech/$voiceId"
          val escapedText = text
-@@ -128,7 +438,7 @@ class TextToSpeechEngine(
+@@ -128,7 +467,7 @@ class TextToSpeechEngine(
          val jsonPayload = """
              {
                "text": "$escapedText",
@@ -25266,7 +25331,7 @@ index 45baefb..a2e8f62 100644
                "voice_settings": {
                  "stability": 0.5,
                  "similarity_boost": 0.75
-@@ -143,7 +453,7 @@ class TextToSpeechEngine(
+@@ -143,7 +482,7 @@ class TextToSpeechEngine(
              .post(jsonPayload.toRequestBody("application/json".toMediaType()))
              .build()
  
@@ -25275,7 +25340,7 @@ index 45baefb..a2e8f62 100644
          val call = client.newCall(request)
          inFlightCall = call
          try {
-@@ -161,11 +471,11 @@ class TextToSpeechEngine(
+@@ -161,11 +500,11 @@ class TextToSpeechEngine(
                  }
  
                  synchronized(playerLock) {
@@ -25289,7 +25354,7 @@ index 45baefb..a2e8f62 100644
                      releasePlayerLocked()
                      val player = MediaPlayer()
                      mediaPlayer = player
-@@ -173,9 +483,9 @@ class TextToSpeechEngine(
+@@ -173,9 +512,9 @@ class TextToSpeechEngine(
                      try {
                          player.setDataSource(clip.absolutePath)
                          player.prepare()
@@ -25301,7 +25366,7 @@ index 45baefb..a2e8f62 100644
                              true
                          }
                          player.start()
-@@ -191,13 +501,11 @@ class TextToSpeechEngine(
+@@ -191,13 +530,11 @@ class TextToSpeechEngine(
          }
      }
  
@@ -25317,7 +25382,7 @@ index 45baefb..a2e8f62 100644
      }
  
      private fun releasePlayerLocked() {
-@@ -213,26 +521,67 @@ class TextToSpeechEngine(
+@@ -213,26 +550,67 @@ class TextToSpeechEngine(
          }?.forEach { it.delete() }
      }
  
@@ -25975,10 +26040,10 @@ index 0000000..90d105c
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/voice/own/JapanesePhonemes.kt b/app/src/main/java/com/opendroid/ai/core/voice/own/JapanesePhonemes.kt
 new file mode 100644
-index 0000000..aa5149e
+index 0000000..da3fb2c
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/voice/own/JapanesePhonemes.kt
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,174 @@
 +package com.opendroid.ai.core.voice.own
 +
 +/**
@@ -26129,6 +26194,24 @@ index 0000000..aa5149e
 +            ipa(phonesFromLabels(labels)).takeIf { it.isNotEmpty() }
 +        }
 +
++    /**
++     * [phonemize] for a line that is said in her voice or not at all: null when a sentence
++     * with something to read in it gives nothing, because Open JTalk refused it or knows
++     * none of it (another script: Cyrillic, Hangul), so that another voice says the line.
++     * A sentence of punctuation alone that gives nothing is dropped, as in [phonemize].
++     */
++    fun phonemizeAll(text: String, labelsOf: (String) -> List<String>?): List<List<String>>? {
++        val out = ArrayList<List<String>>()
++        for (sentence in splitSentences(text)) {
++            val phonemes = labelsOf(sentence)?.let { ipa(phonesFromLabels(it)) }.orEmpty()
++            when {
++                phonemes.isNotEmpty() -> out += phonemes
++                sentence.any { it.isLetterOrDigit() } -> return null
++            }
++        }
++        return out
++    }
++
 +    private fun numeric(pattern: Regex, label: String): Int =
 +        pattern.find(label)?.groupValues?.get(1)?.toIntOrNull() ?: NO_FEATURE
 +
@@ -26137,11 +26220,13 @@ index 0000000..aa5149e
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/voice/own/KanaText.kt b/app/src/main/java/com/opendroid/ai/core/voice/own/KanaText.kt
 new file mode 100644
-index 0000000..ec5e10e
+index 0000000..4b87202
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/voice/own/KanaText.kt
-@@ -0,0 +1,328 @@
+@@ -0,0 +1,367 @@
 +package com.opendroid.ai.core.voice.own
++
++import java.text.Normalizer
 +
 +/**
 + * Her line, as she types it (mostly English, with Japanese in romaji or in kana), turned
@@ -26160,8 +26245,9 @@ index 0000000..ec5e10e
 + */
 +class KanaText(private val pronunciations: (String) -> List<String>?) {
 +
-+    /** Converts [text] (already through the speech normalizer) to text Open JTalk reads. */
-+    fun convert(text: String): String {
++    /** Converts [typed] (already through the speech normalizer) to text Open JTalk reads. */
++    fun convert(typed: String): String {
++        val text = plainLatin(typed)
 +        val out = StringBuilder()
 +        var i = 0
 +        var lastWasLatinWord = false
@@ -26185,6 +26271,12 @@ index 0000000..ec5e10e
 +                    continue
 +                }
 +                text.startsWith("...", i) -> { out.append('、'); i += 3; lastWasLatinWord = false; continue }
++                // A decimal point or a thousands comma stays in its number (23.5, 1,299):
++                // Open JTalk reads the number whole, where 。 or 、 would cut it in two.
++                (c == '.' || c == ',') && i > 0 && text[i - 1].isDigit() && i + 1 < text.length && text[i + 1].isDigit() -> {
++                    out.append(c)
++                    lastWasLatinWord = false
++                }
 +                else -> {
 +                    out.append(PUNCTUATION[c] ?: c)
 +                    lastWasLatinWord = false
@@ -26196,7 +26288,9 @@ index 0000000..ec5e10e
 +    }
 +
 +    /** One Latin-letter word to kana. */
-+    fun word(raw: String): String {
++    fun word(typed: String): String {
++        // A letter held for ever (mmmmm, zzzzzz) is read as held three times: mmm is んー.
++        val raw = HELD_LETTER.replace(typed, "$1$1$1")
 +        val lower = raw.lowercase()
 +        JAPANESE_WORDS[lower]?.let { return it }
 +        ENGLISH_SAYINGS[lower]?.let { return it }
@@ -26213,6 +26307,26 @@ index 0000000..ec5e10e
 +    private fun isLatin(c: Char) = c in 'a'..'z' || c in 'A'..'Z'
 +
 +    companion object {
++        private val HELD_LETTER = Regex("([A-Za-z])\\1{3,}")
++        private val ACCENTS = Regex("(?<=[A-Za-z])\\p{Mn}+")
++        private val CURLY_APOSTROPHE = Regex("(?<=[A-Za-z])[’ʼ](?=[A-Za-z])")
++
++        /**
++         * Latin letters as plain ASCII, so a word is not broken into pieces and pauses:
++         * full-width letters (ｏｋ), accents (café, Pokémon) and a curly apostrophe inside
++         * a word (don’t). Kana keep their voiced marks: only a mark on a Latin letter goes.
++         */
++        internal fun plainLatin(text: String): String {
++            val narrow = buildString(text.length) {
++                for (c in text) append(if (c in 'Ａ'..'Ｚ' || c in 'ａ'..'ｚ') c - 0xFEE0 else c)
++            }
++            val bare = Normalizer.normalize(
++                ACCENTS.replace(Normalizer.normalize(narrow, Normalizer.Form.NFD), ""),
++                Normalizer.Form.NFC
++            )
++            return CURLY_APOSTROPHE.replace(bare, "'")
++        }
++
 +        private val PUNCTUATION = mapOf(
 +            '.' to '。', ',' to '、', '?' to '？', '!' to '！', ':' to '、', ';' to '、',
 +            '-' to '、', '"' to '「', '(' to '、', ')' to '、'
@@ -26238,7 +26352,8 @@ index 0000000..ec5e10e
 +            "otsukare" to "おつかれ", "mukatsuku" to "むかつく", "jiwaru" to "じわる", "choroi" to "ちょろい",
 +            "yoyuu" to "よゆう", "bibitteru" to "びびってる", "kashikomarimashita" to "かしこまりました",
 +            "hatachi" to "はたち", "zako" to "ざこ", "un" to "うん", "ee" to "ええ", "ii" to "いい",
-+            "nya" to "にゃ", "e" to "え"
++            "nya" to "にゃ", "e" to "え", "kusa" to "くさ", "muri" to "むり", "yoshi" to "よし",
++            "de" to "で", "yo" to "よ", "mo" to "も", "ko" to "こ"
 +        )
 +
 +        /** English she says the Japanese way, set phrases more than words. */
@@ -26334,6 +26449,13 @@ index 0000000..ec5e10e
 +            }
 +            if (next != null && next in VOWELS) {
 +                appendVowel(out, p, ph, stress, i + 1, spelling)
++                i += 2
++                continue
++            }
++            // T S and D Z with no vowel after them are one sound: it's イッツ, kids キッズ.
++            if (((p == "T" && next == "S") || (p == "D" && next == "Z")) && ph.getOrNull(i + 2) !in VOWELS) {
++                if (i > 0 && ph[i - 1] in SHORT_VOWELS) out.append("ッ")
++                out.append(if (p == "T") "ツ" else "ズ")
 +                i += 2
 +                continue
 +            }
@@ -26471,10 +26593,10 @@ index 0000000..ec5e10e
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/voice/own/OpenJTalk.kt b/app/src/main/java/com/opendroid/ai/core/voice/own/OpenJTalk.kt
 new file mode 100644
-index 0000000..331f84e
+index 0000000..c06dd4a
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/voice/own/OpenJTalk.kt
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,66 @@
 +package com.opendroid.ai.core.voice.own
 +
 +import java.io.Closeable
@@ -26491,8 +26613,9 @@ index 0000000..331f84e
 +    @Synchronized
 +    fun labels(sentence: String): List<String>? {
 +        check(handle != 0L) { "closed" }
-+        if (sentence.toByteArray(Charsets.UTF_8).size > MAX_SENTENCE_BYTES) return null
-+        return nativeLabels(handle, sentence)?.toList()
++        val safe = withLongKanaRunsBroken(sentence)
++        if (safe.toByteArray(Charsets.UTF_8).size > MAX_SENTENCE_BYTES) return null
++        return nativeLabels(handle, safe)?.toList()
 +    }
 +
 +    @Synchronized
@@ -26504,6 +26627,20 @@ index 0000000..331f84e
 +    companion object {
 +        /** The native side refuses longer input; sentences are split before this. */
 +        const val MAX_SENTENCE_BYTES = 4096
++
++        /** The longest run of katakana handed to Open JTalk without a break. */
++        const val MAX_KANA_RUN = 100
++
++        private val LONG_KANA_RUN = Regex("[ァ-ヺーｦ-ﾟ]{${MAX_KANA_RUN + 1},}")
++
++        /**
++         * [sentence] with every katakana run longer than [MAX_KANA_RUN] broken by a 、.
++         * Open JTalk chains such a run (zzzz…, ッッッ…) back into one word and copies it
++         * into a 1024-byte buffer of its own, which aborts the whole app. A 、 ends the
++         * chain, and 100 kana are at most 300 bytes.
++         */
++        fun withLongKanaRunsBroken(sentence: String): String =
++            LONG_KANA_RUN.replace(sentence) { run -> run.value.chunked(MAX_KANA_RUN).joinToString("、") }
 +
 +        @Volatile private var loaded = false
 +
@@ -26528,16 +26665,17 @@ index 0000000..331f84e
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/voice/own/OwnVoice.kt b/app/src/main/java/com/opendroid/ai/core/voice/own/OwnVoice.kt
 new file mode 100644
-index 0000000..c92131c
+index 0000000..4c48bf5
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/voice/own/OwnVoice.kt
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,288 @@
 +package com.opendroid.ai.core.voice.own
 +
 +import android.content.Context
 +import android.media.AudioAttributes
 +import android.media.AudioFormat
 +import android.media.AudioTrack
++import android.os.SystemClock
 +import android.util.Log
 +import com.k2fsa.sherpa.onnx.GenerationConfig
 +import com.k2fsa.sherpa.onnx.OfflineTts
@@ -26545,7 +26683,9 @@ index 0000000..c92131c
 +import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 +import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 +import java.io.File
++import java.io.FileOutputStream
 +import java.util.concurrent.atomic.AtomicBoolean
++import kotlin.concurrent.thread
 +
 +/**
 + * Her own voice, on the phone: the voice trained from her voice actress's recordings,
@@ -26564,8 +26704,15 @@ index 0000000..c92131c
 +    private class Engine(val tts: OfflineTts, val jtalk: OpenJTalk, val kana: KanaText)
 +
 +    private val lock = Any()
++    // Held by a line from the moment it reads the engine until its sound is released, so
++    // the engine is never freed under a sentence that is still being made.
++    private val inUse = Any()
 +    @Volatile private var engine: Engine? = null
 +    @Volatile private var unusable = false
++    // A load that failed for a reason that can pass (full storage, a damaged unpack) is
++    // tried again from this time on (SystemClock.elapsedRealtime).
++    @Volatile private var retryAt = 0L
++    @Volatile private var released = false
 +    private val stopFlag = AtomicBoolean(false)
 +    @Volatile private var track: AudioTrack? = null
 +
@@ -26578,10 +26725,10 @@ index 0000000..c92131c
 +    /** Unpacks and loads the voice if that has not happened yet. False if it cannot be used. */
 +    fun prepare(): Boolean {
 +        engine?.let { return true }
-+        if (unusable) return false
++        if (unusable || released || SystemClock.elapsedRealtime() < retryAt) return false
 +        synchronized(lock) {
 +            engine?.let { return true }
-+            if (unusable) return false
++            if (unusable || released || SystemClock.elapsedRealtime() < retryAt) return false
 +            return try {
 +                if (!isBundled()) { unusable = true; return false }
 +                unpackIfNeeded()
@@ -26596,7 +26743,7 @@ index 0000000..c92131c
 +                    )
 +                ))
 +                val jtalk = OpenJTalk.open(File(home, DICTIONARY).path)
-+                    ?: run { tts.release(); unusable = true; return false }
++                    ?: run { tts.release(); error("Open JTalk could not read its dictionary") }
 +                val dict = CmuDict.load(File(home, CMUDICT))
 +                engine = Engine(tts, jtalk, KanaText { dict[it] })
 +                true
@@ -26604,7 +26751,16 @@ index 0000000..c92131c
 +                // A broken or missing voice must not take the app's speech with it: the
 +                // phone's own voice says her lines instead.
 +                Log.e(TAG, "Her own voice could not be loaded", e)
-+                unusable = true
++                if (e is LinkageError) {
++                    // No native voice for this phone in this build: that does not pass.
++                    unusable = true
++                } else {
++                    // Full storage, a damaged or half-done unpack, a load that failed once:
++                    // what was unpacked goes, so it neither keeps taking the space nor is
++                    // read again as it is, and the voice is tried again after a while.
++                    runCatching { home.deleteRecursively() }
++                    retryAt = SystemClock.elapsedRealtime() + RETRY_AFTER_MILLIS
++                }
 +                false
 +            }
 +        }
@@ -26612,14 +26768,22 @@ index 0000000..c92131c
 +
 +    /**
 +     * Says [normalized] (text already through the speech normalizer's persona pass) in her
-+     * voice. True when it was heard to its end, false when [stop] cut it off or it could
-+     * not be said.
++     * voice. True when it was heard to its end; false when [stop] cut it off, [cancelled]
++     * was already true, or it failed on the way; null when her voice cannot say it at all
++     * (not loaded, or text Open JTalk cannot read), so that another voice can.
 +     */
-+    fun say(normalized: String, speed: Float = 1.0f): Boolean {
-+        if (!prepare()) return false
-+        val e = engine ?: return false
++    fun say(normalized: String, speed: Float = 1.0f, cancelled: () -> Boolean = { false }): Boolean? {
++        if (!prepare()) return null
++        synchronized(inUse) { return sayWith(engine ?: return null, normalized, speed, cancelled) }
++    }
++
++    private fun sayWith(e: Engine, normalized: String, speed: Float, cancelled: () -> Boolean): Boolean? {
 +        stopFlag.set(false)
-+        val sentences = JapanesePhonemes.phonemize(e.kana.convert(normalized)) { e.jtalk.labels(it) }
++        // A stop between the caller's last look and the line above was undone by it. The
++        // caller ends its line before it stops the voice, so the line is seen ended here.
++        if (released || cancelled()) return false
++        val sentences = JapanesePhonemes.phonemizeAll(e.kana.convert(normalized)) { e.jtalk.labels(it) }
++            ?: return null
 +        if (sentences.isEmpty()) return true
 +        val codepoints = sentences.map { s -> s.map { it.codePointAt(0) }.toIntArray() }.toTypedArray()
 +
@@ -26657,19 +26821,39 @@ index 0000000..c92131c
 +            play(FloatArray((rate * LEAD_IN_SECONDS).toInt()))
 +            val pause = FloatArray((rate * SENTENCE_PAUSE_SECONDS / pace).toInt())
 +            var first = true
++            var failure: Throwable? = null
 +            // Each sentence plays as soon as it is made, while the next is being made, with a
-+            // short pause between sentences, as a person leaves.
-+            e.tts.generateWithConfigAndCallback("", config) { samples ->
-+                if (stopFlag.get()) return@generateWithConfigAndCallback 0
-+                if (!first) play(pause)
-+                first = false
-+                play(samples)
-+                if (stopFlag.get()) 0 else 1
++            // short pause between sentences, as a person leaves. The native side calls this
++            // by name as invoke(float[]) returning Integer: a lambda compiled the usual way
++            // (invokedynamic) has only the erased invoke(Object), so nothing would be called
++            // and nothing heard. An object declares it. Nothing is thrown back into native code.
++            val feed = object : (FloatArray) -> Int {
++                override fun invoke(samples: FloatArray): Int = try {
++                    if (stopFlag.get()) {
++                        0
++                    } else {
++                        if (!first) play(pause)
++                        first = false
++                        play(samples)
++                        if (stopFlag.get()) 0 else 1
++                    }
++                } catch (t: Throwable) {
++                    failure = t
++                    0
++                }
 +            }
-+            // Let what is in the buffer play out. A device that stops reporting progress
-+            // does not hold the line for ever: the wait is bounded by the line's length.
-+            val deadline = System.currentTimeMillis() + written * 1000 / rate + 2_000
-+            while (!stopFlag.get() && audio.playbackHeadPosition.toLong() < written &&
++            e.tts.generateWithConfigAndCallback("", config, feed)
++            failure?.let { throw it }
++            val voiced = written
++            // A streaming track starts only once its buffer is full, so a line shorter than
++            // the buffer would never be heard. Silence behind her line fills the buffer and
++            // pushes the last of it through; what is left of the silence is cut off below.
++            if (!stopFlag.get()) play(FloatArray(audio.bufferCapacityInFrames))
++            // Let her line play out. A device that stops reporting progress does not hold
++            // the line for ever: the wait is bounded by what is still to be heard.
++            val unheard = (voiced - audio.playbackHeadPosition.toLong()).coerceAtLeast(0L)
++            val deadline = System.currentTimeMillis() + unheard * 1000 / rate + 2_000
++            while (!stopFlag.get() && audio.playbackHeadPosition.toLong() < voiced &&
 +                System.currentTimeMillis() < deadline) Thread.sleep(20)
 +            return !stopFlag.get()
 +        } catch (t: Throwable) {
@@ -26689,10 +26873,17 @@ index 0000000..c92131c
 +    }
 +
 +    fun release() {
++        released = true
 +        stop()
-+        synchronized(lock) {
-+            engine?.let { it.tts.release(); it.jtalk.close() }
-+            engine = null
++        // A line being made holds the engine until the sentence under way is done (the
++        // stop makes it the last), so it is freed after that, off the caller's thread.
++        thread(name = "OwnVoiceRelease") {
++            synchronized(inUse) {
++                synchronized(lock) {
++                    engine?.let { it.tts.release(); it.jtalk.close() }
++                    engine = null
++                }
++            }
 +        }
 +    }
 +
@@ -26711,7 +26902,14 @@ index 0000000..c92131c
 +        if (children.isEmpty()) {
 +            to.parentFile?.mkdirs()
 +            val tmp = File(to.path + ".part")
-+            context.assets.open(from).use { input -> tmp.outputStream().use { input.copyTo(it, 1 shl 16) } }
++            context.assets.open(from).use { input ->
++                FileOutputStream(tmp).use { out ->
++                    input.copyTo(out, 1 shl 16)
++                    // On the disk before it takes its name: a power cut must not leave a
++                    // short file under the right name, with a stamp that says all is well.
++                    out.fd.sync()
++                }
++            }
 +            check(tmp.renameTo(to)) { "could not place $to" }
 +            return
 +        }
@@ -26734,6 +26932,8 @@ index 0000000..c92131c
 +        const val LEAD_IN_SECONDS = 0.06f
 +        /** Pause between two sentences of one line, in seconds at normal speed. */
 +        const val SENTENCE_PAUSE_SECONDS = 0.22f
++        /** How long a load that failed for a passing reason waits before it is tried again. */
++        const val RETRY_AFTER_MILLIS = 10 * 60_000L
 +    }
 +}
 +
@@ -50515,12 +50715,13 @@ index 0000000..2340dfb
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaLiveSpeechTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaLiveSpeechTest.kt
 new file mode 100644
-index 0000000..83c2904
+index 0000000..fae1aa7
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaLiveSpeechTest.kt
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,149 @@
 +package com.opendroid.ai.core.persona
 +
++import com.opendroid.ai.core.voice.SpeechTextNormalizer
 +import org.junit.Assert.assertEquals
 +import org.junit.Assert.assertFalse
 +import org.junit.Assert.assertNull
@@ -50640,6 +50841,31 @@ index 0000000..83c2904
 +        val big = stream(reply, 7).second
 +        assertEquals(one.joinToString(" "), big.joinToString(" ").let { it })
 +        assertTrue(one.none { "ugh" in it || "spotify" in it })
++    }
++
++    @Test
++    fun `a gesture in what is left at the end keeps its opening star, so it is not said`() {
++        val reply = "fine. *rolls eyes* whatever"
++        val (live, said) = stream(reply)
++        assertEquals(listOf("fine."), said)
++        val rest = live.rest(reply)
++        assertEquals("*rolls eyes* whatever", rest)
++        val spoken = SpeechTextNormalizer.normalize(rest!!, personaVoice = true)
++        assertFalse(spoken, "rolls" in spoken || "eyes" in spoken)
++        assertTrue(spoken, spoken.isNotBlank())
++    }
++
++    @Test
++    fun `a stop inside a gesture still open does not split the gesture`() {
++        val reply = "*leans back. stretches* hey. ok"
++        val (live, said) = stream(reply)
++        // The gesture goes whole, with the sentence it opens, and the voice drops it whole.
++        assertEquals(listOf("*leans back. stretches* hey."), said)
++        for (piece in said) {
++            val spoken = SpeechTextNormalizer.normalize(piece, personaVoice = true)
++            assertFalse(spoken, "leans" in spoken || "stretches" in spoken)
++        }
++        assertEquals("ok", live.rest(reply))
 +    }
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaLoopWiringTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaLoopWiringTest.kt
@@ -54953,10 +55179,10 @@ index 0000000..69d66f5
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt
 new file mode 100644
-index 0000000..1ea648c
+index 0000000..3fd2ca5
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt
-@@ -0,0 +1,463 @@
+@@ -0,0 +1,481 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.app.Application
@@ -55192,7 +55418,7 @@ index 0000000..1ea648c
 +    fun `the loop gives her the moment only while nothing of his is going on, and puts it off otherwise`() {
 +        // Settled from settings first, then from what he is doing.
 +        val off = ownTime.indexOf("if (!persona.ownTimeIsOn(ownTimeConfig)) return null")
-+        val busy = ownTime.indexOf("if (!isFreeForCheckIn() && !ownPlanWaits) {")
++        val busy = ownTime.indexOf("if ((!isFreeForCheckIn() || queryMutex.isLocked) && !ownPlanWaits) {")
 +        val asked = ownTime.indexOf("persona.ownMoment(")
 +        assertTrue(off >= 0)
 +        assertTrue(busy > off)
@@ -55316,7 +55542,7 @@ index 0000000..1ea648c
 +        val service = File(main, "core/service/OpenDroidService.kt").readText()
 +        // Both ways the loop speaks are quiet then, and the line counts as ended at once.
 +        assertTrue(service.contains("if (agentLoop.quietForOwnTime) speechEnded() else textToSpeechEngine.speak(text)"))
-+        assertTrue(service.contains("if (agentLoop.quietForOwnTime) speechEnded() else textToSpeechEngine.speak(text, personaVoice = true)"))
++        assertTrue(service.contains("if (agentLoop.quietForOwnTime) speechEnded() else textToSpeechEngine.speak(text, personaVoice = true, since = since)"))
 +        assertEquals(2, Regex("""agentLoop\.quietForOwnTime""").findAll(service).count())
 +    }
 +
@@ -55369,14 +55595,14 @@ index 0000000..1ea648c
 +        for (reader in listOf(
 +            "PersonaActions.split(replyText)", "PersonaActionRows.unrunCommands(replyText)", "PersonaPrompts.cleanReply(ownAction.text)",
 +            "conversationRepository.insertMessage(sessionId, finalReplyMsg)", "memoryManager.storeMessage(finalReplyMsg, sessionId)",
-+            "liveSpeech.rest(finalReplyMsg.text)", "speakLine(toSay, hers = personaOn)", "persona.onReply()"
++            "liveSpeech.rest(finalReplyMsg.text)", "speakLine(toSay, hers = personaOn, since = speechSince)", "persona.onReply()"
 +        )) {
 +            assertTrue(reader, reply.indexOf(reader) > taken)
 +        }
 +        // While it streams, what is said early is read only through the view that never
 +        // says a line she keeps to herself or a command line (PersonaLiveSpeech).
 +        assertTrue(reply.contains("liveSpeech?.onStreamed(currentReplyText)"))
-+        assertEquals(1, Regex("""speakLine\(piece, hers = true\)""").findAll(reply).count())
++        assertEquals(1, Regex("""speakLine\(piece, hers = true, since = speechSince\)""").findAll(reply).count())
 +        // The reply with her thoughts still in it is named three times: where it is made,
 +        // where they are taken out, and as what is read when she is off.
 +        assertEquals(3, Regex("""\bwholeReply\b""").findAll(reply).count())
@@ -55390,6 +55616,24 @@ index 0000000..1ea648c
 +        // With her off nothing is taken out of anything.
 +        assertEquals(3, Regex("""persona\.withoutThoughts\(""").findAll(loop).count())
 +        assertEquals(3, Regex("""if \(personaOn\) (withContext\(NonCancellable\) \{ )?persona\.withoutThoughts\(""").findAll(loop).count())
++    }
++
++    @Test
++    fun `once speech is stopped during her reply, nothing more of it is said`() {
++        // The speech generation is read once, as the reply begins, before anything is said early.
++        val since = reply.indexOf("val speechSince = if (personaOn) speechGenerationCallback?.invoke() else null")
++        assertTrue(since >= 0)
++        assertTrue(since < reply.indexOf("PersonaLiveSpeech { piece ->"))
++        // An early sentence after a stop (he talks over her, Stop, the wake phrase, a new
++        // message) is neither said nor shown as being said, and neither is the rest.
++        val early = reply.substringAfter("PersonaLiveSpeech { piece ->").substringBefore("} else {")
++        val check = early.indexOf("if (!speechStoppedSince(speechSince)) {")
++        assertTrue(check >= 0)
++        assertTrue(check < early.indexOf("AgentState.Speaking(piece)"))
++        assertTrue(reply.contains("if (!toSay.isNullOrBlank() && !speechStoppedSince(speechSince)) {"))
++        // Both go to the speech queue with it, which drops a line of a generation a stop has passed.
++        val service = File(main, "core/service/OpenDroidService.kt").readText()
++        assertTrue(service.contains("agentLoop.speechGenerationCallback = { textToSpeechEngine.speechGeneration() }"))
 +    }
 +
 +    @Test
@@ -64335,7 +64579,7 @@ index 0000000..ca2ccaf
 +    }
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/voice/TextToSpeechEngineTest.kt b/app/src/test/java/com/opendroid/ai/core/voice/TextToSpeechEngineTest.kt
-index 0d4cf19..acca27b 100644
+index 0d4cf19..6931ca5 100644
 --- a/app/src/test/java/com/opendroid/ai/core/voice/TextToSpeechEngineTest.kt
 +++ b/app/src/test/java/com/opendroid/ai/core/voice/TextToSpeechEngineTest.kt
 @@ -4,15 +4,20 @@ import android.app.Application
@@ -64386,7 +64630,7 @@ index 0d4cf19..acca27b 100644
          server.close()
          speechThread.shutdownNow()
          ShadowMediaPlayer.resetStaticState()
-@@ -85,21 +94,230 @@ class TextToSpeechEngineTest {
+@@ -85,19 +94,248 @@ class TextToSpeechEngineTest {
      }
  
      @Test
@@ -64417,10 +64661,10 @@ index 0d4cf19..acca27b 100644
 -        assertEquals(1, clipsInCache().size)
 +        shadowOf(Looper.getMainLooper()).idleFor(CLIP_MS.toLong() + 10, TimeUnit.MILLISECONDS)
 +        assertEquals(listOf(first, second), done)
-         engine.destroy()
-         assertEquals(emptyList<File>(), clipsInCache())
-     }
- 
++        engine.destroy()
++        assertEquals(emptyList<File>(), clipsInCache())
++    }
++
 +    // ── One queue ────────────────────────────────────────────────────────────────────
 +
 +    private fun spokenLocally(): List<String> =
@@ -64571,6 +64815,26 @@ index 0d4cf19..acca27b 100644
 +    }
 +
 +    @Test
++    fun `a sentence of a reply whose speech was stopped after it began is never said`() {
++        val endings = Endings()
++        val engine = localEngine(endings)
++
++        // Her reply began, and he tapped the bubble to talk over her: speech was stopped.
++        val reply = engine.speechGeneration()
++        engine.stop()
++        val late = engine.speak("and another thing.", personaVoice = true, since = reply)
++        awaitDone(endings.interrupted, 1)
++        assertEquals(listOf(late), endings.interrupted)
++
++        // A line of the speech since then is said as usual.
++        val next = engine.speak("hi.", since = engine.speechGeneration())
++        awaitDone(endings.finished, 1)
++        assertEquals(listOf(next), endings.finished)
++        assertEquals(listOf("hi."), spokenLocally())
+         engine.destroy()
++    }
++
++    @Test
 +    fun `one prompt can be taken back without touching the lines around it`() {
 +        val endings = Endings()
 +        val engine = localEngine(endings)
@@ -64608,7 +64872,7 @@ index 0d4cf19..acca27b 100644
 +
 +        assertEquals(listOf("approval-prompt"), endings.interrupted)
 +        assertEquals(emptyList<String>(), endings.finished)
-+        assertEquals(emptyList<File>(), clipsInCache())
+         assertEquals(emptyList<File>(), clipsInCache())
 +
 +        // The queue goes on with the next line.
 +        val next = engine.speak("next")
@@ -64616,12 +64880,10 @@ index 0d4cf19..acca27b 100644
 +        shadowOf(Looper.getMainLooper()).idleFor(CLIP_MS.toLong() + 10, TimeUnit.MILLISECONDS)
 +        assertEquals(listOf(next), endings.finished)
 +        engine.destroy()
-+    }
-+
+     }
+ 
      @Test
-     fun `clips left behind by an earlier process are removed`() {
-         val stale = File(context.cacheDir, "elevenlabs_123.mp3").apply { writeText("x") }
-@@ -154,9 +372,238 @@ class TextToSpeechEngineTest {
+@@ -154,9 +392,238 @@ class TextToSpeechEngineTest {
          throw AssertionError("expected $players clip(s) to start playing")
      }
  
@@ -64862,7 +65124,7 @@ index 0d4cf19..acca27b 100644
          client = client,
          elevenLabsBaseUrl = server.url("/").toString().trimEnd('/'),
          dispatcher = speechThread.asCoroutineDispatcher()
-@@ -170,7 +617,7 @@ class TextToSpeechEngineTest {
+@@ -170,7 +637,7 @@ class TextToSpeechEngineTest {
          .body(Buffer().write(ByteArray(64) { 1 }))
          .build()
  
@@ -64871,7 +65133,7 @@ index 0d4cf19..acca27b 100644
          dataStore = PreferenceDataStoreFactory.create(
              scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
              produceFile = {
-@@ -179,7 +626,7 @@ class TextToSpeechEngineTest {
+@@ -179,7 +646,7 @@ class TextToSpeechEngineTest {
          ),
          providerCredentialStore = ElevenLabsOnlyCredentialStore(),
          runStartupMigration = false
@@ -65684,10 +65946,10 @@ index 0000000..403e162
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/voice/own/JapanesePhonemesTest.kt b/app/src/test/java/com/opendroid/ai/core/voice/own/JapanesePhonemesTest.kt
 new file mode 100644
-index 0000000..64a1a0b
+index 0000000..5490c36
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/voice/own/JapanesePhonemesTest.kt
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,93 @@
 +package com.opendroid.ai.core.voice.own
 +
 +import kotlinx.serialization.json.Json
@@ -65756,13 +66018,37 @@ index 0000000..64a1a0b
 +    fun `a sentence with no labels is dropped, not spoken as nothing`() {
 +        assertEquals(emptyList<List<String>>(), JapanesePhonemes.phonemize("。。") { null })
 +    }
++
++    @Test
++    fun `a line her voice cannot read is not reported said, so another voice can say it`() {
++        val label = "xx^xx-sil+xx=xx/A:xx+xx+xx/F:xx_xx#xx_xx@xx_xx|xx_xx"
++        val kana = listOf(label, "xx^sil-a+sil=xx/A:0+1+1/F:1_1#0_xx@1_1|1_1", label)
++        // Open JTalk knows nothing in a sentence of another script, or refused one.
++        assertEquals(null, JapanesePhonemes.phonemizeAll("ねえ。привет。") { if ("ねえ" in it) kana else emptyList() })
++        assertEquals(null, JapanesePhonemes.phonemizeAll("ねえ。") { null })
++        // A sentence of marks alone that gives nothing is only dropped.
++        assertEquals(1, JapanesePhonemes.phonemizeAll("ねえ。、。") { if ("ねえ" in it) kana else emptyList() }?.size)
++        assertEquals(emptyList<List<String>>(), JapanesePhonemes.phonemizeAll("。。") { null })
++    }
++
++    @Test
++    fun `a long run of katakana reaches Open JTalk broken into pieces it can hold`() {
++        val run = "ッ".repeat(340) + "ズ"
++        val safe = OpenJTalk.withLongKanaRunsBroken(run)
++        assertEquals(run, safe.replace("、", ""))
++        assertTrue(safe.split("、").all { it.length <= OpenJTalk.MAX_KANA_RUN })
++        // Ordinary text is left as it is.
++        assertEquals("ねえ、スモーク。", OpenJTalk.withLongKanaRunsBroken("ねえ、スモーク。"))
++        val hundred = "ア".repeat(OpenJTalk.MAX_KANA_RUN)
++        assertEquals(hundred, OpenJTalk.withLongKanaRunsBroken(hundred))
++    }
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/voice/own/KanaTextTest.kt b/app/src/test/java/com/opendroid/ai/core/voice/own/KanaTextTest.kt
 new file mode 100644
-index 0000000..84f2ebf
+index 0000000..8c550a2
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/voice/own/KanaTextTest.kt
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,148 @@
 +package com.opendroid.ai.core.voice.own
 +
 +import org.junit.Assert.assertEquals
@@ -65782,7 +66068,10 @@ index 0000000..84f2ebf
 +        "camp" to "K AE1 M P", "cat" to "K AE1 T", "never" to "N EH1 V ER0", "go" to "G OW1",
 +        "home" to "HH OW1 M", "baka" to "B AA1 K AH0", "ne" to "N IY1", "dame" to "D EY1 M",
 +        "don't" to "D OW1 N T", "slow" to "S L OW1", "down" to "D AW1 N", "rate" to "R EY1 T",
-+        "nails" to "N EY1 L Z", "careful" to "K EH1 R F AH0 L", "singer" to "S IH1 NG ER0"
++        "nails" to "N EY1 L Z", "careful" to "K EH1 R F AH0 L", "singer" to "S IH1 NG ER0",
++        "it's" to "IH1 T S", "that's" to "DH AE1 T S", "cats" to "K AE1 T S", "kids" to "K IH1 D Z",
++        "friends" to "F R EH1 N D Z", "knights" to "N AY1 T S", "kusa" to "K UW1 Z AH0",
++        "muri" to "M UH1 R IY0", "yoshi" to "Y OW1 SH IY0", "de" to "D IY1", "yo" to "Y OW1"
 +    ).mapValues { it.value.split(' ') }
 +
 +    private val kana = KanaText { cmu[it] }
@@ -65861,6 +66150,93 @@ index 0000000..84f2ebf
 +        assertEquals("smoke" to listOf("S", "M", "OW1", "K"), CmuDict.parseLine("smoke S M OW1 K"))
 +        assertNull(CmuDict.parseLine("read(2) R EH1 D"))
 +        assertEquals("abc" to listOf("EY1", "B"), CmuDict.parseLine("abc EY1 B # comment"))
++    }
++
++    @Test
++    fun `t s and d z at the end of a syllable are one sound`() {
++        assertEquals("イッツ", kana.word("it's"))
++        assertEquals("ザッツ", kana.word("that's"))
++        assertEquals("キャッツ", kana.word("cats"))
++        assertEquals("キッズ", kana.word("kids"))
++        assertEquals("フレンズ", kana.word("friends"))
++        assertEquals("ナイツ", kana.word("knights"))
++    }
++
++    @Test
++    fun `her japanese words that the english dictionary also lists read as japanese`() {
++        assertEquals("くさ", kana.word("kusa"))
++        assertEquals("むり", kana.word("muri"))
++        assertEquals("よし", kana.word("yoshi"))
++        assertEquals("で", kana.word("de"))
++        assertEquals("よ", kana.word("yo"))
++    }
++
++    @Test
++    fun `a decimal point and a thousands comma stay inside their number`() {
++        assertEquals("23.5", kana.convert("23.5"))
++        assertEquals("1,299", kana.convert("1,299"))
++        // Next to a word they are punctuation as before.
++        assertEquals("5。ゴー", kana.convert("5. go"))
++        assertEquals("ゴー、5", kana.convert("go, 5"))
++    }
++
++    @Test
++    fun `a curly apostrophe, an accent or full-width letters do not break a word`() {
++        assertEquals("ドーント", kana.convert("don\u2019t"))
++        assertEquals(kana.convert("cafe"), kana.convert("caf\u00e9"))
++        assertEquals(kana.convert("cafe"), kana.convert("cafe\u0301"))
++        assertEquals("オッケー", kana.convert("\uFF2F\uFF2B"))
++        // Kana keep their voiced marks.
++        assertEquals("がっこう、ゲーム", kana.convert("がっこう、ゲーム"))
++        assertEquals("が", kana.convert("か\u3099"))
++    }
++
++    @Test
++    fun `a letter held for ever is read as held`() {
++        assertEquals("んー", kana.word("mmmmm"))
++        assertEquals(kana.word("zzz"), kana.word("zzzzzzzzzzzz"))
++    }
++}
+diff --git a/app/src/test/java/com/opendroid/ai/core/voice/own/OwnVoiceCallbackTest.kt b/app/src/test/java/com/opendroid/ai/core/voice/own/OwnVoiceCallbackTest.kt
+new file mode 100644
+index 0000000..fc71d12
+--- /dev/null
++++ b/app/src/test/java/com/opendroid/ai/core/voice/own/OwnVoiceCallbackTest.kt
+@@ -0,0 +1,36 @@
++package com.opendroid.ai.core.voice.own
++
++import java.io.File
++import java.util.jar.JarFile
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * The sherpa-onnx native side calls the callback that takes her samples by name and
++ * signature: invoke(float[]) returning Integer. A Kotlin lambda compiled the usual way
++ * (invokedynamic) declares only the erased invoke(Object), so the native side would find
++ * nothing to call and she would make no sound at all. Unit tests never load the native
++ * library, so the compiled class itself is checked here.
++ */
++class OwnVoiceCallbackTest {
++
++    @Test
++    fun `the callback her voice hands to the native side declares invoke(float array) returning Integer`() {
++        val outer = OwnVoice::class.java
++        val prefix = outer.name.replace('.', '/') + "$"
++        val location = File(outer.protectionDomain.codeSource.location.toURI())
++        val entries = if (location.isDirectory) {
++            location.walk().filter { it.isFile }.map { it.relativeTo(location).invariantSeparatorsPath }.toList()
++        } else {
++            JarFile(location).use { jar -> jar.entries().asSequence().map { it.name }.toList() }
++        }
++        val nested = entries.filter { it.startsWith(prefix) && it.endsWith(".class") }
++            .map { Class.forName(it.removeSuffix(".class").replace('/', '.'), false, outer.classLoader) }
++        val callbacks = nested.filter { cls ->
++            val invoke = runCatching { cls.getDeclaredMethod("invoke", FloatArray::class.java) }.getOrNull()
++            invoke != null && invoke.returnType == Int::class.javaObjectType &&
++                kotlin.jvm.functions.Function1::class.java.isAssignableFrom(cls)
++        }
++        assertTrue("classes nested in OwnVoice: ${nested.map { it.name }}", callbacks.isNotEmpty())
 +    }
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/data/models/BuildDefaultsTest.kt b/app/src/test/java/com/opendroid/ai/data/models/BuildDefaultsTest.kt
