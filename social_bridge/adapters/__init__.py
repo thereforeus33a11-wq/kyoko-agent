@@ -2,7 +2,10 @@
 import importlib
 import logging
 
-_MODULES = ["mastodon"]
+_MODULES = [
+    "reddit", "x", "youtube", "facebook", "instagram", "threads", "bluesky", "mastodon",
+    "telegram", "discord", "linkedin", "tumblr", "lemmy",
+]
 
 for _m in _MODULES:
     try:

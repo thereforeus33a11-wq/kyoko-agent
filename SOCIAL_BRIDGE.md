@@ -100,7 +100,23 @@ If `api_token` is set in the config, add `-H "Authorization: Bearer <token>"`. T
 
 ## Platforms
 
-<!-- PLATFORM_TABLE -->
+| Platform | Post | Comment / reply | DM | Inbox (polled) | What you need |
+|---|---|---|---|---|---|
+| **Reddit** | ✅ text, link, image, gallery, video | ✅ posts, comments, PM threads | ✅ classic PMs | PMs, mentions, replies | App at reddit.com/prefs/apps; `script` app + username/password, or `refresh_token` (2FA accounts) |
+| **X / Twitter** | ✅ text + up to 4 images / video | ✅ replies | ✅ | mentions, replies, DMs | Developer App set to *Read + write + Direct message*; 4 OAuth 1.0a keys (or OAuth 2 refresh token) |
+| **YouTube** | ✅ video upload | ✅ on videos + replies to comments | — no API | comments and replies on your videos | Google Cloud project with the YouTube Data API, OAuth client + `refresh_token` |
+| **Facebook** | ✅ Page posts, photos, video | ✅ | ✅ Messenger (to people who messaged the Page) | Messenger, comments, Page tags | Business-type Meta app + Page access token (personal profiles can't be automated through the API) |
+| **Instagram** | ✅ image / reel / carousel (media required) | ✅ on own media + replies | ✅ (to people who messaged you) | DMs, comments | Professional (Business/Creator) account + Instagram Login token |
+| **Threads** | ✅ text, image, video, carousel | ✅ replies | — no API | replies, mentions | Meta app with the Threads use case + long-lived token |
+| **Bluesky** | ✅ text, images, video, link cards | ✅ replies | ✅ | mentions, replies, quotes, DMs | Handle + app password (tick "allow direct messages") |
+| **Mastodon** | ✅ | ✅ | ✅ (direct visibility) | mentions, replies, DMs | Instance URL + access token (Preferences → Development) |
+| **Telegram** | ✅ to channels/groups | ✅ replies | ✅ to users who started the bot | DMs, group mentions/replies | Bot token from @BotFather |
+| **Discord** | ✅ to channels / forum threads | ✅ replies | ✅ | DMs it opened, mentions/replies in watched channels | Bot token from the Developer Portal; bot invited to your servers |
+| **LinkedIn** | ✅ text, link, images, video | ✅ | — no API | — | OAuth token with `w_member_social` |
+| **Tumblr** | ✅ NPF posts with media | ✅ as reblog-with-comment | — no API | replies, reblogs, mentions | App at tumblr.com/oauth/apps + 4 OAuth 1.0a keys |
+| **Lemmy** | ✅ | ✅ | ✅ | replies, mentions, PMs | Instance + username/password |
+
+Run `python social_bridge.py platforms` to see every setting, with where to get each value and what format each action expects as its target. TikTok, Snapchat, WhatsApp personal accounts and personal Facebook profiles have no public API for posting, commenting or messaging, so they aren't included.
 
 ## Adding a platform
 Subclass `Adapter` in `social_bridge/adapters/<name>.py` (see `mastodon.py`), decorate it with `@register`, add the module name to `_MODULES` in `adapters/__init__.py`, then run `python tools/build_single_file.py` to rebuild the single file. Tests use `tests/fakehttp.py`: `python -m pytest -q tests`.
