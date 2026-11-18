@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mood auditions on CPU: each candidate reference reads the same 5 lines; brightened like her chosen voice;
+# Mood auditions on the GPUs (two readers per GPU): each candidate reference reads the same 5 lines; brightened like her chosen voice;
 # one file per mood, candidates A-D in order with a gap between them. Median pitch is logged per candidate.
 set -uo pipefail
 source /w/job/scripts/env.sh
@@ -9,8 +9,8 @@ S2=$(ls SoVITS_weights_v2ProPlus/y71_e12_*.pth); G1=GPT_weights_v2ProPlus/y52-e1
 run_one() {
   style=$1; cand=$2; clip=$3; text=$4
   d=$O/$style/$cand; mkdir -p $d
-  CUDA_VISIBLE_DEVICES="" python $J/scripts/speak.py --device cpu --gpt $G1 --sovits $S2 --out $d \
-     --ref $J/data/wavs/$clip.wav --ref-text "$text" --lines $J/out/aud_lines.txt --speed 1.08 --temperature 1.1 --top-k 25 > $d.log 2>&1
+  CUDA_VISIBLE_DEVICES=$GPU python $J/scripts/speak.py --half --gpt $G1 --sovits $S2 --out $d \
+     --ref $J/data/wavs/$clip.wav --ref-text "$text" --lines $J/data/aud_lines.txt --speed 1.08 --temperature 1.1 --top-k 25 > $d.log 2>&1
   fr=1.04; [ "$style" = mock_high ] && fr=1.0
   for w in $d/0???.wav; do [ -f "$w" ] || continue; python $J/scripts/younger.py $w ${w%.wav}_b.wav --semitones 1.0 --formant $fr; done
   echo "done $style $cand"
@@ -18,9 +18,9 @@ run_one() {
 export -f run_one; export O J R S2 G1
 N=0
 while IFS=$'\t' read -r style cand clip text; do
-  run_one "$style" "$cand" "$clip" "$text" &
-  N=$((N+1)); if [ $((N % 3)) -eq 0 ]; then wait; fi
-done < $J/out/aud_refs.tsv
+  GPU=$((N % 4)) run_one "$style" "$cand" "$clip" "$text" &
+  N=$((N+1)); if [ $((N % 8)) -eq 0 ]; then wait; fi
+done < $J/data/aud_refs.tsv
 wait
 python - <<PY
 import glob, numpy as np, soundfile as sf, pyworld as pw, os
