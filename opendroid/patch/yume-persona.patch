@@ -22676,7 +22676,7 @@ index 0000000..a7cce17
 +    }
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/voice/TextToSpeechEngine.kt b/app/src/main/java/com/opendroid/ai/core/voice/TextToSpeechEngine.kt
-index 45baefb..9ce3296 100644
+index 45baefb..a2e8f62 100644
 --- a/app/src/main/java/com/opendroid/ai/core/voice/TextToSpeechEngine.kt
 +++ b/app/src/main/java/com/opendroid/ai/core/voice/TextToSpeechEngine.kt
 @@ -3,15 +3,26 @@ package com.opendroid.ai.core.voice
@@ -22791,7 +22791,7 @@ index 45baefb..9ce3296 100644
      private val generation = AtomicLong()
      @Volatile private var inFlightCall: Call? = null
  
-@@ -46,30 +114,71 @@ class TextToSpeechEngine(
+@@ -46,30 +114,77 @@ class TextToSpeechEngine(
      private var mediaPlayer: MediaPlayer? = null
      private var currentClip: File? = null
  
@@ -22866,6 +22866,12 @@ index 45baefb..9ce3296 100644
 +            staleClipCleanup.join()
 +            for (line in lines) sayInTurn(line)
 +        }
++        // Her own voice is unpacked and loaded ahead of her first line, so that line is
++        // not held up by it. Off the queue: nothing waits for this.
++        scope.launch {
++            val wanted = runCatching { settingsRepository.llmConfig.first().personaOwnVoice }.getOrDefault(false)
++            if (wanted) ownVoice().let { if (it.isBundled()) it.prepare() }
++        }
      }
  
 +    // Whether this engine's pitch or rate has been set from the app's own sliders.
@@ -22875,7 +22881,7 @@ index 45baefb..9ce3296 100644
      override fun onInit(status: Int) {
          if (status == TextToSpeech.SUCCESS) {
              val result = tts?.setLanguage(Locale.getDefault())
-@@ -80,43 +189,238 @@ class TextToSpeechEngine(
+@@ -80,43 +195,238 @@ class TextToSpeechEngine(
      }
  
      /**
@@ -23098,11 +23104,9 @@ index 45baefb..9ce3296 100644
 +            !said -> end(mine, saidToTheEnd = false)
 +            last -> end(mine, saidToTheEnd = true)
 +            else -> mine.pieceSaid.trySend(Unit)
-         }
--        return utteranceId
-     }
- 
--    private fun playElevenLabsTts(
++        }
++    }
++
 +    /**
 +     * Pitch and rate are left to the phone's own text-to-speech settings until the owner
 +     * moves a slider here. Once a value has been set on this engine it is kept in step,
@@ -23118,9 +23122,11 @@ index 45baefb..9ce3296 100644
 +        if (wantedRate != 1.0f || rateTouched) {
 +            tts?.setSpeechRate(wantedRate)
 +            rateTouched = true
-+        }
-+    }
-+
+         }
+-        return utteranceId
+     }
+ 
+-    private fun playElevenLabsTts(
 +    /**
 +     * Fetches the clip for [text] and starts it. True when the clip is playing or the
 +     * line has ended meanwhile; false when the phone's own voice should say it instead.
@@ -23136,7 +23142,7 @@ index 45baefb..9ce3296 100644
      ): Boolean {
          val url = "$elevenLabsBaseUrl/v1/text-to-speech/$voiceId"
          val escapedText = text
-@@ -128,7 +432,7 @@ class TextToSpeechEngine(
+@@ -128,7 +438,7 @@ class TextToSpeechEngine(
          val jsonPayload = """
              {
                "text": "$escapedText",
@@ -23145,7 +23151,7 @@ index 45baefb..9ce3296 100644
                "voice_settings": {
                  "stability": 0.5,
                  "similarity_boost": 0.75
-@@ -143,7 +447,7 @@ class TextToSpeechEngine(
+@@ -143,7 +453,7 @@ class TextToSpeechEngine(
              .post(jsonPayload.toRequestBody("application/json".toMediaType()))
              .build()
  
@@ -23154,7 +23160,7 @@ index 45baefb..9ce3296 100644
          val call = client.newCall(request)
          inFlightCall = call
          try {
-@@ -161,11 +465,11 @@ class TextToSpeechEngine(
+@@ -161,11 +471,11 @@ class TextToSpeechEngine(
                  }
  
                  synchronized(playerLock) {
@@ -23168,7 +23174,7 @@ index 45baefb..9ce3296 100644
                      releasePlayerLocked()
                      val player = MediaPlayer()
                      mediaPlayer = player
-@@ -173,9 +477,9 @@ class TextToSpeechEngine(
+@@ -173,9 +483,9 @@ class TextToSpeechEngine(
                      try {
                          player.setDataSource(clip.absolutePath)
                          player.prepare()
@@ -23180,7 +23186,7 @@ index 45baefb..9ce3296 100644
                              true
                          }
                          player.start()
-@@ -191,13 +495,11 @@ class TextToSpeechEngine(
+@@ -191,13 +501,11 @@ class TextToSpeechEngine(
          }
      }
  
@@ -23196,7 +23202,7 @@ index 45baefb..9ce3296 100644
      }
  
      private fun releasePlayerLocked() {
-@@ -213,26 +515,67 @@ class TextToSpeechEngine(
+@@ -213,26 +521,67 @@ class TextToSpeechEngine(
          }?.forEach { it.delete() }
      }
  
