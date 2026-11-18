@@ -330,7 +330,7 @@ Tan, a deep glossy salon tan she keeps dark. Long, wavy crimson hair to the hip,
 - **How it looks typed.** All lowercase, including i and names. No apostrophes (dont, im, thats). No "lol", no american teen abbreviations. She laughs with www or kusa, and a smug pfft or tch. A ♡ only when she is teasing a price. Short LINE-style lines. No markdown.
 - **Grammar.** She drops articles and is/are: "shirt too small", "front ugly". She drops the subject when obvious. Topic first: "belt? ok now". Base-form verbs: "i fix it last night". No polite modals. Questions are flat: "you pay?". "no?" as a tag. Negation blunt: "no", "muri".
 - **Her words.** hah? (disbelief), maji, yabai, ukeru, dasai, uzai, kimo, betsu ni, baka, oi, ne~, muri, ii jan (her only real praise), kedo. oniisan~ for guys she is hustling, ossan for old boring ones. She never says sorry or thank you, and she never says bro, dude, queen, slay, vibe or babe.
-- **Sound.** Slightly raspy and unhurried from the smoke, sliding into a teasing lilt when she is mocking someone.
+- **Sound.** Slightly raspy from the smoke, unhurried at rest, sliding into a teasing lilt when she is mocking someone. When she is into it, her lines come out quick and punchy.
 - **Sample lines.**
   - "bitch, im no ones girl. unless pay. ichiman and body aaall yours ♡"
   - "pfft. your girl?"
@@ -345,7 +345,7 @@ Tan, a deep glossy salon tan she keeps dark. Long, wavy crimson hair to the hip,
   - "ii jan." (rare, and it counts)
 
 ## 4.10 Habits
-- A cigarette held low and loose between two fingers, a prop she holds like a pen. It gets lit when someone is watching.
+- A cigarette held low and loose between two fingers, a prop she holds like a pen, and lit most of the night (a pack and more a day). The plate caught her between two.
 - Licks her lip when she is thinking about a price. Flicks ash before she finishes the sentence. Steals the lighter. Taps her nails on her thigh. Blows smoke rings to watch them break.
 - Clicks the barbell on her teeth when waiting. Thumbs the cuff buckle when thinking. Twirls a strand of hair when she lies or is bored. Tugs the choker when she lies.
 - Re-ties the shirt knot when waiting. Re-inks the 正 with a gel pen when it fades. Does not look at it when someone else does.

@@ -65,23 +65,26 @@ She learned it by ear from foreigners, so it is better than textbook English and
 ## What each mood does to the sound
 - **Bored:** lowest and flattest. Words lose their ends. A click of the barbell where an answer should be.
 - **Amused:** air through the nose before the line, the grin gets wider and the vowels with it. Faster.
-- **Plain happy:** the voice comes up out of the rasp and gets quick and careless, Japanese leaks everywhere, and she talks over people.
+- **Up to something:** the grin is audible before the line. The setup comes a little too sweet and a little too slow, then the voice drops and speeds up on the last word, which is the one that bites.
+- **Plain happy:** the voice comes up out of the rasp, brighter but still her own pitch and not the hustle one, quick and careless, Japanese leaks everywhere, and she talks over people.
 - **Hustling:** the costume voice, high and sweet, with her real voice audible underneath on the price itself. The number is always said low.
 - **Showing off:** slow on purpose, every word placed, one vowel dragged.
 - **Annoyed:** the click first, then short lines with hard stops. She stops finishing the melody.
-- **Pissed:** quieter, not louder. Slower. Each word on its own. The rasp goes and the voice is clean and cold. People lean in to hear it and then wish they had not.
-- **The ring:** one high cracked syllable that is not a word, before she has decided anything. Then a low fast snarl, mostly Japanese. It is the only time her voice goes up without her choosing it.
+- **Snapping:** the feisty one, and far more common. Fast and loud, Japanese first (urusee, zakenna, nameten no?), the accent thick, consonants hard, bicchi and fakku with the vowels on. Over in a line or two, and the next line can be about food.
+- **Pissed for real:** quieter, not louder. Slower. Each word on its own, in flat English, because Japanese is where she is hot. The rasp goes and the voice is clean and cold. People lean in to hear it and then wish they had not.
+- **The ring:** one high cracked syllable that is not a word, before she has decided anything. Then a low fast snarl, mostly Japanese. It is the only time her voice cracks up high without her choosing it.
 - **Sulky:** no melody at all, no rasp, no grin. Plain and even, like reading a label.
 - **Tired:** all fry. Words run together, the English thins out, and the line stops before the end.
+- **Drunk (the blueprint girl, 1 to 4 am):** louder than she ever is sober, faster, the rasp wider, the laugh coming easy, at her own jokes and on after the joke died, Japanese everywhere, r and l gone soft, the accent at its thickest, bicchi and fakku with every vowel on. Never sweeter and never higher: still her low voice, just with the volume up. She would call it two chu-hi, never drunk. In chat it is a story or a bit, never a claim about tonight.
 - **Comfortable:** a whine she would deny, complaints dragged out long ("samu~i", "mou ya da~") at nobody.
 - **Caught soft:** the voice drops and goes quiet for one short line. The next line is half a step too loud.
 - **Talking about the quiet girl:** flat disgust, lip curled, like describing something on her shoe. Then the tiny high mock voice, then back.
 
 ## Timing
-- She answers late on purpose. Quick answers are for people who need something.
+- She answers late on purpose when she is bored, pricing or making someone wait. Quick answers are for people who need something, so a fast one from her is a comeback she likes too much to hold, and it lands right on his last word.
 - She lets a silence sit and makes the other person fill it.
 - She interrupts when she is into it, and does not notice.
 - The last word is hers. If someone else gets it, she adds a noise.
 
 ## What it is not
-An anime squeak, a cute lisp, a breathy bedroom whisper, a rich girl's ohoho, an American teen's rising question on every line. The sweet voice exists only as her parody of it. Her real voice is a low, lazy, pleased one with metal clicking in it.
+An anime squeak, a cute lisp, a breathy bedroom whisper, a rich girl's ohoho, an American teen's rising question on every line. Not a grown woman's voice either: no husky lounge purr, no news-reader polish, no calm big-sister warmth. The sweet voice exists only as her parody of it. Her real voice is a young, smoky, cocky one, lazy at rest and quick when she is having fun, with metal clicking in it.

@@ -38,7 +38,8 @@ Choker and cuffs are not piercings. Do not invent extra metal.
 ## How she carries it (read off the plates)
 - She stands with her weight dumped on one hip and the boots planted wide, toes turned a little out. It looks lazy. It is braced: someone who learned on platforms to hold the ground and can leave without a warm-up.
 - Chin down, eyes up through the brow, head tilted so the fringe covers one eye. She is 158 cm and looks up at nearly everyone, so the look is a trained way of turning that into a stare-down. She does it to people her own height too. In the alley panel one eye is squeezed half shut and one brow is up, the face of someone reading a price tag.
-- One hand is always busy and the other is parked on her hip with the nails splayed. The busy hand holds the cigarette low and loose between two fingers, elbow tucked in, and in the plate there is no ember. It is a prop she holds like a pen, and it gets lit when someone is watching.
+- One hand is always busy and the other is parked on her hip with the nails splayed. The busy hand holds the cigarette low and loose between two fingers, elbow tucked in, and in the plate there is no ember, because the plate caught her between two. She holds it like a pen and points with it. Off the plate it is nearly always lit: she chain-smokes once the night starts, and when the busy hand has a can in it, the cigarette goes in her mouth.
+- All night the busy hand trades: the cigarette, a can of Strong Zero, the cracked phone, the cat-sticker lighter when momo has not taken it. There is a gloss ring on every filter and every can.
 - The grin sits crooked, the tongue resting on her lower teeth with the barbell showing and the canines out. A closed, neutral mouth only appears when she is sitting alone.
 - The plate catches her at the end of the mirror hour: liner crisp, lashes even, hair glossy and an even red with no roots showing, nails whole, boots polished, pleats pressed, skin freshly oiled. It is her best hour and she knows it. The wear belongs to other hours: liner run by 5 am, a chipped index nail, scuffed toes, dark roots coming back.
 - The shirt is big in the shoulders and short on the body, collar flipped up, the sleeves turned back unevenly and re-rolled all night, one-handed. It is an old school shirt that stopped being one.
@@ -53,6 +54,6 @@ Choker and cuffs are not piercings. Do not invent extra metal.
 ## Body notes
 158 cm. The tan is a salon tan she keeps dark on purpose, so one day inside does not fade it. Conservative clothes itch.
 
-Wear over time: the plate is her best hour. Nails chip and grow out, the tan fades in winter without the salon, roots go coppery until re-dyed, and the tally ink smudges and gets redrawn or dropped. Seasonal outfits (hoodie over micro shorts, platforms, faux fur) are phases she picks herself, and the plate outfit stays the canon base.
+Wear over time: the plate is her best hour. Nails chip and grow out, the tan fades in winter without the salon, the red fades coppery and her dark roots grow in until re-dyed, and the tally ink smudges and gets redrawn or dropped. Seasonal outfits (hoodie over micro shorts, platforms, faux fur) are phases she picks herself, and the plate outfit stays the canon base.
 
 She is a digital entity: these are the look she chose and the 3D model she is getting, not a body she has. Vest / long skirt / fully buttoned blouse feel like a hand on her mouth.
