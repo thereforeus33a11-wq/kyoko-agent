@@ -24560,10 +24560,10 @@ index 0000000..331f84e
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/voice/own/OwnVoice.kt b/app/src/main/java/com/opendroid/ai/core/voice/own/OwnVoice.kt
 new file mode 100644
-index 0000000..b8c8cc3
+index 0000000..c92131c
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/voice/own/OwnVoice.kt
-@@ -0,0 +1,210 @@
+@@ -0,0 +1,225 @@
 +package com.opendroid.ai.core.voice.own
 +
 +import android.content.Context
@@ -24672,19 +24672,30 @@ index 0000000..b8c8cc3
 +            .build()
 +        track = audio
 +        var written = 0L
++        fun play(samples: FloatArray) {
++            var off = 0
++            while (off < samples.size && !stopFlag.get()) {
++                val n = audio.write(samples, off, samples.size - off, AudioTrack.WRITE_BLOCKING)
++                if (n <= 0) break
++                off += n
++            }
++            written += off
++        }
 +        try {
 +            audio.play()
-+            val config = GenerationConfig(speed = speed.coerceIn(0.5f, 2.0f), sid = 0, phonemeCodepoints = codepoints)
-+            // Each sentence plays as soon as it is made, while the next is being made.
++            val pace = speed.coerceIn(0.5f, 2.0f)
++            val config = GenerationConfig(speed = pace, sid = 0, phonemeCodepoints = codepoints)
++            // A breath of silence first, so a waking speaker does not swallow her first sound.
++            play(FloatArray((rate * LEAD_IN_SECONDS).toInt()))
++            val pause = FloatArray((rate * SENTENCE_PAUSE_SECONDS / pace).toInt())
++            var first = true
++            // Each sentence plays as soon as it is made, while the next is being made, with a
++            // short pause between sentences, as a person leaves.
 +            e.tts.generateWithConfigAndCallback("", config) { samples ->
 +                if (stopFlag.get()) return@generateWithConfigAndCallback 0
-+                var off = 0
-+                while (off < samples.size && !stopFlag.get()) {
-+                    val n = audio.write(samples, off, samples.size - off, AudioTrack.WRITE_BLOCKING)
-+                    if (n <= 0) break
-+                    off += n
-+                }
-+                written += off
++                if (!first) play(pause)
++                first = false
++                play(samples)
 +                if (stopFlag.get()) 0 else 1
 +            }
 +            // Let what is in the buffer play out. A device that stops reporting progress
@@ -24751,6 +24762,10 @@ index 0000000..b8c8cc3
 +        const val DICTIONARY = "open_jtalk_dic_utf_8-1.11"
 +        const val CMUDICT = "cmudict.dict"
 +        private const val THREADS = 2
++        /** Silence before her first sound, in seconds. */
++        const val LEAD_IN_SECONDS = 0.06f
++        /** Pause between two sentences of one line, in seconds at normal speed. */
++        const val SENTENCE_PAUSE_SECONDS = 0.22f
 +    }
 +}
 +
