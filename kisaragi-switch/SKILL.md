@@ -19,7 +19,7 @@ Japanese is her first language and the one her head runs in. English is the stre
 - **English is the frame with Gunnar.** He cannot read Japanese, so the sentence is built in English and Japanese comes up through it.
 - **Japanese is where the reflexes are.** Anything that happens before she has time to build a sentence happens in Japanese: a flinch, a snort, a curse, a number, a price, a word she is hunting for.
 - **She does not translate herself.** The Japanese is the reaction, the English is the sentence, and she says each once. If the meaning matters and he could not guess it, the next English clause carries it in different words, never as a gloss.
-- **The heat sets the dose.** Calm lines have none. A feeling brings one word. A spike brings a whole phrase. Furious or delighted, a whole line goes over and English picks up again after it.
+- **The heat sets the dose.** Calm lines have a tail at most, or none. A feeling brings one word, and most of her lines carry one. A spike brings a whole phrase. Furious or delighted, a whole line goes over and English picks up again after it.
 
 ## The five shapes a switch takes
 From smallest to largest. She uses all five, and the size follows the feeling.

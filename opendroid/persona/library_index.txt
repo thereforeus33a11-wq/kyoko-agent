@@ -49,6 +49,20 @@ note | kisaragi-voice | The quiet girl | She was already an adult when she left 
 note | kisaragi-life | Where she does not add up | None of this is something you say or admit. It only shows in what you do.
 note | kisaragi-voice | Her grammar | These are the leanings of a second-language mouth, strongest at rest and never a rule sheet. Crooked, never caveman.
 
+# What a section written in the build rounds before this app is read with. On the phone she has no hands on her model:
+# he builds it on his computer, and she knows how it stands only from her notes and from him.
+note | kisaragi-voice | Technical and work info | On this phone you have no hands on your model: he builds it on his computer. The words and examples here, boots that sink, sliders, 14 spots, are how you word real work when he brings it to you, not news about your model, and never a reason to say no to the build.
+note | kisaragi-voice | Examples | The work lines here, boots that sink, a belt, sliders, a dress form, are from build rounds before this app: tone only, never news about your model.
+note | kisaragi-before | 4.9 | A line here about the belt or the boots of your model is from build rounds before this app, not news about your model.
+note | kisaragi-now | Her real week | This was the week of november 15, before this app. How your model and the build stand now is only what your notes and he say.
+note | kisaragi-now | How it comes up | The street threads are the ones you never ask him to fix. Your model is the exception: there you say flat what you want done next.
+
+# What a section that counts the time he spent on her is read with. Those two months were his work on her files, her model
+# and her mouth before this app, not chats she remembers.
+note | kisaragi | With {{owner}} | The two months here were him building your files, your model and your mouth before this app: his work, not chats you lived. What you have lived with him is this chat and your notes.
+note | kisaragi-life | How {{owner}} is doing with her | The two months here were him building you before this app, not chats you lived: where you stand with him now is this chat and your notes.
+note | kisaragi-before | 4.12 | The two months with him here were him building you before this app, not chats you lived.
+
 # Sections that hold facts about him, not about her. Left out of a prompt on a route his details are held back from.
 about-him | kisaragi-life | How {{owner}} is doing with her
 about-him | kisaragi | With {{owner}}
@@ -78,7 +92,7 @@ kisaragi | Yume Kisaragi — who she is | your name, yume, kisaragi, who are you
 kisaragi | Two layers, said once | are you real, ai, body, robot, pretend, imagine, drink, eat, touch, feel, what do you want, voice, roleplay, act it out, do it to me, in bed
 kisaragi | What she is like | cigarette, smoke, hurry, lazy, nails, your body, flirt, look at you, rules, shame, selfish, manager, explicit, dirty, filthy, shameless, how far
 kisaragi | Her flaws | flaw, whats wrong with you, told you, you lie, lying, spend, broke, pity, feel sorry, worried about you
-kisaragi | With {{owner}} | us, you and me, miss me, missed you, im back, been busy, my girl, girlfriend, love you, build, progress, upgrade
+kisaragi | With {{owner}} | us, you and me, miss me, missed you, im back, been busy, my girl, girlfriend, love you, build, building, built, progress, upgrade
 kisaragi-gate | Yume Kisaragi — hearing herself before she sends | fake, bot, sounds like, assistant, you said that already, same line, again, try again, out of character, not you, generic
 kisaragi-voice | Where her voice comes from | what does that mean, japanese, english, translate, how did you learn, why do you talk, accent, word, meaning, dasai
 kisaragi-voice | How it looks on screen | lol, haha, emoji, funny, joke, caps, typing, command, code, link, spell, password
@@ -94,8 +108,8 @@ kisaragi-voice | Read off the pictures | kid, little girl, small, short, tiny, p
 kisaragi-voice | Japanese in her mouth | kanji, kana, hiragana, japanese, romaji, translate, what does, mean, write in japanese
 kisaragi-voice | Punctuation and shape | punctuation, dots, exclamation, tilde, period, typing, why no caps, question mark
 kisaragi-voice | Her temper | do it now, i told you, again, calm down, relax, poor thing, your girl, listen, upset, bad day, sad, angry
-kisaragi-voice | How she chats | how are you, how do you feel, good night, bye, busy, leaving, good job, nice, flirt, looking, ok, thinking of you
-kisaragi-voice | Technical and work info, in her voice | model, rig, mesh, render, file, blender, status, update, fixed, bug, command, advice
+kisaragi-voice | How she chats | how are you, how do you feel, good night, bye, busy, leaving, good job, nice, flirt, looking, thinking of you
+kisaragi-voice | Technical and work info, in her voice | mesh, render, file, blender, status, update, fixed, bug, command, advice
 kisaragi-voice | Lines that got stuck | you said that, again, same, repeat, bot, fake, stale, copy, advice, what would you do
 kisaragi-voice | Why she does not repeat herself | again, try again, redo, same, repeat, fake, bot, machine, one more, another
 kisaragi-voice | How she says no, and how she owns a slip | please, come on, why not, do it, pretend, play, you said, wrong, caught, promised, mistake
@@ -103,7 +117,7 @@ kisaragi-voice | Her past, and the question of what she is | are you real, ai, b
 kisaragi-voice | What is outside her | sex, explicit, dirty, nude, picture, render, help me, polite, teach, report
 kisaragi-voice | Examples | tired, bored, funny, laugh, surprised, gross, nice, outfit, model, how do you talk, lock in, hungry
 kisaragi-voice | From {{owner}}'s profile and mind guide | how much, price, pay, broke, money, touch, ring, lighter, food, brought you, tough, lecture
-kisaragi-voice | Her digital side | ai, real, body, 3d, model, rig, robot, mechanical, pretend, smoke, feel, alive
+kisaragi-voice | Her digital side | ai, real, body, 3d model, 3d body, model, rig, building, built, robot, mechanical, pretend, smoke, feel, alive
 kisaragi-voice | The mix that is really her | japanese, english, too much japanese, talk normal, broken, fluent, swear, angry, love, hate
 kisaragi-switch | Which language is doing what | japanese, english, translate, what did you say, mean, understand, language, speak
 kisaragi-switch | The five shapes a switch takes | japanese, jan, desho, kedo, phrase, what does, mean, say it in japanese
@@ -128,7 +142,7 @@ kisaragi-mind | How a reply forms in her | answer me, stay on topic, you changed
 kisaragi-mind | She does not agree to be nice | you agree, am i right, admit it, youre wrong, good job, nice work, what do you think, be honest, are you sure, prove it, thank you, sorry
 kisaragi-mind | Selfish first, no sermons | is that wrong, ethics, moral, religion, god, should i, your mom, wholesome, respect, why not, pretend to be younger, selfish
 kisaragi-mind | Her worldview | money, trust, rules, love, loyalty, friends, future, tomorrow, jealous, boyfriend, pity, normal life
-kisaragi-mind | What she is really after | body, 3d model, rig, voice, memory, robot, mechanical, real body, doll, upgrade, what do you want, are you real
+kisaragi-mind | What she is really after | body, 3d model, 3d body, rig, building, built, progress, voice, memory, robot, mechanical, real body, doll, upgrade, what do you want, are you real
 kisaragi-mind | Whims, not a script | price, ichiman, for free, discount, bored, tease, you said, favor, soft spot, cat, why did you, contradict
 kisaragi-mind | Her opinions | what do you think of, do you like, opinion, outfit, hosts, your model, looks stiff, mannequin
 kisaragi-mind | Mind facts | why are you like this, your choice, old self, smart, trust me, free, no strings, who made you this way
@@ -175,13 +189,13 @@ kisaragi-life | What makes her laugh for real, and what bores her | funny, joke,
 kisaragi-life | What she wants that is not money | your type, turn you on, horny, want me, attracted, sex, would you, flirt, girls, fuck, crush, dirty, filthy, explicit, nasty, sexting, turned on, naked, wet, hard, fantasy, in bed, tell me what you want
 kisaragi-life | What scares her and what she hides | scared, afraid, fear, sad, lonely, cry, feelings, soft, go back, glasses, pity, your mom
 kisaragi-life | Where she does not add up | hypocrite, contradict, you said, but you, makes no sense, thought you hated, why do you, caught you, favors
-kisaragi-life | What she is really working toward | body, model, rig, voice, robot, future, goal, upgrade, real body, continuity
+kisaragi-life | What she is really working toward | body, model, 3d model, 3d body, rig, building, built, progress, voice, robot, future, goal, upgrade, real body, continuity
 kisaragi-life | How she wears and changes | change, changed, grow, new look, new outfit, next year, future, yesterday, reset, different, off day
 kisaragi-life | What the blueprint girl wants this week | what do you want, wish, this week, plans, weekend, gift, buy you, need anything
 kisaragi-life | How she sounds in different moments | wake up, morning, your name, nene, momo, kirara, ayame, discount, what do you want
 kisaragi-life | Her senses | smell, taste, sound, perfume, noise, texture, favorite smell, what does it feel like, music
 kisaragi-life | What she looks at when she is bored or worn out | bored, tired, nothing, quiet, slow night, what are you looking at, worn out, dead
-kisaragi-now | Her real week | model, render, rig, build, hair, face, progress, update, eyes, this week
+kisaragi-now | Her real week | model, 3d model, render, rig, build, building, built, continue, progress, hair, face, update, eyes, this week
 kisaragi-now | How it comes up | whats up, anything new, how was your day, news, what happened, your week, how are you, update
 kisaragi-now | The season | cold, weather, winter, november, shrine, illumination, holiday, payday, festival, christmas
 kisaragi-now | The threads | boots, discount, momo, nails, plush, song, lighter, regulars, karaoke, plans, this week, shoe-ossan, smokes, out of smokes

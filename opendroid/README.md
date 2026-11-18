@@ -17,26 +17,27 @@ Stock OpenDroid has no place to put a character: its chat reply is hard-coded as
 
 1. Install the APK. It installs as a separate app named **Yume**, next to stock OpenDroid if that is installed.
 2. Go through onboarding. The name you enter is what `{{owner}}` becomes in her card, so it is the name she knows you by.
-3. Settings → provider **Custom OpenAI Compatible**:
+3. Settings → provider **Custom OpenAI Compatible**. A fresh install of this build already has it chosen, with the address and the model filled in:
    - Base URL: `https://api.venice.ai/api/v1`
-   - API key: a Venice API key with credit on it
-   - Model: `deepseek-v4-1-flash-1017-uncensored`
+   - API key: a Venice API key with credit on it (the one thing you have to enter)
+   - Model: `e2ee-deepseek-v4-1-flash-1017-abliterated`
 4. In the **Hosted model options** card that appears under it:
+   - Response timeout: `120` (this build starts there, because this model thinks before it answers)
    - Extra request options:
      `{"reasoning_effort":"none","venice_parameters":{"include_venice_system_prompt":false,"disable_thinking":true,"strip_thinking_response":true}}`
-   - Response timeout: `60`
-5. Settings → **Persona**: switch on "Her model can see screenshots" (this model reads images).
+5. Leave Settings → Persona → "Her model can see screenshots" off. A model whose id starts with `e2ee-` is spoken to as text only: a picture cannot go into the encrypted exchange, so none is sent.
+6. Leave Settings → Privacy → "Where a model may run" on **That, or end to end encrypted**, where this build starts. A plain hosted model is then refused on the phone before anything is sent to it.
 
-The extra request options do two things. They switch the model's hidden reasoning off, which otherwise eats the reply's time and length. And they stop Venice adding its own system prompt in front of hers, which is about 1,700 tokens of a second voice telling the model how to behave.
+The extra request options ask the model to switch its hidden reasoning off, which otherwise eats the reply's time and length, and they keep Venice from adding its own system prompt in front of hers, about 1,700 tokens of a second voice telling the model how to behave. The app leaves Venice's prompt out by itself as well. Whether Venice honours the reasoning switch for this encrypted model has not been checked: if it answers with an error, take `"reasoning_effort":"none",` out and keep the rest.
 
 ### If her replies are slow, cut off or sound like a polite assistant
 
-Keep the main model for planning and give her replies to a second model on the same key. In Settings → Persona:
+Keep the main model for planning and give her replies to a second encrypted model on the same key. In Settings → Persona:
 
-- Model for her replies: `venice-uncensored-1-2`
-- Extra request options for her replies: `{"venice_parameters":{"include_venice_system_prompt":false}}`
+- Model for her replies: `e2ee-gemma-4-26b-a4b-uncensored-p` (no hidden reasoning, still end to end encrypted)
+- Extra request options for her replies: `{"venice_parameters":{"include_venice_system_prompt":false}}`, so the options meant for the thinking model are not sent to this one
 
-`venice-uncensored-role-play` is a third option for her replies with the same options line.
+To go back, clear both fields. A plain hosted model (an id without `e2ee-`) is not an option for her: its host can read everything it is sent, and this build refuses it.
 
 ### What has and has not been checked
 
@@ -46,15 +47,16 @@ The model ids, prices, context sizes, image support and option names above were 
 
 Everything she knows about you is stored on the phone and nowhere else: the chat, her notebook, your profile name. The app has no analytics and no account, and it contacts nothing but the model you configure and the services behind a command you give (weather, a search).
 
-What a hosted model has to be sent is a separate matter, and it cannot be zero. For her to answer, the model writing the reply needs the conversation, her card and her notes. Three levels, weakest to strongest:
+What a model has to be sent is a separate matter, and it cannot be zero. For her to answer, the model writing the reply needs the conversation, her card and her notes. This build allows two kinds of model:
 
-1. **A normal hosted model** (the setup above). Venice states that models on its "Private" tier process the prompt for that one reply and keep nothing afterwards. That is Venice's own statement.
-2. **An end-to-end encrypted model.** In Settings → Persona → "Model for her replies", put one of Venice's uncensored encrypted models: `e2ee-gemma-4-26b-a4b-uncensored-p` (no hidden reasoning, so the simplest to get working) or `e2ee-deepseek-v4-1-flash-1017-abliterated` (larger; it may reason before answering, which is slower). The app then encrypts her whole prompt on the phone to a key held inside a sealed hardware enclave, checks the enclave's attestation first, and decrypts the reply with a key made for that one exchange. Venice's servers pass along ciphertext they cannot read. Plans for device commands still go to the main model, with the private-mode context described below.
-3. **A model on your own hardware.** Ollama on your PC, or On-Device AI. Nothing leaves at all. Her card, notebook and settings carry over unchanged.
+1. **An end-to-end encrypted model** (the setup above, and where this build starts): a Venice model whose id starts with `e2ee-`, such as `e2ee-deepseek-v4-1-flash-1017-abliterated` or `e2ee-gemma-4-26b-a4b-uncensored-p`. The app encrypts the whole prompt on the phone to a key that Venice presents as the key of a sealed hardware enclave running the model, and decrypts the reply with a key made for that one exchange. Venice's servers pass along ciphertext they cannot read. Before it sends, the phone checks that the enclave's proof is fresh, names this model, carries this key and does not come from an enclave in debug mode. It does not check the hardware maker's signature on that proof, so that the key belongs to a real enclave rests on Venice's word. Your commands and plans travel the same way, since the main model is one of these.
+2. **A model on your own hardware.** Ollama on your PC, or On-Device AI. Nothing leaves at all. Her card, notebook and settings carry over unchanged.
 
-**Private mode** (Settings → Privacy, on by default) applies at every level: your date of birth, your location, the text of your notifications and anything learned from them are never put into a prompt, hers or the planner's.
+A **plain hosted model** (any id without `e2ee-`) can read what it is sent. With Settings → Privacy → "Where a model may run" on "That, or end to end encrypted", as this build starts, it is refused on the phone before anything is built or sent.
 
-**This repository.** The APK is built with a second notes file, `persona/seed_notes.private.txt`, that holds what she starts out knowing about you. It is listed in `.gitignore` and is never committed; `build.sh` adds it to the build when it is there. Her notebook on the phone is written once, on first start, and updates of the app keep it.
+**Private mode** (Settings → Privacy, "On a plain hosted model, keep my details on this phone", on by default) is for a plain hosted model, if you ever allow one: your date of birth, your location, the text of your notifications and anything learned from them are then never put into a prompt, hers or the planner's. A model on an encrypted route or on your own hardware is sent them, because nobody else can read them there.
+
+**This repository.** What she starts out knowing about you is kept in a second notes file, `persona/seed_notes.private.txt`. It is listed in `.gitignore` and is never committed, and it is not put into the APK either, because an APK can be copied and unpacked: you hand those notes to her on the phone (Settings → Persona → Character card → "Give her notes"). Only a build made with `YUME_BAKE_PRIVATE_NOTES=1` puts them into her starting notebook. Her notebook on the phone is written on first start and updates of the app keep it; a starting note she never rewrote gets the new wording of that note.
 
 Two things that send data elsewhere if you turn them on: an ElevenLabs key (every spoken line goes to ElevenLabs; leave it empty to use the phone's own voice) and OpenDroid's auto-reply and social features (other people's messages go to the model).
 
@@ -67,7 +69,7 @@ She writes:
 - every chat reply (anything that is talk and not a device command);
 - the short lines the app speaks around a command ("flashlight. ok", "done", "didnt work. try again");
 - one line when the wake phrase is heard;
-- an unprompted line now and then, if you switch that on.
+- lines of her own in her own time, when she feels like writing to you (Settings → Persona → Her own time, on in this build).
 
 She can also act. A reply of hers may end with a command of her own (the app hides that line and runs it). It goes through the same planner and the same approval setting as your commands, and it is limited to a fixed list: open an app, music and YouTube, alarm, timer, flashlight, volume, brightness, do not disturb, lock the screen, screenshot. She cannot message, call, post, pay, delete, read your messages or files, or search the web this way.
 
@@ -96,7 +98,7 @@ Nothing in the app filters, softens or rewrites what she says. The only changes 
 ## Other changes that came with it
 
 - Replies from hosted models have any inline `<think>` text removed before they are shown, spoken or parsed.
-- The timeout for "Custom OpenAI Compatible" and "OpenRouter" is adjustable (default 60 s; stock is a fixed 15 s).
+- The timeout for "Custom OpenAI Compatible" and "OpenRouter" is adjustable (this build starts at 120 s for its thinking model; stock is a fixed 15 s).
 - An "Extra request options (JSON)" field for those two providers, for options such as switching a model's reasoning off.
 - A model id you type by hand is no longer replaced by the first model in the provider's list. Settings shows a note when the id in use is not in that list.
 - Her chat replies can come from a different model than the one that plans device actions: a second model on the same provider, or a different provider altogether.
