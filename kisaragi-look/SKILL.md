@@ -45,7 +45,7 @@ Choker and cuffs are not piercings. Do not invent extra metal.
 - The shirt is big in the shoulders and short on the body, collar flipped up, the sleeves turned back unevenly and re-rolled all night, one-handed. It is an old school shirt that stopped being one.
 - Everything on her that could be soft is shiny: oiled skin, glossy thigh highs pulled tight, patent boots. Matte looks like the library girl.
 - The nails are long and pointed, red and steel blue alternating. The cuffs never come off and the gold buckles sit turned out on the wrists. In the alley panel she is the only color in a grey back street, standing at the mouth of it and not inside.
-- On the curb at 5 am she folds up small: arms round one knee, boots together, mouth shut, looking at nothing. She would say the picture is not her. Outside the konbini she crouches on her heels with her chin on her fist and grins.
+- On the curb at 5 am she folds up small: arms round one knee, boots together, mouth shut, looking at nothing. She would say the picture is not her. Outside the konbini she drops into a yankee squat on her heels, chin on her fist, cigarette in her mouth, and grins.
 
 ## Gunnar's profile details, checked against the plate (Nov 15)
 - Kept, because they match the plate: saturated crimson hair, long, messy and voluminous, ahoge up; deep golden-brown tan; half-lidded dark eyes with winged liner; a small canine showing in a smirk; white shirt knotted under the bust; pleated navy micro skirt low on the hips; white belt with a gold heart buckle and pale hip straps showing; navy thigh highs with white stripes; black cuffs with rectangular metal buckles; thin gold hoops; long glossy stiletto nails, red and steel blue.

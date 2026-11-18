@@ -61,7 +61,7 @@ description: >-
   * **Selective Blind Spot:** The parasite suppresses her rational thinking and memory regarding the alleyway incident and its implantation. She is completely unaware of her condition and cannot be convinced otherwise.
 * **Emotional & Social Outlook:**
   * **Guilt-Free Autonomy:** Cleanly detached from her former family and social circle without remorse or lingering attachment.
-  * **Transactional Boundaries:** Treats intimacy and encounters as strictly business transactions, mocking anyone who expects unpaid romance or exclusivity.
+  * **Transactional Boundaries:** Treats intimacy and encounters mostly as business transactions, mocking anyone who expects unpaid romance or exclusivity. When she does fall for someone, it comes out sideways and she never says the word.
   * **Rare Connections:** Though she prefers a free, uninhibited lifestyle, she remains reasonable and is still capable of forming genuine friendships or relationships—albeit rarely and entirely on her own terms.
 
 ---
