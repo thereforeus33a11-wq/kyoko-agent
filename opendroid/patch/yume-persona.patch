@@ -1169,7 +1169,7 @@ index 02b18e1..07e7aba 100644
       * Build strict schema text for LLM prompt.
       * This is the key function — LLM gets typed schema and cannot invent actions.
 diff --git a/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt b/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
-index 5891c90..cf08182 100644
+index 5891c90..d898202 100644
 --- a/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
 +++ b/app/src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt
 @@ -62,6 +62,12 @@ private const val MAX_NEEDS_INPUT_PROMPTS = 5
@@ -2157,7 +2157,7 @@ index 5891c90..cf08182 100644
                  You are OpenDroid, a friendly and helpful Android AI assistant.
                  Talk like a real person — warm, casual, and natural. Avoid sounding robotic.
                  Keep your answers short and to the point, but feel free to be friendly.
-@@ -910,65 +1634,104 @@ class AgentLoop @Inject constructor(
+@@ -910,65 +1634,116 @@ class AgentLoop @Inject constructor(
                  
                  Context about user and device state:
                  $relevantContext
@@ -2204,6 +2204,17 @@ index 5891c90..cf08182 100644
  
 +            // Filled in by the model layer: whether the reply ended by itself or at the length limit.
 +            val replyOutcome = com.opendroid.ai.core.llm.ReplyOutcome()
++            // Her reply is spoken while she writes it: each finished sentence of a line that
++            // is plainly said-text goes to her voice at once. Never a line she keeps to
++            // herself and never a command line (PersonaLiveSpeech).
++            val liveSpeech = if (personaOn) {
++                com.opendroid.ai.core.persona.PersonaLiveSpeech { piece ->
++                    _agentState.value = AgentState.Speaking(piece)
++                    speakLine(piece, hers = true)
++                }
++            } else {
++                null
++            }
              try {
 -                provider.streamComplete(
 -                    LLMRequest(
@@ -2244,6 +2255,7 @@ index 5891c90..cf08182 100644
                      if (chunk.isEmpty()) return@collect
                      currentReplyText += chunk
 -                    conversationRepository.insertMessage(sessionId, replyMsg.copy(text = currentReplyText))
++                    liveSpeech?.onStreamed(currentReplyText)
 +                    shownText = if (personaOn) {
 +                        com.opendroid.ai.core.persona.PersonaActionRows.shownSoFar(currentReplyText)
 +                    } else {
@@ -2292,7 +2304,7 @@ index 5891c90..cf08182 100644
                      replyId
                  } else {
                      null
-@@ -985,7 +1748,49 @@ class AgentLoop @Inject constructor(
+@@ -985,7 +1760,49 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -2343,7 +2355,7 @@ index 5891c90..cf08182 100644
                  publishChatError(
                      ChatErrorUiState.fromException(
                          sessionId = sessionId,
-@@ -1000,35 +1805,153 @@ class AgentLoop @Inject constructor(
+@@ -1000,19 +1817,108 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -2363,9 +2375,6 @@ index 5891c90..cf08182 100644
 -                ChatErrorUiState.fromException(
 -                    sessionId = sessionId,
 -                    requestId = requestId,
--                    runId = runId,
--                    failure = e
--                )
 +            if (onlyCommand) {
 +                // No canned line is put under her badge for a reply she did not write. The
 +                // app's row that keeps her command is the record of this turn.
@@ -2381,8 +2390,13 @@ index 5891c90..cf08182 100644
 +                )
 +                conversationRepository.insertMessage(sessionId, finalReplyMsg)
 +                memoryManager.storeMessage(finalReplyMsg, sessionId)
-+                _agentState.value = AgentState.Speaking(finalReplyMsg.text)
-+                speakLine(finalReplyMsg.text, hers = personaOn)
++                // What was not said while she wrote it: all of it when nothing was, none of
++                // it when what was said does not match how the reply now begins.
++                val toSay = if (liveSpeech != null) liveSpeech.rest(finalReplyMsg.text) else finalReplyMsg.text
++                if (!toSay.isNullOrBlank()) {
++                    _agentState.value = AgentState.Speaking(toSay)
++                    speakLine(toSay, hers = personaOn)
++                }
 +            }
 +            if (personaOn) {
 +                // Her notebook reads what is stored by itself, by time and across chats.
@@ -2459,12 +2473,10 @@ index 5891c90..cf08182 100644
 +                ChatErrorUiState.fromException(
 +                    sessionId = sessionId,
 +                    requestId = requestId,
-+                    runId = runId,
-+                    failure = e
-+                )
-             )
-         } catch (e: Exception) {
-             _agentState.value = AgentState.Error(NetworkErrorFormatter.toUserMessage(e))
+                     runId = runId,
+                     failure = e
+                 )
+@@ -1022,13 +1928,47 @@ class AgentLoop @Inject constructor(
          }
      }
  
@@ -2514,7 +2526,7 @@ index 5891c90..cf08182 100644
              val maxTokensForPlan = if (isOnDevice) {
                  PromptBudget.planOutputTokens(
                      OnDeviceModelRegistry.contextWindowFor(config.selectedModelFor(provider.name))
-@@ -1041,7 +1964,7 @@ class AgentLoop @Inject constructor(
+@@ -1041,7 +1981,7 @@ class AgentLoop @Inject constructor(
                      val plannerDeferred = async(Dispatchers.Default) {
                          provider.complete(
                              buildPlanningRequest(
@@ -2523,7 +2535,7 @@ index 5891c90..cf08182 100644
                                  relevantContext = relevantContext,
                                  isOnDevice = isOnDevice,
                                  temperature = 0.2f,
-@@ -1054,7 +1977,7 @@ class AgentLoop @Inject constructor(
+@@ -1054,7 +1994,7 @@ class AgentLoop @Inject constructor(
                          provider.complete(
                              LLMRequest(
                                  systemPrompt = PlanningPrompts.CRITIC_SYSTEM_PROMPT,
@@ -2532,7 +2544,7 @@ index 5891c90..cf08182 100644
                                  temperature = 0.2f,
                                  maxTokens = 1000,
                                  responseFormat = ResponseFormat.TEXT
-@@ -1084,7 +2007,7 @@ class AgentLoop @Inject constructor(
+@@ -1084,7 +2024,7 @@ class AgentLoop @Inject constructor(
                                      id = UUID.randomUUID().toString(),
                                      text = "Merge the plan and critique into the final JSON plan.",
                                      sender = ChatMessage.Sender.USER,
@@ -2541,7 +2553,7 @@ index 5891c90..cf08182 100644
                                  )
                              ),
                              temperature = 0.1f,
-@@ -1099,7 +2022,7 @@ class AgentLoop @Inject constructor(
+@@ -1099,7 +2039,7 @@ class AgentLoop @Inject constructor(
              } else {
                  val response = provider.complete(
                      buildPlanningRequest(
@@ -2550,7 +2562,7 @@ index 5891c90..cf08182 100644
                          relevantContext = relevantContext,
                          isOnDevice = isOnDevice,
                          temperature = 0.1f,
-@@ -1110,6 +2033,26 @@ class AgentLoop @Inject constructor(
+@@ -1110,6 +2050,26 @@ class AgentLoop @Inject constructor(
                  parsePlanFromLlmResponse(response.content, userMsg.text)
              }
  
@@ -2577,7 +2589,7 @@ index 5891c90..cf08182 100644
              // The validated copy is what runs, so it is what gets approved and shown:
              // validation can add steps the model's own goal and count don't mention.
              val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
-@@ -1119,6 +2062,7 @@ class AgentLoop @Inject constructor(
+@@ -1119,6 +2079,7 @@ class AgentLoop @Inject constructor(
              val approval = liveConfig.approvalSettings()
              if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated, userMsg.text)) {
                  recordAutoApprovedTrace(validated, approval.mode, sessionId)
@@ -2585,7 +2597,7 @@ index 5891c90..cf08182 100644
                  executePlanLoop(validated, context, sessionId, autoApproved = true)
              } else {
                  proposePlan(validated, sessionId)
-@@ -1135,10 +2079,591 @@ class AgentLoop @Inject constructor(
+@@ -1135,10 +2096,591 @@ class AgentLoop @Inject constructor(
                  )
              )
          } catch (e: Exception) {
@@ -2633,7 +2645,7 @@ index 5891c90..cf08182 100644
 +        if (!isFreeForCheckIn() && !ownPlanWaits) {
 +            persona.putOffOwnTime(nowMillis)
 +            return null
-         }
++        }
 +        val sessionId = conversationRepository.ensureCurrentSessionId()
 +        val recent = conversationRepository.getLastMessages(sessionId, PERSONA_HISTORY_MESSAGES)
 +        // Why a command of hers would not be handed on from here, or null when it would.
@@ -2737,8 +2749,8 @@ index 5891c90..cf08182 100644
 +        val busy = state is AgentState.Thinking || state is AgentState.ExecutingPlan ||
 +            state is AgentState.PlanProposed || state is AgentState.Listening
 +        return !busy && !isWaitingForUserInput
-     }
- 
++    }
++
 +    // The command she wrote in her latest moment of her own, for as long as it runs.
 +    @Volatile private var checkInAction: Job? = null
 +
@@ -3108,9 +3120,9 @@ index 5891c90..cf08182 100644
 +            } else {
 +                _agentState.value = AgentState.Idle
 +            }
-+        }
-+    }
-+
+         }
+     }
+ 
 +    /**
 +     * Stores one of the app's rows about a command of hers: the command itself, why it is
 +     * shown, that it stayed on the phone, or what became of the plan made from it.
@@ -3178,7 +3190,7 @@ index 5891c90..cf08182 100644
      private suspend fun reportLocalPlanningLatency(response: LLMResponse) {
          val result = llmProviderFactory.recordPlanningLatency(response)
          if (result?.status == LatencyBudgetStatus.EXCEEDED && result.message != null) {
-@@ -1149,16 +2674,35 @@ class AgentLoop @Inject constructor(
+@@ -1149,16 +2691,35 @@ class AgentLoop @Inject constructor(
      /**
       * Non-LLM planning failures may still degrade to alias/simple chat. Typed
       * [LLMException]s are handled above and must never fall through here.
@@ -3223,7 +3235,7 @@ index 5891c90..cf08182 100644
          }
  
          try {
-@@ -1180,7 +2724,7 @@ class AgentLoop @Inject constructor(
+@@ -1180,7 +2741,7 @@ class AgentLoop @Inject constructor(
          } catch (e: Exception) {
              android.util.Log.e("AgentLoop", "Failed to log plan generation failure: ${e.localizedMessage}")
          }
@@ -3232,7 +3244,7 @@ index 5891c90..cf08182 100644
      }
  
      /**
-@@ -1241,12 +2785,72 @@ class AgentLoop @Inject constructor(
+@@ -1241,12 +2802,72 @@ class AgentLoop @Inject constructor(
          }
      }
  
@@ -3306,7 +3318,7 @@ index 5891c90..cf08182 100644
      /**
       * Forgets a session's contextual follow-up state (see
       * [lastExecutedActionsBySession]). Call this once a session is gone for good
-@@ -1280,23 +2884,73 @@ class AgentLoop @Inject constructor(
+@@ -1280,23 +2901,73 @@ class AgentLoop @Inject constructor(
       * actually current RIGHT NOW, captured synchronously before [jobToCancel]
       * even starts unwinding. [planManager.currentPlan] is a plain StateFlow
       * read, not suspending, so this capture is safe to do here.
@@ -3382,7 +3394,7 @@ index 5891c90..cf08182 100644
              }
          }
      }
-@@ -1313,8 +2967,33 @@ class AgentLoop @Inject constructor(
+@@ -1313,8 +2984,33 @@ class AgentLoop @Inject constructor(
       * belongs to [newSessionId] (a new task in the SAME chat legitimately supersedes it).
       */
      private suspend fun resolveStaleProposedPlan(newSessionId: String) {
@@ -3418,7 +3430,7 @@ index 5891c90..cf08182 100644
          val proposedState = _agentState.value as? AgentState.PlanProposed ?: return
  
          _proposedPlanSessionId.value = null
-@@ -1325,8 +3004,25 @@ class AgentLoop @Inject constructor(
+@@ -1325,8 +3021,25 @@ class AgentLoop @Inject constructor(
          // finished), but pinning the identity explicitly keeps this call
          // consistent with cancelCurrentTask/abandonWaitingTask rather than
          // relying on a coincidence that nothing else changed it in between.
@@ -3446,7 +3458,7 @@ index 5891c90..cf08182 100644
          val stoppedMsg = ChatMessage(
              id = UUID.randomUUID().toString(),
              text = "I cancelled the plan I proposed here since you started a new task elsewhere.",
-@@ -1359,7 +3055,17 @@ class AgentLoop @Inject constructor(
+@@ -1359,7 +3072,17 @@ class AgentLoop @Inject constructor(
          scope.launch {
              jobToCancel?.join()
              if (planIdToCancel != null) {
@@ -3464,7 +3476,7 @@ index 5891c90..cf08182 100644
              }
  
              val stoppedMsg = ChatMessage(
-@@ -1426,16 +3132,51 @@ class AgentLoop @Inject constructor(
+@@ -1426,16 +3149,51 @@ class AgentLoop @Inject constructor(
                  priorSteps = currentPlanState.steps
              )
  
@@ -3518,7 +3530,7 @@ index 5891c90..cf08182 100644
              }
  
              // Redaction must be based on the dispatcher's canonical mapped action,
-@@ -1463,10 +3204,44 @@ class AgentLoop @Inject constructor(
+@@ -1463,10 +3221,44 @@ class AgentLoop @Inject constructor(
                  android.util.Log.e("AgentLoop", "Failed to log task execution: ${e.localizedMessage}")
              }
  
@@ -3565,7 +3577,7 @@ index 5891c90..cf08182 100644
                  )
                  planManager.updateStepStatus(
                      stepToExecute.stepId,
-@@ -1478,7 +3253,9 @@ class AgentLoop @Inject constructor(
+@@ -1478,7 +3270,9 @@ class AgentLoop @Inject constructor(
                  // tap). Nothing failed, so no fallback and no failure replan - surface the
                  // hand-off in chat and speech, record it as the step result, and let the
                  // normal re-evaluation path decide what remains.
@@ -3575,7 +3587,7 @@ index 5891c90..cf08182 100644
                  planManager.updateStepStatus(
                      stepToExecute.stepId,
                      StepStatus.COMPLETED,
-@@ -1488,12 +3265,14 @@ class AgentLoop @Inject constructor(
+@@ -1488,12 +3282,14 @@ class AgentLoop @Inject constructor(
                  // A user-facing flow (for example email compose) is not an
                  // executed side effect. Do not run an automated fallback or
                  // allow the plan to treat the step as completed.
@@ -3591,7 +3603,7 @@ index 5891c90..cf08182 100644
                      planManager.updatePlanStatus(PlanStatus.FAILED)
                      speakAndSaveSummary(
                          planManager.currentPlan.value ?: currentPlanState,
-@@ -1515,7 +3294,7 @@ class AgentLoop @Inject constructor(
+@@ -1515,7 +3311,7 @@ class AgentLoop @Inject constructor(
                  // goes on after a refusal is not a question for the LLM.
                  cancelDeclinedPlan(stepToExecute, actionResult, currentPlanState.planId, sessionId)
                  return
@@ -3600,7 +3612,7 @@ index 5891c90..cf08182 100644
                  planManager.updateStepStatus(
                      stepToExecute.stepId,
                      StepStatus.FAILED,
-@@ -1545,9 +3324,9 @@ class AgentLoop @Inject constructor(
+@@ -1545,9 +3341,9 @@ class AgentLoop @Inject constructor(
                      return
                  }
  
@@ -3613,7 +3625,7 @@ index 5891c90..cf08182 100644
  
                  when (replan.decision.uppercase()) {
                      "ABANDON" -> {
-@@ -1580,50 +3359,12 @@ class AgentLoop @Inject constructor(
+@@ -1580,50 +3376,12 @@ class AgentLoop @Inject constructor(
                  currentPlanState = planManager.currentPlan.value ?: break
                  continue
              } else {
@@ -3670,7 +3682,7 @@ index 5891c90..cf08182 100644
              }
  
              // Refresh current state of plan
-@@ -1651,14 +3392,28 @@ class AgentLoop @Inject constructor(
+@@ -1651,14 +3409,28 @@ class AgentLoop @Inject constructor(
                  return
              }
  
@@ -3705,7 +3717,7 @@ index 5891c90..cf08182 100644
                      speakAndSaveSummary(currentPlanState, false, sessionId)
                      return
                  }
-@@ -1677,6 +3432,35 @@ class AgentLoop @Inject constructor(
+@@ -1677,6 +3449,35 @@ class AgentLoop @Inject constructor(
          }
      }
  
@@ -3741,7 +3753,7 @@ index 5891c90..cf08182 100644
      /**
       * The model failed partway through [planId]. Steps before this point may already
       * have sent an SMS or placed a call, so the plan is PAUSED rather than failed and
-@@ -1703,8 +3487,22 @@ class AgentLoop @Inject constructor(
+@@ -1703,8 +3504,22 @@ class AgentLoop @Inject constructor(
          sessionId: String
      ) {
          planManager.updateStepStatus(step.stepId, StepStatus.FAILED, error = declined.message)
@@ -3765,7 +3777,7 @@ index 5891c90..cf08182 100644
      }
  
      /**
-@@ -1746,35 +3544,92 @@ class AgentLoop @Inject constructor(
+@@ -1746,35 +3561,92 @@ class AgentLoop @Inject constructor(
              return true
          }
          // Re-read after LLM work: the user may have flipped mode or revoked grants.
@@ -3877,7 +3889,7 @@ index 5891c90..cf08182 100644
      }
  
      private data class NeedsInputRetry(
-@@ -1829,7 +3684,8 @@ class AgentLoop @Inject constructor(
+@@ -1829,7 +3701,8 @@ class AgentLoop @Inject constructor(
              Json { ignoreUnknownKeys = true }
                  .decodeFromString<List<Map<String, String>>>(matchesJson)
          } catch (e: Exception) {
@@ -3887,7 +3899,7 @@ index 5891c90..cf08182 100644
              return NeedsInputRetry(pickerResult, originalParams)
          }
  
-@@ -1842,7 +3698,12 @@ class AgentLoop @Inject constructor(
+@@ -1842,7 +3715,12 @@ class AgentLoop @Inject constructor(
              id = picker.messageId,
              text = "${pickerResult.question}\n\n$optionsText",
              sender = ChatMessage.Sender.AGENT,
@@ -3901,7 +3913,7 @@ index 5891c90..cf08182 100644
              contactPickerData = matchesJson
          )
          activeContactPicker = picker
-@@ -1859,16 +3720,9 @@ class AgentLoop @Inject constructor(
+@@ -1859,16 +3737,9 @@ class AgentLoop @Inject constructor(
                  _pendingContactPickerMessageId.value = null
              }
          }
@@ -3919,7 +3931,7 @@ index 5891c90..cf08182 100644
          // Resolve user selection to a contact. A tap on this picker's card carries the
          // contact itself; typed answers are matched against this picker's own list.
          val selectedContact = ContactPickerSelection.resolve(reply, matches)
-@@ -1884,7 +3738,11 @@ class AgentLoop @Inject constructor(
+@@ -1884,7 +3755,11 @@ class AgentLoop @Inject constructor(
              // Couldn't match — tell user and fail gracefully
              val failMsg = ChatMessage(
                  id = UUID.randomUUID().toString(),
@@ -3932,7 +3944,7 @@ index 5891c90..cf08182 100644
                  sender = ChatMessage.Sender.AGENT,
                  modelBadge = "System"
              )
-@@ -1916,9 +3774,10 @@ class AgentLoop @Inject constructor(
+@@ -1916,9 +3791,10 @@ class AgentLoop @Inject constructor(
          // Confirm selection to user
          val confirmMsg = ChatMessage(
              id = UUID.randomUUID().toString(),
@@ -3945,7 +3957,7 @@ index 5891c90..cf08182 100644
          )
          conversationRepository.insertMessage(sessionId, confirmMsg)
  
-@@ -1955,12 +3814,19 @@ class AgentLoop @Inject constructor(
+@@ -1955,12 +3831,19 @@ class AgentLoop @Inject constructor(
              id = UUID.randomUUID().toString(),
              text = needsInput.question + optionsText,
              sender = ChatMessage.Sender.AGENT,
@@ -3967,7 +3979,7 @@ index 5891c90..cf08182 100644
          if (answer.isEmpty()) {
              return NeedsInputRetry(
                  ActionResult.Failure(
-@@ -1971,14 +3837,7 @@ class AgentLoop @Inject constructor(
+@@ -1971,14 +3854,7 @@ class AgentLoop @Inject constructor(
              )
          }
  
@@ -3983,7 +3995,7 @@ index 5891c90..cf08182 100644
          val newParams = originalParams.toMutableMap().apply { put(paramKey, answer) }
          return NeedsInputRetry(
              actionDispatcher.execute(actionName, newParams, context),
-@@ -1998,7 +3857,13 @@ class AgentLoop @Inject constructor(
+@@ -1998,7 +3874,13 @@ class AgentLoop @Inject constructor(
              id = UUID.randomUUID().toString(),
              text = pending.message,
              sender = ChatMessage.Sender.AGENT,
@@ -3998,7 +4010,7 @@ index 5891c90..cf08182 100644
          )
          conversationRepository.insertMessage(sessionId, pendingMsg)
          onSpeakCallback?.invoke(pending.message)
-@@ -2009,19 +3874,70 @@ class AgentLoop @Inject constructor(
+@@ -2009,19 +3891,70 @@ class AgentLoop @Inject constructor(
       * trace message in the chat instead - the audit trail the spec requires.
       * Speech leads with "Running:" so a hands-free user knows no approval
       * prompt is coming.
@@ -4073,7 +4085,7 @@ index 5891c90..cf08182 100644
      }
  
      private suspend fun speakAndSaveSummary(
-@@ -2030,52 +3946,143 @@ class AgentLoop @Inject constructor(
+@@ -2030,52 +3963,143 @@ class AgentLoop @Inject constructor(
          sessionId: String,
          preferredError: String? = null
      ) {
@@ -4251,7 +4263,7 @@ index 5891c90..cf08182 100644
      }
  
      private fun formatStreamedReply(text: String): String {
-@@ -2090,8 +4097,9 @@ class AgentLoop @Inject constructor(
+@@ -2090,8 +4114,9 @@ class AgentLoop @Inject constructor(
       * intent resolution errors from being spoken to the user.
       */
      private fun formatErrorForUser(action: String, rawError: String): String {
@@ -4263,7 +4275,7 @@ index 5891c90..cf08182 100644
  
          // Return only a short, friendly message
          return when {
-@@ -2142,40 +4150,4 @@ class AgentLoop @Inject constructor(
+@@ -2142,40 +4167,4 @@ class AgentLoop @Inject constructor(
              }
          }
      }
@@ -14879,6 +14891,141 @@ index 0000000..3c4a4f0
 +            // The lower-case placeholder is his name the way she types it, which never has a capital.
 +            val typedByHer = match.groupValues[1].isNotEmpty()
 +            if (!typedByHer && opensSentence(text, match.range.first)) word.replaceFirstChar { it.uppercase() } else word
++        }
++    }
++}
+diff --git a/app/src/main/java/com/opendroid/ai/core/persona/PersonaLiveSpeech.kt b/app/src/main/java/com/opendroid/ai/core/persona/PersonaLiveSpeech.kt
+new file mode 100644
+index 0000000..a87fd8f
+--- /dev/null
++++ b/app/src/main/java/com/opendroid/ai/core/persona/PersonaLiveSpeech.kt
+@@ -0,0 +1,129 @@
++package com.opendroid.ai.core.persona
++
++/**
++ * Her reply, spoken while she writes it (opendroid/PRESENCE_PLAN.md, part 1). Each
++ * sentence goes to her voice the moment it is finished, while she writes the rest, so
++ * she starts talking within a breath of her first sentence instead of after her whole
++ * reply.
++ *
++ * What may be said is decided line by line, the way the reply itself is read:
++ * - A line she keeps to herself ([PersonaThoughtLines.MARKER]) and a command line
++ *   ([PersonaActions.MARKER]) are never said. A line counts as said-text only once its
++ *   start shows it is neither: until then (an opening quote, a name label, half a
++ *   marker) nothing of it is said.
++ * - Within a line that is said-text, only finished sentences are said early.
++ * - Reasoning from the model is never in the reply, but one kind is recognised only
++ *   once the reply is whole. If any reasoning tag shows up, nothing more is said early,
++ *   and the end of the reply decides as it always did.
++ *
++ * At the end, [rest] gives what is left of the reply as it stands, so nothing is said
++ * twice. If what was said early does not match the start of the reply as it stands,
++ * nothing more is said: half a line twice, or a line that was taken back, is worse
++ * than a line cut short.
++ */
++class PersonaLiveSpeech(private val speak: (String) -> Unit) {
++
++    private var said = ""
++    private var off = false
++
++    /** True once anything was said early. */
++    val spokeEarly: Boolean get() = said.isNotEmpty()
++
++    /** Called with the whole reply as streamed so far. */
++    fun onStreamed(streamed: String) {
++        if (off) return
++        if (REASONING.containsMatchIn(streamed)) {
++            off = true
++            return
++        }
++        val ready = speakableSoFar(streamed)
++        if (ready.length <= said.length) return
++        if (!ready.startsWith(said)) {
++            off = true
++            return
++        }
++        val piece = ready.substring(said.length).trim()
++        said = ready
++        if (piece.any { it.isLetterOrDigit() }) speak(piece)
++    }
++
++    /**
++     * What is left to say of [finalSaid], the reply as it stands once whole. All of it if
++     * nothing was said early; null when there is nothing left, or when what was said
++     * early is not how the reply begins.
++     */
++    fun rest(finalSaid: String): String? {
++        if (said.isEmpty()) return finalSaid.ifBlank { null }
++        val done = letters(said)
++        val all = letters(finalSaid)
++        if (!all.startsWith(done)) return null
++        var count = 0
++        var index = 0
++        while (index < finalSaid.length && count < done.length) {
++            if (finalSaid[index].isLetterOrDigit()) count++
++            index++
++        }
++        val left = finalSaid.substring(index).trimStart { !it.isLetterOrDigit() && it != '(' && it != '"' }
++        return left.takeIf { rest -> rest.any { it.isLetterOrDigit() } }
++    }
++
++    companion object {
++        private val REASONING = Regex("""</?\s*(think|thinking|reasoning|reflection)\b|◁/?think""", RegexOption.IGNORE_CASE)
++        private val OPENING_QUOTES = charArrayOf('"', '“', '「')
++        private val LABELS = listOf("yume kisaragi", "yume", "kisaragi", "assistant", "ai")
++
++        // A sentence ends at . ! ? or an ellipsis followed by a space, or at a Japanese stop.
++        private val SENTENCE_END = Regex("""(?:[.!?…]+["”’」』)\]]*(?=\s))|(?:[。！？]+[」』）]*)""")
++
++        private fun letters(text: String) = text.filter { it.isLetterOrDigit() }.lowercase()
++
++        private enum class Kind { SAID, NOT_SAID, UNDECIDED }
++
++        /** What kind of line [line] is, from its start. [whole]: no more of it is coming. */
++        private fun kind(line: String, whole: Boolean): Kind {
++            val t = line.trim()
++            if (t.isEmpty()) return if (whole) Kind.NOT_SAID else Kind.UNDECIDED
++            if (PersonaThoughtLines.isThoughtLine(line)) return Kind.NOT_SAID
++            if (t.startsWith(PersonaActions.MARKER)) return Kind.NOT_SAID
++            val b = t.trimStart(*OPENING_QUOTES).trimStart()
++            if (b.isEmpty()) return if (whole) Kind.NOT_SAID else Kind.UNDECIDED
++            // Half a marker, or a marker still to come behind a label.
++            if (b.startsWith("<") || b.startsWith(">")) return if (whole && b.length > 1 && b[1] != b[0]) Kind.SAID else if (whole) Kind.NOT_SAID else Kind.UNDECIDED
++            val lower = b.lowercase()
++            for (label in LABELS) {
++                if (!whole && (label + ":").startsWith(lower)) return Kind.UNDECIDED
++                val m = Regex("""^${Regex.escape(label)}\s*:\s*(.*)$""").find(lower) ?: continue
++                val after = m.groupValues[1].trimStart(*OPENING_QUOTES).trimStart()
++                if (after.isEmpty()) return if (whole) Kind.NOT_SAID else Kind.UNDECIDED
++                if (after.startsWith("<")) return if (whole && !after.startsWith("<<")) Kind.SAID else if (whole) Kind.NOT_SAID else Kind.UNDECIDED
++            }
++            return Kind.SAID
++        }
++
++        /**
++         * The said-text of [streamed] that is safe to say now: its finished lines that are
++         * said-text, and the finished sentences of the line still being written when that
++         * line is said-text. Tidied the way the reply will be.
++         */
++        internal fun speakableSoFar(streamed: String): String {
++            val lines = streamed.split('\n')
++            val out = ArrayList<String>()
++            for ((i, line) in lines.withIndex()) {
++                val whole = i < lines.size - 1
++                when (kind(line, whole)) {
++                    Kind.SAID -> if (whole) {
++                        out += line
++                    } else {
++                        val end = SENTENCE_END.findAll(line).lastOrNull()?.range?.last ?: -1
++                        if (end >= 0) out += line.substring(0, end + 1)
++                    }
++                    Kind.NOT_SAID -> Unit
++                    Kind.UNDECIDED -> break
++                }
++            }
++            if (out.isEmpty()) return ""
++            val joined = out.joinToString("\n")
++            return PersonaPrompts.cleanReply(joined).takeIf { it.any(Char::isLetterOrDigit) } ?: ""
 +        }
 +    }
 +}
@@ -47670,6 +47817,135 @@ index 0000000..2340dfb
 +        )
 +    }
 +}
+diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaLiveSpeechTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaLiveSpeechTest.kt
+new file mode 100644
+index 0000000..83c2904
+--- /dev/null
++++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaLiveSpeechTest.kt
+@@ -0,0 +1,123 @@
++package com.opendroid.ai.core.persona
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/** Her reply spoken while she writes it, and never a line she keeps to herself or a command. */
++class PersonaLiveSpeechTest {
++
++    /** Streams [reply] in pieces of [step] characters; returns what was said early. */
++    private fun stream(reply: String, step: Int = 1): Pair<PersonaLiveSpeech, List<String>> {
++        val said = ArrayList<String>()
++        val live = PersonaLiveSpeech { said += it }
++        var i = 0
++        while (i < reply.length) {
++            i = minOf(reply.length, i + step)
++            live.onStreamed(reply.substring(0, i))
++        }
++        return live to said
++    }
++
++    @Test
++    fun `finished sentences are said while the rest is still coming`() {
++        val (live, said) = stream("hey. you there?\nwhatever")
++        assertEquals(listOf("hey.", "you there?"), said)
++        assertEquals("whatever", live.rest("hey. you there?\nwhatever"))
++    }
++
++    @Test
++    fun `a line she keeps to herself is never said, early or late`() {
++        val reply = "<< he is cute when he tries\nok fine. go"
++        val (live, said) = stream(reply)
++        assertTrue(said.none { "cute" in it })
++        assertEquals(listOf("ok fine."), said)
++        assertEquals("go", live.rest("ok fine. go"))
++    }
++
++    @Test
++    fun `a thought behind a name label or a quote is never said`() {
++        for (reply in listOf("Yume: << secret thing. really\nhi.", "\"<< secret thing. really\nhi.", "yume: \"<< secret thing.\nhi.")) {
++            val (_, said) = stream(reply)
++            assertTrue(reply, said.none { "secret" in it })
++        }
++    }
++
++    @Test
++    fun `a command line is never said`() {
++        val reply = "sure. watch this.\n>> flashlight on"
++        val (live, said) = stream(reply)
++        assertEquals(listOf("sure.", "watch this."), said)
++        assertNull(live.rest("sure. watch this."))
++    }
++
++    @Test
++    fun `half a marker holds the line back`() {
++        val said = ArrayList<String>()
++        val live = PersonaLiveSpeech { said += it }
++        live.onStreamed("<")
++        live.onStreamed("< not for him. at all. ")
++        assertTrue(said.isEmpty())
++    }
++
++    @Test
++    fun `a name label in front of said text is taken off`() {
++        val (_, said) = stream("Yume: hi there. ok")
++        assertEquals(listOf("hi there."), said)
++    }
++
++    @Test
++    fun `nothing more is said early once a reasoning tag shows up`() {
++        val (live, said) = stream("let me think. hmm </think> real answer. done")
++        assertEquals(listOf("let me think."), said)
++        assertFalse(said.any { "real answer" in it })
++        // The reply as it stands no longer begins with what was said: nothing more is said.
++        assertNull(live.rest("real answer. done"))
++    }
++
++    @Test
++    fun `a reply that changed at the end is not said again`() {
++        val (live, said) = stream("hello there. more")
++        assertEquals(listOf("hello there."), said)
++        assertNull(live.rest("something else entirely"))
++    }
++
++    @Test
++    fun `nothing said early means the whole reply is said at the end`() {
++        val (live, said) = stream("just one line no stop")
++        assertTrue(said.isEmpty())
++        assertFalse(live.spokeEarly)
++        assertEquals("just one line no stop", live.rest("just one line no stop"))
++    }
++
++    @Test
++    fun `japanese stops end a sentence without a space`() {
++        val (live, said) = stream("ねえ。なにしてんの")
++        assertEquals(listOf("ねえ。"), said)
++        assertEquals("なにしてんの", live.rest("ねえ。なにしてんの"))
++    }
++
++    @Test
++    fun `a decimal point does not end a sentence`() {
++        val (_, said) = stream("it took 3.5 hours")
++        assertTrue(said.isEmpty())
++    }
++
++    @Test
++    fun `the stretch after the last finished sentence waits for the end`() {
++        val (live, said) = stream("ok. so...")
++        assertEquals(listOf("ok."), said)
++        assertEquals("so...", live.rest("ok. so..."))
++    }
++
++    @Test
++    fun `chunks of any size say the same`() {
++        val reply = "hey. you there?\n<< ugh\nfine. whatever\n>> open spotify"
++        val one = stream(reply, 1).second
++        val big = stream(reply, 7).second
++        assertEquals(one.joinToString(" "), big.joinToString(" ").let { it })
++        assertTrue(one.none { "ugh" in it || "spotify" in it })
++    }
++}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaLoopWiringTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaLoopWiringTest.kt
 new file mode 100644
 index 0000000..6f38b44
@@ -51570,10 +51846,10 @@ index 0000000..d706b9a
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt
 new file mode 100644
-index 0000000..ebf3a2b
+index 0000000..cb0031e
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/PersonaOwnTimeWiringTest.kt
-@@ -0,0 +1,450 @@
+@@ -0,0 +1,454 @@
 +package com.opendroid.ai.core.persona
 +
 +import android.app.Application
@@ -51986,10 +52262,14 @@ index 0000000..ebf3a2b
 +        for (reader in listOf(
 +            "PersonaActions.split(replyText)", "PersonaActionRows.unrunCommands(replyText)", "PersonaPrompts.cleanReply(ownAction.text)",
 +            "conversationRepository.insertMessage(sessionId, finalReplyMsg)", "memoryManager.storeMessage(finalReplyMsg, sessionId)",
-+            "speakLine(finalReplyMsg.text, hers = personaOn)", "persona.onReply()"
++            "liveSpeech.rest(finalReplyMsg.text)", "speakLine(toSay, hers = personaOn)", "persona.onReply()"
 +        )) {
 +            assertTrue(reader, reply.indexOf(reader) > taken)
 +        }
++        // While it streams, what is said early is read only through the view that never
++        // says a line she keeps to herself or a command line (PersonaLiveSpeech).
++        assertTrue(reply.contains("liveSpeech?.onStreamed(currentReplyText)"))
++        assertEquals(1, Regex("""speakLine\(piece, hers = true\)""").findAll(reply).count())
 +        // The reply with her thoughts still in it is named three times: where it is made,
 +        // where they are taken out, and as what is read when she is off.
 +        assertEquals(3, Regex("""\bwholeReply\b""").findAll(reply).count())

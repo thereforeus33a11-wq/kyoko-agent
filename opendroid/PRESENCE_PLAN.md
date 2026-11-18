@@ -5,7 +5,7 @@ thoughts, her typed words, her spoken words and her notes all come from the one
 model that is her. The voice engine only turns her text into sound; it never
 chooses words. Nothing here changes that.
 
-## 1. She speaks as she thinks (no catch-up) — biggest win
+## 1. She speaks as she thinks (no catch-up) — biggest win  ✅ built (PersonaLiveSpeech)
 
 **Now:** her words stream onto the screen as she writes, but her voice only
 starts once the whole reply is finished, then reads it. On the cloud route the
@@ -28,6 +28,13 @@ So the streaming speaker:
 
 This reuses the existing `PersonaThoughtLines` / `PersonaActions` logic, just at
 line granularity instead of whole-reply.
+
+**Built (2026-11-18):** `core/persona/PersonaLiveSpeech`.
+- Each finished sentence of a line whose start shows it is said-text goes to her voice at once.
+- An opening quote, a name label or half a marker holds the line back until its start is clear.
+- If a reasoning tag appears, nothing more is said early.
+- At the end only what is left of the reply as it stands is said. If what was said early is not how the reply now begins, nothing more is said.
+- Tested on thoughts, commands, labels, quotes, reasoning, Japanese stops and decimals.
 
 ## 2. No wake word — open mic while awake
 
