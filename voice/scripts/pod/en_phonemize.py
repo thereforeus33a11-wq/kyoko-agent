@@ -22,7 +22,10 @@ from typing import Dict, List, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_TABLE = os.path.join(HERE, "en_ipa_table.json")
-DEFAULT_CMUDICT = os.environ.get("CMUDICT", "/tmp/claude-0/cmudict/cmudict.dict")
+# The pinned dictionary: $CMUDICT, else the pod's copy, else this machine's.
+DEFAULT_CMUDICT = os.environ.get("CMUDICT") or next(
+    (p for p in ("/w/job/data/cmudict.dict", "/tmp/claude-0/cmudict/cmudict.dict") if os.path.exists(p)),
+    "/tmp/claude-0/cmudict/cmudict.dict")
 
 
 @dataclass

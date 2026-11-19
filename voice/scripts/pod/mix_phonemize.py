@@ -32,7 +32,7 @@ from typing import List, Optional, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from en_phonemize import DEFAULT_CMUDICT, DEFAULT_TABLE, EnglishWords, plain_latin  # noqa: E402
+from en_phonemize import DEFAULT_CMUDICT, DEFAULT_TABLE, EnglishWords, Reading, plain_latin  # noqa: E402
 
 PIPER_SRC_DEFAULT = "/w/piper1-gpl/src"
 
@@ -111,6 +111,7 @@ class MixedPhonemizer:
         self.word_sep, self.clause_mark, self.after_clause = b["word"], b["clause"], b["after_clause"]
         self.switch, self.end_default = b["switch"], b["sentence_end_default"]
         self.symbols = self.en.t["symbols"]["words"]
+        self.time_words = {k: v.split() for k, v in self.en.t["numbers"]["time_words"].items()}
         self._ja = ja
 
     @property
@@ -242,12 +243,23 @@ class MixedPhonemizer:
                     continue
                 after = [w for w in words if w.start >= t.end]
                 before = [w for w in words if w.end <= t.start]
-                if after:
+                if re.search(r"(?:st|nd|rd|th)%?$", t.text) or t.text[:1] in "$€":
+                    t.route = "en"
+                elif after:
                     t.route = after[0].route
                 elif before:
                     t.route = before[-1].route
                 else:
                     t.route = line_words[0].route if line_words else "ja"
+            # am / pm right after an English number is said as letters (7am, 7 pm).
+            for k, t in enumerate(toks):
+                if t.kind == "word" and t.text.lower() in self.time_words and k > 0:
+                    j = k - 1
+                    while j >= 0 and toks[j].kind == "space":
+                        j -= 1
+                    if j >= 0 and toks[j].kind == "num" and toks[j].route == "en":
+                        t.route = "en"
+                        t.reading = Reading("en", "time", ipa=self.en.arpabet_to_ipa(self.time_words[t.text.lower()]))
         return [self._plan_sentence(s, toks) for s, toks in sentences]
 
     def _between_english(self, toks: List[Tok], k: int) -> bool:
@@ -287,14 +299,18 @@ class MixedPhonemizer:
         return SentencePlan(s, toks, segments, pauses, terminal, trailing, verbatim)
 
     # -- phonemes ----------------------------------------------------------------------------
-    def _en_segment(self, seg: Segment) -> str:
+    def _en_segment(self, seg: Segment, ends_sentence: bool) -> str:
         parts: List[str] = []  # word IPA and clause marks
         content = [t for t in seg.toks if t.kind in ("word", "num")]
-        last = content[-1] if content else None
+        # A function word is said strong only where it ends the sentence (where you from?).
+        last = content[-1] if (content and ends_sentence) else None
         prev: Optional[Tok] = None
         for t in seg.toks:
             if t.kind == "word":
-                ipa = self.en.read(t.word, final=(t is last)).ipa
+                if t.reading is not None and t.reading.source == "time":
+                    ipa = t.reading.ipa
+                else:
+                    ipa = self.en.read(t.word, final=(t is last)).ipa
                 if ipa:
                     parts.append(ipa)
             elif t.kind == "num":
@@ -358,7 +374,7 @@ class MixedPhonemizer:
                 if k > 0:
                     phones += list(self.clause_mark + self.after_clause) if plan.pauses[k] else list(self.switch)
                 if seg.route == "en":
-                    phones += list(self._en_segment(seg))
+                    phones += list(self._en_segment(seg, last))
                 else:
                     jt = self._ja_text(plan, seg, last)
                     ph = self._ja_phonemes(jt)
@@ -413,6 +429,8 @@ class MixedPhonemizer:
                     said = None
                     if t.kind == "num":
                         said = " ".join(self.en.spell_number(t.text))
+                    elif t.kind == "word" and t.reading is not None and t.reading.source == "time":
+                        said = ("" if s[t.start - 1:t.start].isspace() else " ") + t.text.lower()[0] + ".m."
                     elif t.kind == "word" and t.word != t.text:
                         said = t.word
                     if said is not None:

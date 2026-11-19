@@ -85,10 +85,21 @@ class TableTest(unittest.TestCase):
             if rule["add"] not in EN.t["suffixes"]["voicing"]:
                 EN.arpabet_to_ipa(rule["add"].split())
 
-    def test_ja_words_are_kana(self):
+    def test_no_duplicate_keys(self):
+        def check(pairs):
+            keys = [k for k, _ in pairs]
+            dup = sorted(set(k for k in keys if keys.count(k) > 1))
+            self.assertEqual(dup, [], "duplicate keys in en_ipa_table.json")
+            return dict(pairs)
+        with open(TABLE, encoding="utf-8") as f:
+            json.load(f, object_pairs_hook=check)
+
+    def test_ja_words_are_japanese(self):
+        def japanese(c):
+            return 0x3040 <= ord(c) <= 0x30FF or 0x4E00 <= ord(c) <= 0x9FFF
         for w, kana in EN.t["ja_words"]["words"].items():
             self.assertEqual(w, w.lower())
-            self.assertTrue(kana and all("぀" <= c <= "ヿ" for c in kana), (w, kana))
+            self.assertTrue(kana and all(japanese(c) for c in kana), (w, kana))
 
     def test_number_words_are_in_cmu(self):
         n = EN.t["numbers"]
@@ -178,6 +189,13 @@ class MixedTest(unittest.TestCase):
             for s in MP.phonemize(text):
                 for p in s:
                     self.assertIn(p, ids, (text, p))
+
+    def test_golden_parity_set(self):
+        """tests/fixtures/golden_mixed.tsv (made by make_golden.py) still holds: the phone's port tests the same file."""
+        for text, enc in rows("golden_mixed.tsv"):
+            got = MP.phonemize(text)
+            got_enc = "NULL" if got is None else " / ".join(" ".join(f"{ord(c):04x}" for c in s) for s in got)
+            self.assertEqual(got_enc, enc, text)
 
     def test_unreadable_is_none(self):
         self.assertIsNone(MP.phonemize("안녕"))

@@ -1,0 +1,42 @@
+lines: 3328 (2670 English, 658 mixed); holdout 60
+by category: en_jflavour 560, en_numbers 51, en_qa 203, en_school 151, en_street 694, mixed_auto 220, mixed_en_led 204, mixed_ja_led 187, tatoeba_qa 420, tatoeba_school 638
+English training lines: 2630; symbol counts (target 200):
+  ʒ	235
+  θ	296
+  ɐ	356
+  ɜ	373
+  ɡ	683
+  ɚ	755
+  ŋ	785
+  ʃ	787
+  ɔ	962
+  v	970
+  b	1008
+  f	1082
+  h	1094
+  j	1097
+  o	1100
+  ɑ	1100
+  p	1131
+  e	1162
+  ʌ	1445
+  w	1468
+  z	1502
+  u	1529
+  ð	1533
+  æ	1646
+  ɛ	1715
+  ʊ	1996
+  k	2023
+  m	2069
+  l	2228
+  a	2396
+  i	2530
+  d	2605
+  ɹ	2822
+  s	2916
+  ə	3114
+  n	3922
+  t	5217
+  ɪ	6717
+features: cluster 5560, final:b 13, final:d 1137, final:f 136, final:k 665, final:l 590, final:m 529, final:n 1384, final:p 240, final:s 894, final:t 2602, final:v 475, final:z 1255, final:ð 77, final:ŋ 581, final:ɡ 37, final:ɹ 903, final:ʃ 235, final:ʒ 69, final:θ 49, rl 5050, th 1829, v 970

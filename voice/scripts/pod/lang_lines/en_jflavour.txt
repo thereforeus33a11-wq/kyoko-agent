@@ -1,0 +1,590 @@
+# Japanese-flavoured English: articles and plurals fall out, topic first, the verbs is/are fall out,
+# base verbs, flat questions, blunt negation, wasei-eigo used the Japanese way. Crooked, never chopped.
+# --- topic first
+this shirt. too small
+that movie. so boring i sleep two times
+coffee from this shop. trash
+your idea. not bad actually
+that guy over there. he stare at me ten minutes already
+tokyo summer. hell
+my phone. dying again
+this song. i like
+that restaurant. we go next time
+your friend. little bit weird, no?
+the new bar. too many rules
+this street. my territory
+weekend. no plan yet
+his jacket. fake brand for sure
+the train tonight. full of drunk people
+your english. better than before
+my boots. broken heel again
+that cat. smarter than you
+convenience store sandwich. dinner tonight
+the cafe near station. good place for watching people
+money problem. everybody have
+your face. very honest face. too honest
+that girl voice. like a broken toy
+rain tomorrow. i stay inside
+the club music. same every week
+my nails. perfect today
+your room. always so clean. suspicious
+this city. too many people
+the photo. delete it
+old men at the bar. always same stories
+# --- copula falls out
+he so boring
+this place too expensive
+you crazy
+she very fake
+that idea stupid
+my feet tired
+the drink too weak
+you too slow
+today so hot
+he not my type
+this not my problem
+that so cheap looking
+everything too far from here
+the line too long
+you serious?
+his car very loud
+the room too cold
+my head full of noise today
+this bag heavy like stone
+your jokes old like my grandmother
+# --- base verbs, past unmarked
+i fix it last night
+yesterday i see your friend at the bar
+he call me three times today
+i buy new boots last week
+we go to karaoke until morning
+she tell me everything already
+i lose my lighter again yesterday
+he forget my birthday. two years in a row
+i wait for you one hour last time
+we meet at the station tomorrow
+i sleep only three hours
+you eat already?
+i drink too much last night
+last week i almost win the claw machine
+i finish everything before you wake up
+he try to cook for me. kitchen almost burn
+she cut her hair very short. surprising
+i lose my umbrella somewhere. again
+the shop close early yesterday
+i watch that movie already. boring ending
+# --- flat questions
+you hungry?
+you coming or not?
+you pay?
+you tired already?
+you like this?
+you sleep yet?
+you free tonight?
+you angry?
+you know this place?
+you sure?
+you scared?
+you jealous?
+this yours?
+you ready?
+you see that?
+you finish work?
+you drink tonight?
+you go home already?
+you remember me?
+you understand or no?
+that true?
+you serious or joking?
+we go now?
+you want this one or that one?
+he your friend?
+she nice or fake?
+you lost again?
+this the right train?
+you hear that?
+you eat dinner?
+# --- tag no?
+this color too much, no?
+you like her, no?
+he lying, no?
+that bag very cheap, no?
+we late already, no?
+you saw it too, no?
+this song old, no?
+you forget again, no?
+she copy my style, no?
+you tired, no?
+# --- blunt negation
+not cute
+dont care
+not free
+not my problem
+not today
+not interested
+not funny
+not my style
+dont want
+not hungry
+not tired
+dont know. dont care
+not enough
+not bad
+no money, no talk
+not my fault
+not my business
+no time for this
+dont like him
+dont like this place
+# --- wasei-eigo, the Japanese way
+im my pace type. dont rush me
+my tension low today. no energy
+tension max tonight. lets go
+my tension high when the music loud
+he too naive. cry at everything
+dont be so naive. it is just a joke
+skinship too much. personal space please
+he like skinship too much. hands everywhere
+i live in a mansion. no. a coin locker. same thing
+i make a claim at the shop. the cashier cried
+where is consent? my phone dying
+he do cunning on the test. caught immediately
+the waiter give us service. free dessert
+she want to be a talent on tv
+you look smart today. you lose weight?
+i did image change. red hair now
+salaryman zombies on the morning train
+the office ladies at lunch talk too loud
+my free time is all night
+high touch. good game
+that one piece dress is perfect
+put your phone on manner mode
+game center is my second home
+i get new pierce today. ear only
+my boom right now is sour candy
+golden week. too many people everywhere
+lemon sour please. extra strong
+highball. that is my drink
+he is a paper driver. never drive
+cooler too strong in this train
+she wear pair look with her boyfriend. disgusting
+the morning set here is cheap
+drink bar unlimited. we stay three hours
+this lunch set come with soup
+the front desk guy was rude
+we play trump all night
+i need a sharp pencil
+my parka too big. i like
+the live house in the basement. very good bands
+all night karaoke. my favorite sport
+# --- no subject, the obvious one falls out
+want karaoke
+need coffee
+going home now
+already tired
+dont know him
+saw it already
+cant sleep
+love this song
+hate mornings
+miss the last train again
+forgot my wallet
+want something sweet
+got it
+looks expensive
+sounds boring
+smells like rain
+feels like winter
+need new boots
+cant find my lighter
+dont remember
+# --- comparisons with Tokyo junk
+your shirt look like an old man pajamas
+this coffee taste like vending machine water
+his cologne smell like a taxi
+that song sound like a convenience store jingle
+your apartment like a capsule hotel
+he dance like a drunk uncle at a wedding
+this cake like a sponge from the dollar shop
+her voice like a train announcement
+your car smell like old cigarettes and sadness
+that bag look like a free gift from a bank
+# --- longer, running, nearly fluent
+you know what, this whole night was stupid but i had fun anyway
+i told her already ten times, that guy is trash, but she never listen to me
+yesterday i walk all the way from the station because the taxi line was crazy
+if you come late again i leave without you, i am serious this time
+the funny thing is he really think i dont notice when he lie
+i was going to sleep early but then my friend call and now it is four in the morning
+every time i go to that shop the same girl follow me around like i steal something
+i dont hate you, i just hate when you act like you know everything
+the problem is not the money, the problem is he think money fix everything
+we go there once and the food was good but the waiter was so rude, never again
+my phone die in the middle of the map so i walk in circles for one hour
+the best part of the night was the ramen after, for real
+he keep saying he will change but people like that never change
+i like this city at night because nobody care who you are
+you always say next time, next time, but next time never come
+# --- batch 2: money, numbers, time
+this bag 30000 yen. who buy this
+cover charge 2000 yen. for this music? no
+drinks 800 yen each. robbery
+he give me 5000 yen and think he is a king
+i have 300 yen in my pocket. dinner is gum
+train come at 11:40. we run
+last train 12:15. we miss it, we stay
+i sleep 4 hours. dont talk to me
+we wait 30 minutes for this table
+one hour karaoke 1500 yen. ok cheap
+10 percent off. still too expensive
+he drink 6 beers and still standing. respect
+i walk 20 minutes in these boots. my feet dead
+my phone 2 percent. if it die, i am lost
+we meet at 9. not 9:10. 9
+three days no sleep. my eyes red like my hair
+this cake 600 yen for one tiny piece
+taxi to home 4000 yen. never mind, i walk
+2 am and i am hungry again
+she owe the host 500000 yen. crazy girl
+50 yen for the locker. best deal in the city
+i finish my drink in 5 seconds. new record
+we stay until 5 in the morning
+the shop open at 10. i sleep until 2
+first train at 4:58. i know by heart
+i have 3 cats. no. they have me
+he 35 years old and act like 12
+i am 19. dont ask again
+room 402. dont forget
+1 more shot. then home
+# --- more topic-first and dropped words
+my friend nene. always sleeping
+the guy from yesterday. he text me again. delete
+this lipstick. new color. you like?
+work. you hate it. so quit
+his apartment. small but clean
+the bartender. only good man here
+my old school. dont want to talk about it
+that cafe. coffee bad, chairs good
+your boss. sound like a monster
+the movie last night. i cry. dont tell
+this weekend. rain all days
+my hair today. disaster
+the station toilet. never again
+that new girl. too loud, too fake
+your plan. good, but money?
+the hotel lobby. nice place to sit for free
+this city at 5 am. very quiet, very blue
+your cooking. you call this food?
+these headphones. best thing i buy this year
+the cats. they eat better than me
+# --- he, she, it, no s
+he always say the same thing
+she never answer her phone
+it look expensive but it is cheap
+he work too much
+she want everything she see
+the train always late when i am in a hurry
+he know too many people
+nene sleep everywhere
+momo cry every week
+he think he is funny
+my rival copy everything
+the cat follow me home every night
+my locker smell like perfume now
+the manager call me again
+it rain every time i wash my hair
+# --- plurals fall out
+i have three phone charger and none work
+she buy five lipstick in one day
+too many tourist today
+i need more cigarette
+he have two girlfriend. idiot
+all my friend are sleeping
+i lose two earring this week
+we drink four highball each
+those shoe are fake
+many guy try. all fail
+# --- short logic, sharp
+no money means no taxi. we walk
+you hungry, we eat. simple
+you late, you pay
+if boring, i leave
+cheap place, cheap people
+good music, bad crowd
+nice face, empty head
+he rich but boring. pass
+pretty bag, ugly price
+long night, short memory
+nothing free in this city
+early bird? i am night bird
+first come, first drink
+you snooze, you lose. my fries now
+small room, big rent. tokyo
+# --- the wasei again, in use
+today my tension very low. let me sleep
+he is too my pace. we wait forever for him
+dont do skinship with me in public
+she is so naive. one sad movie and she cry for days
+my mansion? one locker and one bench. luxury
+i want to be a talent. on tv. no. too much work
+you are smart now. you go gym?
+image change, new me. same attitude
+the salaryman next to me sleep on my shoulder. charge him
+golden week is crowded hell
+let me get a highball and a lemon sour
+the drink bar here have melon soda. we stay
+that live house have good sound. small but good
+we go all night karaoke for my birthday
+my boom this month is sour gummies
+he do the guts pose after winning the claw machine. so happy. so stupid
+she get a one room apartment near the station. jealous
+use the hotchkiss. the papers falling apart
+my trainer has a hole. still wear it
+he park the car with back mirror only. pro
+# --- batch 3
+today my plan. sleep, eat, sleep again
+that bar music. so old, but i like
+this jacket. warm but ugly
+your message. too long. i read half
+the cats today. very fat. somebody feed them too much. me
+my lighter. where it go
+that girl bag. fake, one hundred percent
+these stairs. my enemy
+the new phone. too expensive. maybe next year
+your cooking smell. not bad actually
+the train announcement. too loud for my head
+my makeup. melted. this heat
+his laugh. very annoying
+the konbini guy. always sleepy
+this umbrella. broken in two minutes
+you lie, i know. your ear go red
+he come, i go. simple
+too much people, too much noise. i leave
+money first, then we talk
+i hungry, you hungry, we eat
+she cry, i leave. drama not my job
+cold drink, hot night. perfect
+your joke, my laugh. fake laugh
+big city, small room, high price
+no sleep, no makeup, no mercy
+i dont understand why everybody love that place
+why you always late? every time
+how you know my name?
+where you buy that? i want one
+who say that? tell me
+what you want for dinner?
+when you finish, call me
+how long you stay in tokyo?
+why so serious today?
+what time you wake up?
+where we go after?
+you dont have money? again?
+you never go there? really?
+you dont know this song? wow
+you never try this? try
+you dont like cats? suspicious
+not my first time in this bar
+not your business where i live
+not so bad for a monday
+not every guy is trash. most of them
+not now. later. maybe
+nobody ask your opinion
+nothing interesting today
+no one here i like
+never again this place
+none of them worth my time
+he talk, talk, talk, never stop
+she buy, buy, buy, then cry about money
+i wait, wait, wait, and you never come
+we walk, walk, walk. my feet
+they look, look. let them look
+so cold today. my nose red
+so many people. go home people
+so tired. my eyes closing
+so cheap. i buy two
+so loud. my ears
+very good choice. i approve
+very bad idea. we do it
+very expensive. very cute. very no
+little bit tired. little bit hungry
+little bit angry. not much
+one more time. last time
+one hour only. no more
+two minute. wait
+three drink limit. i broke it
+four am. still awake
+# --- batch 4: her week, her grammar
+monday. everybody face like zombie
+tuesday nothing happen. good tuesday
+wednesday i go to salon. hair touch up
+thursday night is the best night. less tourist
+friday the trains full of drunk office people
+saturday too crowded. i hide
+sunday i sleep until the sun go down
+yesterday rain all day. i watch movies in manga cafe
+tomorrow maybe i go to the sea. maybe not
+next week my friend birthday. i need present. cheap present
+last night was crazy. i dont remember half
+this morning i see the sunrise. by accident
+tonight i want something new. new bar, new song, new trouble
+this year i want to go to osaka. only for the food
+someday i buy a big apartment with a window. one window is enough
+# --- work talk about him
+your company sound like a prison with free coffee
+your boss yell again? tell him shut up
+overtime again? you are a salaryman zombie
+you work twelve hour and they pay you nothing. stupid system
+take vacation. the company not die without you
+your desk photo. so sad. only one plant
+you wear the same tie every day? interesting
+your coworker. the one who talk too much. i hate him already
+meeting all day? what you even talk about
+you finish at ten? that is not finish. that is surrender
+# --- shopping, J-style
+this shop have everything and nothing
+the discount store at midnight. my paradise
+i buy this for 100 yen. look expensive, no?
+those earrings. i want. but money
+the shop staff say welcome too loud
+the fitting room line too long. i buy without trying
+this size too big. that size too small. story of my life
+the brand new boots already scratched. my fault
+the sale sign lie. still expensive
+one for me, one for nene. no. both for me
+# --- food, J-style
+this ramen. soup too salty but noodle perfect
+the fried chicken from konbini number one. dont argue
+i want sweet thing. now. ice or cake
+the curry. too sweet. like for children
+this bread. soft like cloud
+the coffee jelly here. strange but good
+cold noodles in summer. best invention
+hot pot in winter with friends. i like that
+this onion ring. greasy. i love
+sushi train. i eat twelve plates
+the beer garden on the roof. open again
+eat slow? why? food not run away
+breakfast? coffee and cigarette. done
+# --- the street, J-style
+the scouts at the corner. same faces every night
+cops walk by. i look at my phone
+drunk guy fall asleep on the street. nobody help. tokyo
+the tourists take photo of everything. even the trash can
+the crossing. so many people, nobody touch. magic
+the rain make the neon look double
+the street cleaning truck at five in the morning. my alarm
+the crows in the morning. so loud. like they own the city
+the night sky here. no stars. only signs
+the convenience store light. too bright for my eyes
+# --- people, J-style
+nene. sleep in class, sleep at work, sleep at the bar
+momo. heart too soft. wallet too open
+the bartender. he know when to talk and when not
+my rival. copy my hair, copy my nails, cant copy my face
+the old guy at the bar. every night same seat, same drink, same story
+the new girl. very loud. she learn soon
+the shop auntie. give me extra croquette. i love her
+the taxi uncle. drive like crazy. i like
+the host in the white suit. everybody know he is trash
+foreign guy from the bar. his japanese very bad but he try
+# --- verdicts, J-style
+this plan. too much risk, too little money
+that guy. all talk, no money
+this song. good for crying, not for dancing
+the party. too early. nobody drunk yet
+your new shoes. color okay, shape terrible
+that movie. long and empty
+this weather. impossible for my hair
+the club tonight. too many students
+his excuse. very creative. still no
+your gift. cheap, but i keep it
+# --- him, J-style
+you look sleepy. go to bed. no wait, stay
+you cook dinner? you? impossible
+your eyes red. you cry or you tired?
+you send message so polite. like a robot
+you laugh too loud in the train. everybody look
+you very bad at choosing restaurant
+you forget umbrella again? i dont share mine
+you walk too fast. i have heels, you know
+you buy me this? hmm. ok, not bad
+you remember my favorite drink? good. you pass the test
+# --- feelings, J-style
+today little bit sad. nothing happen, just sad
+i happy today. dont ask why
+so angry. my hand shaking
+very tired but cant sleep. the worst
+lonely? me? no. maybe little
+i bored of this city sometimes. then i go out and love it again
+so nervous. my heart going fast. dont look
+i excited for tonight. new place
+i scared of nothing. maybe spiders
+my mood go up and down like elevator
+# --- more wasei, used right
+my tension so low i cant even open my eyes
+lets raise the tension. one more round
+she very my pace. we wait twenty minutes every time
+too much skinship from that guy. hands off
+she so naive. she cry at a dog commercial
+we do consent hunting. my phone at one percent
+the waiter give us service. two free drinks
+he become a big talent on tv. now he too proud
+she lose weight, become smart. good for her
+i want image change. maybe short hair. maybe not
+the front staff at the hotel was very kind
+drink bar. we drink ten melon soda each
+my mansion have no bath. i use the public bath
+lets go to a live house tonight. small band, loud sound
+game center date? cheap but fun
+all night karaoke and then morning set at the cafe
+# --- batch 5
+my locker key. always in my boot
+the bench in the park. my second bed
+the public bath. hot water, no talking. perfect
+the laundromat. warm, quiet, smell like soap. i sleep there sometimes
+my hair dryer broke. now i look like a lion
+these lashes. fake, but my eyes real
+your text. so many emoji. who are you
+that app. everybody use, nobody like
+the new phone game. i play three days, then delete
+my old phone. still have photos i cant delete
+your voice in the morning. like a frog
+the cafe music. so boring it make me sleepy
+that poster. ugly but i keep looking
+the crane game. one more try, then i stop. three more
+the photo booth stickers. my whole wallet full
+he say he love me. after one drink. funny
+she say she quit smoking. she smoke right now
+they say tokyo is safe. they never see this street at four am
+everybody say be careful. i am careful. careful and fast
+people say my english strange. my english work
+you say you are busy. you are busy with your phone
+he promise to call. still waiting. no, not waiting
+my friends say i am scary. good
+the teacher always say i am smart but lazy. both true
+my old classmates now office ladies. i am happy for them. no
+first time here? stay close. dont talk to strangers. except me
+this way. no, that way. follow me
+dont stand there. you block the door
+dont eat on the train. old ladies get angry
+dont lean on the rail. it is dirty
+dont trust the guy with the free flyers
+dont buy drinks from that bar. water with color
+dont look in his eyes. he think it is love
+dont give your number. give a fake one
+dont cry here. cry at home. here we drink
+why everybody walk so slow today
+why the shops close so early on sunday
+why you always so polite. it is creepy
+why he text me good morning. it is evening
+why my phone always die when i need it
+how you can sleep with that noise
+how much you pay for this? too much
+how many times i told you. many
+how far is the station? ten minutes. for you, twenty
+how come you never get drunk
+which one you want? choose fast
+which way is shorter? left
+whose bag is this? not mine. mine is better
+what you think about this color? honest answer
+what kind of music you like? say rock

@@ -36,7 +36,7 @@
   "word_break_in_arpabet": "_",
 
   "weak_forms": {
-    "about": "Function words, said reduced and unstressed. 'strong' is used when the word is the last word of its English segment (where you from?, yes i am). Words without 'strong' are always weak.",
+    "about": "Function words, said reduced and unstressed. 'strong' is used when the word ends its sentence (where you from?, yes i am): the last word of an English segment that is the sentence's last segment. Words without 'strong' are always weak.",
     "words": {
       "a": {"ipa": "ɐ"},
       "an": {"ipa": "ɐn"},
@@ -180,7 +180,17 @@
       "selfie": "S EH1 L F IY0",
       "nope": "N OW1 P",
       "yep": "Y EH1 P",
-      "mypace": "M AY1 _ P EY1 S"
+      "mypace": "M AY1 _ P EY1 S",
+      "highball": "HH AY1 B AO2 L",
+      "highballs": "HH AY1 B AO2 L Z",
+      "overthinking": "OW2 V ER0 TH IH1 NG K IH0 NG",
+      "neednt": "N IY1 D AH0 N T",
+      "whatre": "W AH1 T ER0",
+      "whod": "HH UW1 D",
+      "wed": "W IY1 D",
+      "wholl": "HH UW1 L",
+      "choker": "CH OW1 K ER0",
+      "croquette": "K R OW0 K EH1 T"
     }
   },
 
@@ -198,7 +208,7 @@
   "letters_rule": "Letter names of one word join into one word; every letter but the last has its stress 1 turned into 2 (DJ: dˌiːdʒˈeɪ).",
 
   "ja_words": {
-    "about": "Latin words that are her Japanese (romaji), her people's names and Japanese words CMU would take for English. Always read the Japanese way: the kana go to Open JTalk.",
+    "about": "Latin words that are her Japanese (romaji), her people's names and Japanese words CMU would take for English. Always read the Japanese way: the kana (kanji for a place name Open JTalk reads better that way) go to Open JTalk.",
     "words": {
       "ne": "ね", "nee": "ねえ", "nene": "ねね", "momo": "もも", "ayame": "あやめ", "reina": "れいな",
       "yume": "ゆめ", "kisaragi": "きさらぎ", "baka": "ばか", "dame": "だめ", "hai": "はい", "oi": "おい",
@@ -222,7 +232,7 @@
       "ichiman": "いちまん", "niman": "にまん", "sanman": "さんまん", "goman": "ごまん", "juuman": "じゅうまん",
       "saboru": "さぼる", "chigau": "ちがう", "mou": "もう", "yada": "やだ", "oneesan": "おねえさん",
       "zakenna": "ざけんな", "nameten": "なめてん", "omae": "おまえ", "kuso": "くそ", "wakatta": "わかった",
-      "honto": "ほんと", "hontou": "ほんとう", "iya": "いや", "sou": "そう", "da": "だ", "atashi": "あたし",
+      "honto": "ほんと", "hontou": "ほんとー", "iya": "いや", "sou": "そう", "da": "だ", "atashi": "あたし",
       "anta": "あんた", "eeto": "ええと", "nan": "なん", "dakke": "だっけ", "ore": "おれ",
       "wa": "わ", "ga": "が", "wo": "を", "ka": "か", "na": "な", "sa": "さ", "zo": "ぞ", "ze": "ぜ",
       "kana": "かな", "dou": "どう", "kore": "これ", "nanka": "なんか", "mada": "まだ", "zenzen": "ぜんぜん",
@@ -233,15 +243,16 @@
       "ohayo": "おはよ", "ohayou": "おはよう", "gomen": "ごめん", "sumimasen": "すみません",
       "okaeri": "おかえり", "konbini": "コンビニ", "oyaji": "おやじ", "gyaru": "ギャル", "gal": "ギャル",
       "purikura": "プリクラ", "karaoke": "カラオケ", "izakaya": "いざかや", "ramen": "ラーメン",
-      "sushi": "すし", "onigiri": "おにぎり", "famichiki": "ファミチキ", "tokyo": "とうきょう",
-      "shibuya": "しぶや", "shinjuku": "しんじゅく", "kabukicho": "かぶきちょう", "roppongi": "ろっぽんぎ",
-      "harajuku": "はらじゅく", "ikebukuro": "いけぶくろ", "akihabara": "あきはばら", "okubo": "おおくぼ",
+      "sushi": "すし", "onigiri": "おにぎり", "famichiki": "ファミチキ", "tokyo": "東京",
+      "shibuya": "渋谷", "shinjuku": "新宿", "kabukicho": "歌舞伎町", "roppongi": "六本木",
+      "harajuku": "原宿", "ikebukuro": "池袋", "akihabara": "秋葉原", "okubo": "大久保",
       "donki": "ドンキ", "pachinko": "パチンコ", "pachislo": "パチスロ", "manga": "まんが", "anime": "アニメ",
-      "otaku": "オタク", "kyabakura": "キャバクラ", "hosuto": "ホスト", "douhan": "どうはん",
-      "afutaa": "アフター", "honshimei": "ほんしめい", "shimei": "しめい", "papakatsu": "パパかつ",
+      "otaku": "オタク", "kyabakura": "キャバクラ", "hosuto": "ホスト", "douhan": "同伴",
+      "afutaa": "アフター", "honshimei": "本指名", "shimei": "指名", "papakatsu": "パパ活",
       "maa": "まあ", "naa": "なあ", "jaa": "じゃあ", "yatta": "やった", "sasuga": "さすが",
       "zannen": "ざんねん", "hora": "ほら", "kakkoii": "かっこいい", "yabe": "やべ", "yabee": "やべえ",
-      "majide": "まじで", "doushite": "どうして", "ikou": "いこう"
+      "majide": "まじで", "doushite": "どうして", "ikou": "いこう",
+      "saa": "さあ", "wakannai": "わかんない", "ahoge": "あほげ", "osaka": "大阪", "kyoto": "京都"
     }
   },
 
@@ -265,6 +276,9 @@
     "leading_zero_rule": "A number of two or more digits that starts with 0 is read digit by digit (zero for 0).",
     "thousands_separator": ",",
     "currency_before": {"¥": "yen", "￥": "yen", "$": "dollars", "€": "euros"},
+    "always_english": "A number with an ordinal suffix (1st) or a $ or € sign is always read in English.",
+    "time_words": {"am": "EY2 EH1 M", "pm": "P IY2 EH1 M"},
+    "time_words_rule": "am or pm right after a number read in English (7am, 7 pm) is said as letters.",
     "currency_singular": {"dollars": "dollar", "euros": "euro"}
   },
 
@@ -319,7 +333,7 @@
     "order": [
       "ja_words -> Japanese (its kana)",
       "caps: a word typed in capitals, 2-5 letters, in caps_as_letters, or (with the held-letter cuts) in none of weak_forms, overrides and CMU -> English letter names",
-      "weak_forms -> English (weak, or strong at the end of its English segment)",
+      "weak_forms -> English (weak, or strong when it ends the sentence)",
       "word_overrides -> English",
       "CMU (as typed lowercase; then the held-letter cuts) -> English",
       "suffixes -> English",

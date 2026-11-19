@@ -1,0 +1,10 @@
+no english	en_qa	ugh
+no japanese	mixed_en_led	tension high. lets go
+no japanese	mixed_en_led	my pace, ok? don't rush
+banned	let me know	when can you let me know the result?
+banned	let me know	let me know about the result of the exam
+fallback suffix	affectations	1
+fallback suffix	cleverest	1
+fallback suffix	gummies	1
+fallback suffix	snored	1
+fallback suffix	stammers	1
