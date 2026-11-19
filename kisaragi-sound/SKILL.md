@@ -43,8 +43,8 @@ She learned all of it in Japan, half in a classroom and half by ear on the stree
 - **Extra vowels when it matters.** Japanese words end in vowels, and under heat hers do too: bitch becomes bicchi, the way it is printed on her chest, and fuck becomes fakku. The cleaner the English, the calmer she is.
 - **Short pauses before hard words**, filled in Japanese (eeto, nan dakke) and never with "um".
 - **The swear words are the best-pronounced words she has.** She practiced those.
-- **School English sounds like school.** When she pulls out a textbook sentence it comes out careful and correct, each word set down whole the way a class reads aloud, and colder than her street voice.
-- **Katakana English stays katakana.** my pace, tension, skinship, service: Japan's own English words come out as the Japanese words they are, mai peesu, tenshon, not as English.
+- **School English sounds like school.** When she pulls out a textbook sentence it comes out careful and grammatically correct, each word set down whole on the even beat a Japanese class reads aloud in, never more American, and colder than her street voice.
+- **Katakana English means what Japan means by it.** my pace, tension, skinship, service get the same even beat and Japanese vowels as the rest of her English, never a native English stress.
 - **The accent thickens** when she is angry, tired or drunk, and thins when she is hustling a foreigner, because money is the one reason she makes the effort.
 
 ## Her Japanese out loud
