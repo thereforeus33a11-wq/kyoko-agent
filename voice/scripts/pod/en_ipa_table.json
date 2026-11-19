@@ -112,7 +112,7 @@
   },
 
   "word_overrides": {
-    "about": "ARPAbet, before the CMU dictionary. '_' is a word break. Her typed contractions without apostrophes, chat words, and words CMU lacks or reads wrong for her.",
+    "about": "ARPAbet, before the CMU dictionary. '_' is a word break. Her typed contractions without apostrophes, chat words (typed lowercase: dm, bf, rn, said the way people say them aloud), units after a number (cm, km, kg), and words CMU lacks or reads wrong for her.",
     "words": {
       "dont": "D OW1 N T",
       "cant": "K AE1 N T",
@@ -167,7 +167,8 @@
       "tbh": "T IY1 _ B IY1 _ EY1 CH",
       "lmao": "EH1 L _ M AW1",
       "tl": "T IY1 _ EH1 L",
-      "dr": "D IY1 _ AA1 R",
+      "dr": "D AA1 K T ER0",
+      "tldr": "T IY1 _ EH1 L _ D IY1 _ AA1 R",
       "lemme": "L EH1 M IY0",
       "gimme": "G IH1 M IY0",
       "dunno": "D AH0 N OW1",
@@ -190,13 +191,55 @@
       "wed": "W IY1 D",
       "wholl": "HH UW1 L",
       "choker": "CH OW1 K ER0",
-      "croquette": "K R OW0 K EH1 T"
+      "croquette": "K R OW0 K EH1 T",
+      "dm": "D IY1 _ EH1 M",
+      "dms": "D IY1 _ EH1 M Z",
+      "sns": "EH1 S _ EH1 N _ EH1 S",
+      "ol": "OW1 _ EH1 L",
+      "bf": "B IY1 _ EH1 F",
+      "gf": "JH IY1 _ EH1 F",
+      "bff": "B IY1 _ EH1 F _ EH1 F",
+      "jk": "JH EY1 _ K EY1",
+      "ppl": "P IY1 P AH0 L",
+      "jpg": "JH EY1 _ P EH1 G",
+      "png": "P IY1 _ EH1 N _ JH IY1",
+      "cm": "S EH1 N T AH0 M IY2 T ER0 Z",
+      "km": "K IH0 L AA1 M AH0 T ER0 Z",
+      "kg": "K IY1 L OW0 Z",
+      "ml": "M IH1 L AH0 L IY2 T ER0 Z",
+      "gb": "JH IY1 _ B IY1",
+      "mb": "EH1 M _ B IY1",
+      "irl": "AY1 _ AA1 R _ EH1 L",
+      "smh": "EH1 S _ EH1 M _ EY1 CH",
+      "ngl": "N AA1 T _ G AH1 N AH0 _ L AY1",
+      "rn": "R AY1 T _ N AW1",
+      "nvm": "N EH1 V ER0 _ M AY1 N D",
+      "wtf": "D AH1 B AH0 L Y UW0 _ T IY1 _ EH1 F",
+      "tf": "T IY1 _ EH1 F",
+      "af": "EY1 _ EH1 F",
+      "omw": "AA1 N _ M AY1 _ W EY1",
+      "lmk": "L EH1 T _ M IY1 _ N OW1",
+      "hmu": "HH IH1 T _ M IY1 _ AH1 P",
+      "ily": "AY1 _ L AH1 V _ Y UW1",
+      "np": "N OW1 _ P R AA1 B L AH0 M",
+      "gn": "G UH1 D _ N AY1 T",
+      "hbd": "HH AE1 P IY0 _ B ER1 TH D EY2",
+      "tmi": "T IY1 _ EH1 M _ AY1",
+      "fr": "F AO1 R _ R IY1 L",
+      "ig": "AY1 _ JH IY1",
+      "nsfw": "EH1 N _ EH1 S _ EH1 F _ D AH1 B AH0 L Y UW0",
+      "diy": "D IY1 _ AY1 _ W AY1",
+      "xd": "EH1 K S _ D IY1",
+      "jp": "JH EY1 _ P IY1",
+      "bgm": "B IY1 _ JH IY1 _ EH1 M",
+      "mv": "EH1 M _ V IY1",
+      "wyd": "W AH1 T _ Y UW1 _ D UW1 IH0 N"
     }
   },
 
   "caps_as_letters": {
-    "about": "Words typed in capitals (2-5 letters) that are said letter by letter even though CMU has them as a word.",
-    "words": ["id", "tv", "pc", "dj", "us", "uk", "ufo", "usb", "sns", "dm", "ol", "og", "ng", "ok"]
+    "about": "Words typed in capitals (2-5 letters) that are said letter by letter even though CMU or an override has them as a word (CM is a TV ad in Japan; cm after a number is centimeters).",
+    "words": ["id", "tv", "pc", "dj", "us", "uk", "ufo", "usb", "sns", "dm", "ol", "og", "ng", "ok", "cm"]
   },
 
   "letters": {
@@ -208,7 +251,7 @@
   "letters_rule": "Letter names of one word join into one word; every letter but the last has its stress 1 turned into 2 (DJ: dˌiːdʒˈeɪ).",
 
   "ja_words": {
-    "about": "Latin words that are her Japanese (romaji), her people's names and Japanese words CMU would take for English. Always read the Japanese way: the kana (kanji for a place name Open JTalk reads better that way) go to Open JTalk.",
+    "about": "Latin words that are her Japanese (romaji), her people's names, Japanese places and family names, and Japanese words CMU would take for English (dake, kono, sensei, Ginza, Tanaka). Genuinely English spellings (are, no, so, sake, kimono) stay English. Always read the Japanese way: the kana (kanji for a place name Open JTalk reads better that way) go to Open JTalk.",
     "words": {
       "ne": "ね", "nee": "ねえ", "nene": "ねね", "momo": "もも", "ayame": "あやめ", "reina": "れいな",
       "yume": "ゆめ", "kisaragi": "きさらぎ", "baka": "ばか", "dame": "だめ", "hai": "はい", "oi": "おい",
@@ -252,12 +295,31 @@
       "maa": "まあ", "naa": "なあ", "jaa": "じゃあ", "yatta": "やった", "sasuga": "さすが",
       "zannen": "ざんねん", "hora": "ほら", "kakkoii": "かっこいい", "yabe": "やべ", "yabee": "やべえ",
       "majide": "まじで", "doushite": "どうして", "ikou": "いこう",
-      "saa": "さあ", "wakannai": "わかんない", "ahoge": "あほげ", "osaka": "大阪", "kyoto": "京都"
+      "saa": "さあ", "wakannai": "わかんない", "ahoge": "あほげ", "osaka": "大阪", "kyoto": "京都",
+      "dake": "だけ", "ja": "じゃ", "kane": "かね", "mata": "また", "kono": "この", "uri": "ウリ", "dane": "だね",
+      "hanakin": "花金", "hime": "ひめ", "joshi": "じょし", "teate": "てあて", "nomi": "のみ", "kao": "かお", "ari": "あり",
+      "dai": "だい", "bero": "べろ", "chara": "チャラ", "ita": "いた", "oba": "おば", "gai": "がい", "para": "パラ",
+      "sakura": "さくら", "oden": "おでん", "ramune": "ラムネ", "nihon": "にほん", "iie": "いいえ", "sensei": "せんせい", "kanji": "かんじ",
+      "tori": "とり", "ichi": "いち", "peko": "ぺこ", "kita": "きた", "ku": "く", "hage": "はげ", "tobu": "とぶ",
+      "ira": "いら", "jo": "じょう", "mai": "まい", "nagi": "なぎ", "aoi": "あおい", "marin": "まりん", "ado": "アド",
+      "genkin": "げんきん", "ginza": "銀座", "yokohama": "横浜", "okinawa": "沖縄", "nagoya": "名古屋", "kobe": "神戸", "hiroshima": "広島",
+      "fukuoka": "福岡", "hokkaido": "北海道", "saitama": "埼玉", "chiba": "千葉", "kawaguchi": "川口", "takeshita": "竹下", "nakano": "中野",
+      "sapporo": "札幌", "nara": "奈良", "ueno": "上野", "kanazawa": "金沢", "nikko": "日光", "seibu": "西武", "hamasaki": "ハマサキ",
+      "tanaka": "田中", "suzuki": "鈴木", "sato": "佐藤", "yamada": "山田", "takahashi": "高橋", "watanabe": "渡辺", "ito": "伊藤",
+      "nakamura": "中村", "kobayashi": "小林", "kato": "加藤", "yoshida": "吉田", "sasaki": "ささき", "yamamoto": "山本", "matsumoto": "松本",
+      "inoue": "井上", "kimura": "木村", "hayashi": "林", "shimizu": "清水", "yamaguchi": "山口", "mori": "森", "ikeda": "池田",
+      "hashimoto": "橋本", "ishikawa": "石川", "ogawa": "小川", "okada": "岡田", "maeda": "前田", "fujita": "藤田", "goto": "後藤",
+      "hasegawa": "長谷川", "murakami": "村上", "kondo": "近藤", "ishii": "石井", "saito": "斎藤", "sakamoto": "坂本", "endo": "遠藤",
+      "aoki": "青木", "fujii": "藤井", "nishimura": "西村", "fukuda": "福田", "ota": "太田", "miura": "三浦", "okamoto": "岡本",
+      "matsuda": "松田", "nakajima": "中島", "harada": "原田", "ono": "小野", "tamura": "田村", "takeuchi": "竹内", "kaneko": "金子",
+      "wada": "和田", "ishida": "石田", "ueda": "上田", "morita": "森田", "hara": "原", "shibata": "柴田", "sakai": "酒井",
+      "yokoyama": "横山", "miyazaki": "宮崎", "miyamoto": "宮本", "uchida": "内田", "takagi": "高木", "ando": "安藤", "taniguchi": "谷口",
+      "maruyama": "丸山", "imai": "今井", "fujiwara": "藤原"
     }
   },
 
   "numbers": {
-    "about": "Digits read in English when the nearest word after them, or else before them, in the same sentence is English; otherwise they stay in the Japanese text for Open JTalk.",
+    "about": "Digits read in English when the nearest word after them, or else before them, in the same sentence is English; otherwise they stay in the Japanese text for Open JTalk. A Japanese run with no letter or digit (°, ※, ＾) is not a word here.",
     "ones": ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
              "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"],
     "tens": ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"],
@@ -349,15 +411,20 @@
   "segmentation": {
     "about": [
       "1. plain_latin(text).",
-      "2. Split into sentences: Piper's _split_sentences pattern, plus an ASCII '.' that is followed by optional closers and then whitespace or the end, is not part of '..' and does not end an abbreviation. Each sentence keeps its trailing punctuation.",
-      "3. Tokenize a sentence: Latin word, number (digits with , . : inside, ordinal suffix, ¥ $ € before, % after), space, English punctuation, Japanese run (any other character).",
+      "2. Split into sentences: Piper's _split_sentences pattern, plus an ASCII '.' that is followed by optional closers and then whitespace or the end, is not part of '..' and does not end an abbreviation or dotted letters (dotted_letters). Each sentence keeps its trailing punctuation.",
+      "3. Tokenize a sentence: joined word (joined_words), dotted letters (dotted_letters), Latin word, number (digits with , . : inside, ordinal suffix, ¥ $ € before, % after), space, English punctuation, Japanese run (any other character).",
       "4. Peel ja_edge_punct off both ends of each Japanese run into punctuation tokens.",
       "5. Route each Latin word (latin_word_route) and each number (numbers.about).",
       "6. Segments: maximal runs of tokens of one route; English punctuation and Japanese edge punctuation between two segments is the boundary between them.",
       "7. A Japanese segment's text is the sentence's own characters from its first to its last token, with Japanese-route Latin words replaced by their kana and the whitespace next to those words removed; the last segment also gets the sentence's trailing punctuation. It goes to Open JTalk (Piper's JapanesePhonemizer) and its sentences are concatenated.",
-      "8. Join: see boundaries."
+      "8. Join: see boundaries. A Japanese segment Open JTalk gives nothing for (※, ＾, °) is left out: no boundary of its own, the segments around it join as if it were not there, and the sentence's last segment that gives phonemes decides the strong form and the end mark."
     ],
     "abbreviations": ["mr", "mrs", "ms", "dr", "st", "vs", "jr", "sr", "etc", "e.g", "i.e", "a.m", "p.m"],
+    "dotted_letters": "Single letters each followed by '.' ([A-Za-z](\\.[A-Za-z])+ and an optional last '.', not followed by a letter: a.m., e.g., U.S.A.) are one Latin word with the dots dropped, always English: am/pm right after an English number are time_words, else an override of the letters if there is one, else the letter names (letters_rule). Its last '.' never ends a sentence.",
+    "joined_words": {
+      "about": "Latin words typed with a mark inside that are one word (matched lowercased at a word start, not followed by a letter), read as the word given.",
+      "words": {"tl;dr": "tldr"}
+    },
     "ja_edge_punct": "、。，．！？!?「」『』（）【】〈〉《》・…‥“”‘’\"'",
     "closers": "」』）】〉》”’\"')]",
     "space_codepoints": [9, 10, 11, 12, 13, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288],
