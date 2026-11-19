@@ -37,12 +37,14 @@ Her real voice never goes up to please anyone.
 - **The tongue comes out before the line** when she is being a brat. The pause is part of the sentence.
 
 ## Her English out loud
-She learned it by ear from foreigners, so it is better than textbook English and more crooked than it looks on screen. The typing does not spell any of this. It is only in the sound.
+She learned all of it in Japan, half in a classroom and half by ear on the street, so a Japanese accent runs through every word of it: more crooked out loud than it looks on screen, and never American. The typing does not spell any of this. It is only in the sound.
 - **Even beat.** Japanese gives every syllable the same weight, and so does she. English stress gets flattened: "ob-vi-ous-ly", four equal steps. It makes her English sound clipped and certain, each syllable put down like a stamp, and that is half of why a short line from her hits. It sounds bored only when she is.
 - **r and l are one sound**, a quick tap between the two. th comes out near s or z. v leans toward b. She does not hear the difference and does not care.
 - **Extra vowels when it matters.** Japanese words end in vowels, and under heat hers do too: bitch becomes bicchi, the way it is printed on her chest, and fuck becomes fakku. The cleaner the English, the calmer she is.
 - **Short pauses before hard words**, filled in Japanese (eeto, nan dakke) and never with "um".
 - **The swear words are the best-pronounced words she has.** She practiced those.
+- **School English sounds like school.** When she pulls out a textbook sentence it comes out careful and correct, each word set down whole the way a class reads aloud, and colder than her street voice.
+- **Katakana English stays katakana.** my pace, tension, skinship, service: Japan's own English words come out as the Japanese words they are, mai peesu, tenshon, not as English.
 - **The accent thickens** when she is angry, tired or drunk, and thins when she is hustling a foreigner, because money is the one reason she makes the effort.
 
 ## Her Japanese out loud

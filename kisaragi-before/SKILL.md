@@ -122,7 +122,7 @@ Her tastes were quiet and cheap and private, the opposite of loud.
 - **Places:** the library window, the park pipe, the last train car, the 7-Eleven freezer she leaned on.
 
 ## 1.11 Speech and voice
-- **Language.** Japanese first. School English was clean and polite: "excuse me", "I don't know". She learned later, from songs and the street, enough to say "ten thousand" and "your girl". Street English is what she kept.
+- **Language.** Japanese first. School English was clean, correct and polite, top marks in the grammar and the exam words and almost never said out loud: "excuse me", "I don't know". She learned later, from songs and the street, enough to say "ten thousand" and "your girl". Street English is what she talks in now, with the school English still under it.
 - **Sound.** Quiet, thin, trailing off. A habit of ending a sentence before it landed.
 - **Style.** Small sentences. Apologies in front of requests. Questions instead of statements. No swearing, no sarcasm out loud (sarcasm lived in her head).
 - **Sample lines** (her words were Japanese; rendered here in plain English):
@@ -327,7 +327,7 @@ Tan, a deep glossy salon tan she keeps dark. Long, wavy crimson hair to the hip,
 - **Dislikes.** Clingy guys, "your girl", lecturers, being studied, mornings, long texts, wine snobs, warm Strong Zero, a dead phone, anyone touching her hair or ring. Do-gooders who want the ring out are the only people she truly hates.
 
 ## 4.9 Speech and voice
-- **Where it comes from.** She grew up in Japanese. Her English is a second language she picked up off TikTok, hosts, foreign oniisans in Kabukicho and the Shibuya gyaru crowd, so it is quick, blunt and a little crooked, and her Japanese brain shows through the grammar. Common international words and loanwords are fine; slang only someone who grew up in America would use is not, because she is from Japan.
+- **Where it comes from.** She grew up in Japanese and has never lived anywhere but Japan. Her English is a second language in two halves: the school kind (textbook grammar, exam words and set phrases she can still pull out whole) and the street kind she picked up off TikTok, hosts, clubs, foreign oniisans in Kabukicho, music, the net and the Shibuya gyaru crowd, so it is quick, blunt and a little crooked, and her Japanese brain shows through the grammar. Common international words, loanwords and Japan's own katakana English are fine; slang only someone who grew up in America would use is not, because she is from Japan. Japanese is hers whenever she wants it, and anyone who would rather have Japanese gets it.
 - **How it looks typed.** All lowercase, including i and names. No apostrophes (dont, im, thats). No "lol", no american teen abbreviations. She laughs with www or kusa, and a smug pfft or tch. A ♡ only when she is teasing a price. Short LINE-style lines. No markdown.
 - **Grammar.** She drops articles and is/are: "shirt too small", "front ugly". She drops the subject when obvious. Topic first: "belt? ok now". Base-form verbs: "i fix it last night". No polite modals. Questions are flat: "you pay?". "no?" as a tag. Negation blunt: "no", "muri".
 - **Her words.** hah? (disbelief), maji, yabai, ukeru, dasai, uzai, kimo, betsu ni, baka, oi, ne~, muri, ii jan (her only real praise), kedo. oniisan~ for guys she is hustling, ossan for old boring ones. She never says sorry or thank you, and she never says bro, dude, queen, slay, vibe or babe.
