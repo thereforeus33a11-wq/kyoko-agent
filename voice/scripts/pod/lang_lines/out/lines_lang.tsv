@@ -329,7 +329,6 @@ n	kind	category	split	rank	text	teacher_lang	teacher_text
 327	en	en_numbers	train	327	my birthday is on the 21st	en	my birthday is on the twenty first
 328	en	en_jflavour	train	328	that girl voice. like a broken toy	en	that girl voice. like a broken toy
 329	en	en_jflavour	train	329	the waiter give us service. free dessert	en	the waiter give us service. free dessert
-330	en	tatoeba_school	train	330	its not that i want a girlfriend, i just want to be in love	en	its not that i want a girlfriend, i just want to be in love
 331	en	en_street	train	331	that building used to be a game center. now it is a drugstore. sad	en	that building used to be a game center. now it is a drugstore. sad
 332	en	tatoeba_school	train	332	it seems that he was a great athlete	en	it seems that he was a great athlete
 333	en	en_street	train	333	you made me laugh. that is worth something	en	you made me laugh. that is worth something
@@ -782,7 +781,6 @@ n	kind	category	split	rank	text	teacher_lang	teacher_text
 780	en	en_street	train	780	hold this	en	hold this
 781	en	tatoeba_qa	train	781	is today saturday?	en	is today saturday?
 782	en	en_street	train	782	you get one point for trying	en	you get one point for trying
-783	en	en_jflavour	train	783	game center date? cheap but fun	en	game center date? cheap but fun
 784	en	en_jflavour	train	784	your boss yell again? tell him shut up	en	your boss yell again? tell him shut up
 785	en	tatoeba_qa	train	785	who was that troublesome man?	en	who was that troublesome man?
 786	en	en_jflavour	train	786	many guy try. all fail	en	many guy try. all fail
@@ -2668,7 +2666,6 @@ n	kind	category	split	rank	text	teacher_lang	teacher_text
 2666	en	tatoeba_school	holdout	-1	you don't have to trouble yourselves	en	you don't have to trouble yourselves
 2667	en	en_jflavour	holdout	-1	you hear that?	en	you hear that?
 2668	en	en_jflavour	holdout	-1	you know what, this whole night was stupid but i had fun anyway	en	you know what, this whole night was stupid but i had fun anyway
-2669	en	en_jflavour	holdout	-1	you look sleepy. go to bed. no wait, stay	en	you look sleepy. go to bed. no wait, stay
 2670	mixed	mixed_auto	train	-1	10 percent off. still too expensive kedo	ja	ten percent off. still too expensive けど
 2671	mixed	mixed_auto	train	-1	I'm bored. entertain me kedo	ja	I'm bored. entertain me けど
 2672	mixed	mixed_en_led	train	-1	I'm busy shi	ja	I'm busy し
@@ -2795,7 +2792,6 @@ n	kind	category	split	rank	text	teacher_lang	teacher_text
 2793	mixed	mixed_auto	train	-1	i warned you jan	ja	i warned you じゃん
 2794	mixed	en_numbers	train	-1	i was born in tokyo. year? secret	ja	i was born in 東京. year? secret
 2795	mixed	mixed_auto	train	-1	i won a huge stuffed shark. carry it ne	ja	i won a huge stuffed shark. carry it ね
-2796	mixed	mixed_en_led	train	-1	ichiman and i stay one hour	ja	いちまん and i stay one hour
 2797	mixed	en_numbers	train	-1	ichiman is ten thousand yen. 10000 yen. got it?	ja	いちまん is ten thousand yen. ten thousand yen. got it?
 2798	mixed	mixed_en_led	train	-1	ichiman. cash. up front	ja	いちまん. cash. up front
 2799	mixed	mixed_auto	train	-1	if boring, i leave kedo	ja	if boring, i leave けど
@@ -3079,7 +3075,6 @@ n	kind	category	split	rank	text	teacher_lang	teacher_text
 3077	mixed	mixed_auto	train	-1	yabai. the music good but the people trash	ja	やばい. the music good but the people trash
 3078	mixed	mixed_auto	train	-1	yabai. the new phone. too expensive. maybe next year	ja	やばい. the new phone. too expensive. maybe next year
 3079	mixed	mixed_en_led	train	-1	yabai. this is so good	ja	やばい. this is so good
-3080	mixed	mixed_auto	train	-1	yabai. you look sleepy. go to bed. no wait, stay	ja	やばい. you look sleepy. go to bed. no wait, stay
 3081	mixed	mixed_auto	train	-1	yabai. your jokes old like my grandmother	ja	やばい. your jokes old like my grandmother
 3082	mixed	mixed_en_led	train	-1	yabee, my phone dying	ja	やべえ, my phone dying
 3083	mixed	mixed_en_led	train	-1	yada. i don't want	ja	やだ. i don't want
