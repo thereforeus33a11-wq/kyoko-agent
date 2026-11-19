@@ -11,7 +11,8 @@ or null when the line is not readable. Beside them:
   labels    Open JTalk's labels (pyopenjtalk 0.4.1 == the phone's JNI build) for every sentence the
             reference handed to Open JTalk, keyed by that sentence;
   words     how each Latin word of the cases is read (route, source, IPA or kana; final and not);
-  numbers   each number token's English words.
+  numbers   each number token's English words;
+  tokens    the symbols of her voice's tokens.txt (tests/fixtures/tokens.txt, the same as e800's).
 Needs pyopenjtalk 0.4.1 and Piper's phonemize_japanese (PIPER_SRC=<piper1-gpl>/src), and CMUDICT.
 """
 import argparse
@@ -88,6 +89,7 @@ def main(argv):
     ap.add_argument("--golden", default=os.path.join(HERE, "fixtures", "golden_mixed.tsv"))
     ap.add_argument("--table", default=DEFAULT_TABLE)
     ap.add_argument("--cmudict", default=DEFAULT_CMUDICT)
+    ap.add_argument("--tokens", default=os.path.join(HERE, "fixtures", "tokens.txt"))
     a = ap.parse_args(argv)
 
     cmu = RecordingDict(load_cmudict(a.cmudict))
@@ -148,6 +150,7 @@ def main(argv):
         "labels": jtalk.labels,
         "words": words,
         "numbers": numbers,
+        "tokens": [l.rstrip("\n").rpartition(" ")[0] for l in open(a.tokens, encoding="utf-8") if l.strip("\n")],
         "cases": cases,
     }
     data = json.dumps(out, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

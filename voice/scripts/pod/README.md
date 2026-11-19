@@ -80,3 +80,13 @@ On the pod, after `setup.sh` (and the pyopenjtalk 0.4.1 swap):
 6. `score_lang.sh`: export epochs 900/1000/1100, speak the held-out lines and her_test.txt the phone's
    way (`phone_test_lang.py`), score against the teacher and e800 (`score_student.py`), pick, A/B wav,
    chosen voice in `/workspace/phone_lang` with `.sha256` files for `podio.py down`.
+7. On this machine: `ENGLISH_TABLE=<bundle>/scripts/en_ipa_table.json opendroid/tools/make_own_voice.sh
+   <phone_lang>/sherpa <phone_lang>/ja_JP-yume-medium.onnx.json <dic> <cmudict.dict> <LICENSE>`. With
+   ENGLISH_TABLE (the table the voice was trained with) the voice's config.json says it reads English as
+   English (`yume_english`, with the table's sha256), and the app reads her English with that table
+   (`core/voice/own/BilingualVoice.kt`, `EnglishPhonemes.kt`, `MixedPhonemes.kt`); without it, katakana.
+
+The phone's port is held to this code by `tests/make_phone_fixture.py`, which writes the app's
+`app/src/test/resources/own_voice/mixed_parity.json.gz`: every golden text and every line of
+`lines_lang.tsv` with mix_phonemize's phonemes, the CMU entries and Open JTalk labels it used. Re-run it
+(and copy `en_ipa_table.json` beside it) whenever the table, the lines or the phonemizer change.
