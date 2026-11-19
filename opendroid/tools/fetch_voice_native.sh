@@ -6,7 +6,10 @@
 #    pyopenjtalk 0.4.1 is built from, which is what made her voice's training labels.
 #    Built by app/src/main/cpp/CMakeLists.txt.
 #  - sherpa-onnx 2.0.1 for Android (Apache-2.0; onnxruntime is MIT): the arm64 JNI
-#    library, onnxruntime, and its Kotlin API (Tts.kt).
+#    library, onnxruntime, and its Kotlin API: Tts.kt for her voice, and for her ears
+#    (OWN_LIFE_PLAN phase 3) the VAD, the offline recogniser and the speaker embedding
+#    extractor with the configs they use. The ears' models are not fetched here: the app
+#    downloads them on his tap (core/life/ears/EarsModels.kt).
 #
 # Usage: fetch_voice_native.sh <opendroid work tree>
 set -euo pipefail
@@ -22,8 +25,20 @@ SHERPA_VERSION="2.0.1"
 SHERPA_TARBALL="sherpa-onnx-v$SHERPA_VERSION-android.tar.bz2"
 SHERPA_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/v$SHERPA_VERSION/$SHERPA_TARBALL"
 SHERPA_SHA256="39003753ec293425ed56723ea9b972b98841a490af3311670c3060548d654330"
-TTS_KT_URL="https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v$SHERPA_VERSION/sherpa-onnx/kotlin-api/Tts.kt"
-TTS_KT_SHA256="291d30c045ae1cb88a87cce8d6794189e5e63f6ecefd012259694932a5594f38"
+KOTLIN_API_URL="https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v$SHERPA_VERSION/sherpa-onnx/kotlin-api"
+# File and SHA-256, at the tag above.
+KOTLIN_API=(
+    "Tts.kt 291d30c045ae1cb88a87cce8d6794189e5e63f6ecefd012259694932a5594f38"
+    "OfflineRecognizer.kt 8103b67ec65910a71e6b8d4bca7934f77c1af47b68a5c18cdca0ce3f956247a7"
+    "OfflineStream.kt 5c90b7c060cdd0a2222cc935b54f69465a4a7544de29240bafe4d3a8d86dbb6e"
+    "OnlineStream.kt 6b9f8de317e6a0bb51f0f29d940617b781cb31b190e1c725dd438231836c06ab"
+    "Vad.kt eaae2b8748b3ed1f44d7da83179a815494edced7dc3ce38376d573c4a1c50d9b"
+    "Speaker.kt 4dcc84f4cf0682e0e4da837ba00130d66ad7aec4f803af4c021de3434246e871"
+    "SpeakerEmbeddingExtractorConfig.kt d90c0ce88dce309813e720ff46abba737401e7e562f9635ee13fd5b32ce106c6"
+    "FeatureConfig.kt 829c7adc4db1324f21b9a9cbf5bf10eacf759714fe50956f48317c1ffef044f6"
+    "HomophoneReplacerConfig.kt fe926b6413f4d87e67c41feb21b8363923a67cbd3a5eb687b76390a5f1f7db60"
+    "QnnConfig.kt 86c963f27677f690eb0d6639735052eba5e60d9f81ccd4c1df0aa831fd680d6f"
+)
 
 check() {  # check <file> <sha256>
     echo "$2  $1" | sha256sum -c --quiet - || { echo "Hash mismatch for $1" >&2; rm -f "$1"; exit 1; }
@@ -56,9 +71,12 @@ mkdir -p "$LIBS"
 tar -xjf "$CACHE/$SHERPA_TARBALL" -C "$CACHE" ./jniLibs/arm64-v8a/libsherpa-onnx-jni.so ./jniLibs/arm64-v8a/libonnxruntime.so
 cp "$CACHE/jniLibs/arm64-v8a/libsherpa-onnx-jni.so" "$CACHE/jniLibs/arm64-v8a/libonnxruntime.so" "$LIBS/"
 
-[ -f "$CACHE/Tts.kt" ] || curl -sS -L --retry 4 -o "$CACHE/Tts.kt" "$TTS_KT_URL"
-check "$CACHE/Tts.kt" "$TTS_KT_SHA256"
-mkdir -p "$WORK/app/src/main/java/com/k2fsa/sherpa/onnx"
-cp "$CACHE/Tts.kt" "$WORK/app/src/main/java/com/k2fsa/sherpa/onnx/Tts.kt"
+mkdir -p "$CACHE/kotlin-api" "$WORK/app/src/main/java/com/k2fsa/sherpa/onnx"
+for entry in "${KOTLIN_API[@]}"; do
+    read -r name sha <<< "$entry"
+    [ -f "$CACHE/kotlin-api/$name" ] || curl -sS -L --retry 4 -o "$CACHE/kotlin-api/$name" "$KOTLIN_API_URL/$name"
+    check "$CACHE/kotlin-api/$name" "$sha"
+    cp "$CACHE/kotlin-api/$name" "$WORK/app/src/main/java/com/k2fsa/sherpa/onnx/$name"
+done
 
 echo "Voice native parts in place: Open JTalk $OJT_COMMIT, sherpa-onnx $SHERPA_VERSION (arm64-v8a)."
