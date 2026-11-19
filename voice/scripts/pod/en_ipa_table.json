@@ -27,6 +27,10 @@
     "L": "l", "M": "m", "N": "n", "NG": "ŋ", "P": "p", "R": "ɹ", "S": "s", "SH": "ʃ", "T": "t",
     "TH": "θ", "V": "v", "W": "w", "Y": "j", "Z": "z", "ZH": "ʒ"
   },
+  "r_vowel_before_vowel": {
+    "about": "ER right before another vowel inside a word (hurry, every, worry) keeps its r for that vowel, as espeak writes it.",
+    "vowels": {"ER": {"0": "əɹ", "1": "ɜːɹ", "2": "ɜːɹ"}}
+  },
   "stress_marks": {"1": "ˈ", "2": "ˌ"},
   "stress_rule": "The mark goes right before the stressed vowel's IPA (espeak style): 'hello' həlˈoʊ. Stress 0 has no mark. IY0 is short i (espeak's happY vowel); IY1 and IY2 are iː.",
   "word_break_in_arpabet": "_",

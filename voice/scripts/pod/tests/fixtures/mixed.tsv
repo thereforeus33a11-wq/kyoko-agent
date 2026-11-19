@@ -1,0 +1,28 @@
+# text	phonemes, sentences separated by " / " (needs pyopenjtalk 0.4.1 for the Japanese parts)
+# English only: spaces between words, ", " after a clause mark, terminal kept or "." added
+okay, whatever.	ˌoʊkˈeɪ, wˌʌtˈɛvɚ.
+dont care. not free	dˈoʊnt kˈɛɹ. / nˈɑːt fɹˈiː.
+you pay?	juː pˈeɪ?
+shut up!	ʃˈʌt ˈʌp!
+whatever... fine	wˌʌtˈɛvɚ, fˈaɪn.
+where you from?	wˈɛɹ juː fɹˈʌm?
+yes i am	jˈɛs aɪ ˈæm.
+t-shirt too small	tˈiː ʃˈɜːt tˈuː smˈɔːl.
+salt & pepper	sˈɔːlt ænd pˈɛpɚ.
+it's 3:30. come on, hurry up	ɪts θɹˈiː θˈɜːdˌiː. / kˈʌm ɑːn, hˈɜːɹi ˈʌp.
+i pay ¥500 ok	aɪ pˈeɪ fˈaɪv hˈʌndɹəd jˈɛn ˈoʊkˈeɪ.
+Mr. Tanaka is here.	mˈɪstɚ tɑːnˈɑːkə ɪz hˈiːɹ.
+# English-led with Japanese tails: one space at the switch, Open JTalk ends the line
+maji? that's crazy ne	ma↓dʑi? / ðˈæts kɹˈeɪzi ne.
+i pay 500 yen ne	aɪ pˈeɪ fˈaɪv hˈʌndɹəd jˈɛn ne.
+you wa?	juː wa?
+maji de, i fucking love her	ma↓dʑide, aɪ fˈʌkɪŋ lˈʌv hɜː.
+ii jan. keep that one	i↓idʑaɴ. / kˈiːp ðˈæt wˈʌn.
+# Japanese-led with English: a piece that is not last loses its "."
+あんたってほんとに crazy だね	a↓ɴtaʔte#ho↑ɴtoni kɹˈeɪzi da↑ne.
+それ、seriously?	so↑ɾe, sˈɪɹiəsli?
+baby、こっち来て。	bˈeɪbi, ko↑ʔtɕi#ki↓te.
+# pure Japanese: whole sentence to Open JTalk, as Piper does
+5時に来て	ɡo↓dʑini#ki↓te.
+ふーん、そうなんだ？ へぇ〜。	ɸɯ↑ɯɴ,so↑ona#ɴ↓da? / he↓e.
+ichiman ne~	i↑tɕi↓maɴne.

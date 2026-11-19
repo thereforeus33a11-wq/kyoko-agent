@@ -165,6 +165,7 @@ class EnglishWords:
         self.vowels_by_stress = t["vowels_by_stress"]
         self.consonants = t["consonants"]
         self.stress_marks = t["stress_marks"]
+        self.r_vowel_before_vowel = t["r_vowel_before_vowel"]["vowels"]
         self.weak = t["weak_forms"]["words"]
         self.overrides = {w: p.split() for w, p in t["word_overrides"]["words"].items()}
         self.caps_letters = set(t["caps_as_letters"]["words"])
@@ -183,7 +184,7 @@ class EnglishWords:
     # -- ARPAbet ---------------------------------------------------------------------------
     def arpabet_to_ipa(self, phones: List[str]) -> str:
         out = []
-        for p in phones:
+        for k, p in enumerate(phones):
             if p == "_":
                 out.append(" ")
                 continue
@@ -191,6 +192,10 @@ class EnglishWords:
             stress = p[len(base):] or None
             if base in self.vowels_by_stress or base in self.vowels:
                 v = self.vowels_by_stress.get(base, {}).get(stress or "0") or self.vowels[base]
+                nxt = phones[k + 1].rstrip("012") if k + 1 < len(phones) else ""
+                if base in self.r_vowel_before_vowel and (nxt in self.vowels or nxt in self.vowels_by_stress):
+                    # hurry HH ER1 IY0: the r is said before the next vowel (hˈɜːɹi), as espeak writes it.
+                    v = self.r_vowel_before_vowel[base][stress or "0"]
                 out.append(self.stress_marks.get(stress or "", "") + v)
             elif base in self.consonants:
                 out.append(self.consonants[base])

@@ -54,8 +54,8 @@ def load_japanese_phonemizer():
     return mod.JapanesePhonemizer()
 
 
-# Piper's _SENTENCE_END_PATTERN, as in phonemize_japanese.py at piper1-gpl 46c3c71.
-_PIPER_END = r"[。．！？!?]+[」』）】〉》”’\"')\]\s]*"
+# Piper's _SENTENCE_END_PATTERN (phonemize_japanese.py at piper1-gpl 46c3c71), plus an ASCII "." that ends
+# a sentence: followed by optional closers and then whitespace or the end, and not part of "..".
 _SENT_END = re.compile(r"(?:[。．！？!?]+|(?<!\.)\.(?!\.)(?=[」』）】〉》”’\"')\]]*(?:\s|$)))[」』）】〉》”’\"')\]\s]*")
 _NUMBER = re.compile(r"[¥￥$€]?[0-9０-９]+(?:[,.:][0-9０-９]+)*(?:(?:st|nd|rd|th)(?![A-Za-z]))?%?")
 _EN_PUNCT = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~") | set("…‥—–―“”‘’")
@@ -77,6 +77,7 @@ class Tok:
     end: int
     route: str = ""  # en / ja for word, num, ja
     reading: object = None
+    word: str = ""  # what an English word token is read as (its text, or the word for & + @ =)
 
 
 @dataclass
@@ -129,11 +130,11 @@ class MixedPhonemizer:
                     continue
             if self._piper_decimal(text, m):
                 continue
-            s = text[start:m.end()].strip("".join(self.spaces))
+            s = text[start:m.end()].strip()
             if s:
                 out.append(s)
             start = m.end()
-        tail = text[start:].strip("".join(self.spaces))
+        tail = text[start:].strip()
         if tail:
             out.append(tail)
         return out
@@ -225,13 +226,14 @@ class MixedPhonemizer:
         for _, toks in sentences:
             for t in toks:
                 if t.kind == "word":
+                    t.word = t.text
                     t.reading = self.en.read(t.text)
                     t.route = t.reading.route
-            # An English symbol word (&, +, @) counts as an English word.
+            # A symbol next to an English word (&, +, @, =) is said as an English word.
             for k, t in enumerate(toks):
                 if t.kind == "punct" and t.text in self.symbols and self._between_english(toks, k):
-                    t.kind, t.route = "word", "en"
-                    t.reading = self.en.read(self.symbols[t.text])
+                    t.kind, t.route, t.word = "word", "en", self.symbols[t.text]
+                    t.reading = self.en.read(t.word)
         line_words = [t for _, toks in sentences for t in toks if t.kind in ("word", "ja")]
         for _, toks in sentences:
             words = [t for t in toks if t.kind in ("word", "ja")]
@@ -266,9 +268,8 @@ class MixedPhonemizer:
                 continue
             if segments:
                 prev_k = content[idx - 1]
-                between = toks[prev_k + 1:k]
-                pauses.append(any(b.kind == "punct" and self._punct_kind(b, toks[j - 1] if j else None) in ("clause", "terminal")
-                                  for j, b in ((toks.index(b), b) for b in between)))
+                pauses.append(any(toks[j].kind == "punct" and self._punct_kind(toks[j], toks[j - 1]) in ("clause", "terminal")
+                                  for j in range(prev_k + 1, k)))
             else:
                 pauses.append(False)
             segments.append(Segment(t.route, [t]))
@@ -286,17 +287,16 @@ class MixedPhonemizer:
         return SentencePlan(s, toks, segments, pauses, terminal, trailing, verbatim)
 
     # -- phonemes ----------------------------------------------------------------------------
-    def _en_segment(self, seg: Segment, all_toks: List[Tok]) -> str:
-        parts: List[str] = []  # words and the clause mark
+    def _en_segment(self, seg: Segment) -> str:
+        parts: List[str] = []  # word IPA and clause marks
         content = [t for t in seg.toks if t.kind in ("word", "num")]
         last = content[-1] if content else None
+        prev: Optional[Tok] = None
         for t in seg.toks:
             if t.kind == "word":
-                r = self.en.read(t.text, final=(t is last)) if t.reading is None or t is last else t.reading
-                if t.text in self.symbols:
-                    r = self.en.read(self.symbols[t.text], final=(t is last))
-                if r.ipa:
-                    parts.append(r.ipa)
+                ipa = self.en.read(t.word, final=(t is last)).ipa
+                if ipa:
+                    parts.append(ipa)
             elif t.kind == "num":
                 words = self.en.spell_number(t.text)
                 for k, w in enumerate(words):
@@ -304,9 +304,9 @@ class MixedPhonemizer:
                     if ipa:
                         parts.append(ipa)
             elif t.kind == "punct":
-                prev = all_toks[all_toks.index(t) - 1] if all_toks.index(t) else None
                 if self._punct_kind(t, prev) in ("clause", "terminal") and parts and parts[-1] != self.clause_mark:
                     parts.append(self.clause_mark)
+            prev = t
         out = ""
         for k, p in enumerate(parts):
             if p == self.clause_mark:
@@ -320,7 +320,6 @@ class MixedPhonemizer:
 
     def _ja_text(self, plan: SentencePlan, seg: Segment, last: bool) -> str:
         s = plan.text
-        first, end = seg.toks[0], seg.toks[-1]
         out = []
         toks = seg.toks
         for k, t in enumerate(toks):
@@ -336,7 +335,6 @@ class MixedPhonemizer:
         text = "".join(out)
         if last:
             text += plan.trailing
-        assert first.start <= end.end
         return text
 
     def _ja_phonemes(self, text: str) -> List[str]:
@@ -360,7 +358,7 @@ class MixedPhonemizer:
                 if k > 0:
                     phones += list(self.clause_mark + self.after_clause) if plan.pauses[k] else list(self.switch)
                 if seg.route == "en":
-                    phones += list(self._en_segment(seg, plan.toks))
+                    phones += list(self._en_segment(seg))
                 else:
                     jt = self._ja_text(plan, seg, last)
                     ph = self._ja_phonemes(jt)
@@ -397,20 +395,30 @@ class MixedPhonemizer:
         else 'ja' (GPT-SoVITS's Japanese-English mixed mode)."""
         pieces, any_ja = [], False
         for plan in self.plan(text):
-            if plan.verbatim:
-                pieces.append(plan.text)
-                any_ja = True
-                continue
             s = plan.text
-            out, pos = [], 0
-            for t in plan.toks:
-                if t.kind == "word" and t.route == "ja":
-                    out.append(s[pos:t.start]); out.append(t.reading.kana); pos = t.end; any_ja = True
-                elif t.kind == "num" and t.route == "en":
-                    out.append(s[pos:t.start]); out.append(" ".join(self.en.spell_number(t.text))); pos = t.end
-                elif t.kind in ("ja", "num") and t.route == "ja":
+            if plan.verbatim or not plan.segments:
+                pieces.append(s)
+                any_ja = any_ja or plan.verbatim
+                continue
+            out = [s[:plan.segments[0].toks[0].start]]
+            for k, seg in enumerate(plan.segments):
+                if k > 0:
+                    out.append(s[plan.segments[k - 1].toks[-1].end:seg.toks[0].start])
+                if seg.route == "ja":
                     any_ja = True
-            out.append(s[pos:])
+                    out.append(self._ja_text(plan, seg, last=False))
+                    continue
+                pos = seg.toks[0].start
+                for t in seg.toks:
+                    said = None
+                    if t.kind == "num":
+                        said = " ".join(self.en.spell_number(t.text))
+                    elif t.kind == "word" and t.word != t.text:
+                        said = t.word
+                    if said is not None:
+                        out.append(s[pos:t.start]); out.append(said); pos = t.end
+                out.append(s[pos:seg.toks[-1].end])
+            out.append(plan.trailing)
             pieces.append("".join(out))
         return ("ja" if any_ja else "en"), " ".join(pieces)
 

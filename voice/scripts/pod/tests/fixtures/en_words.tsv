@@ -1,0 +1,73 @@
+# word	route	source	reading (IPA for en, kana for ja). Hand-checked against the table's rules.
+# stress mark before the vowel; AH0/AH1; ER0/ER1; IY0/IY1
+hello	en	cmu	həlˈoʊ
+about	en	cmu	əbˈaʊt
+love	en	cmu	lˈʌv
+whatever	en	cmu	wˌʌtˈɛvɚ
+girl	en	cmu	ɡˈɜːl
+better	en	cmu	bˈɛtɚ
+happy	en	cmu	hˈæpi
+sweet	en	cmu	swˈiːt
+react	en	cmu	ɹiˈækt
+# no flapping, CMU's own T stays T
+water	en	cmu	wˈɔːtɚ
+city	en	cmu	sˈɪti
+# ER before a vowel keeps its r
+hurry	en	cmu	hˈɜːɹi
+every	en	cmu	ˈɛvəɹi
+# affricates and g are two codepoints / U+0261
+cheapskate	en	cmu	tʃˈiːpskˌeɪt
+japan	en	cmu	dʒəpˈæn
+going	en	cmu	ɡˈoʊɪŋ
+think	en	cmu	θˈɪŋk
+# weak forms (inside a segment)
+the	en	weak	ðə
+a	en	weak	ɐ
+to	en	weak	tə
+you	en	weak	juː
+and	en	weak	ænd
+I'm	en	weak	aɪm
+im	en	weak	aɪm
+youre	en	weak	jʊɹ
+# her contractions without apostrophes
+dont	en	override	dˈoʊnt
+thats	en	override	ðˈæts
+didnt	en	override	dˈɪdənt
+wont	en	override	wˈoʊnt
+cant	en	override	kˈænt
+# chat words
+omg	en	override	ˈoʊ mˈaɪ ɡˈɑːd
+idk	en	override	ˈaɪ dˈiː kˈeɪ
+# capitals said as letters
+DJ	en	caps	dˌiːdʒˈeɪ
+NHK	en	caps	ˌɛnˌeɪtʃkˈeɪ
+ID	en	caps	ˌaɪdˈiː
+US	en	caps	jˌuːˈɛs
+# capitals that are words
+NO	en	cmu	nˈoʊ
+LINE	en	cmu	lˈaɪn
+# held letters
+NOOO	en	cmu	nˈoʊ
+yesss	en	cmu	jˈɛs
+# suffixes, with voicing
+emojis	en	suffix	ɪmˈoʊdʒiz
+skinships	en	suffix	skˈɪnʃˌɪps
+ghosted	en	suffix	ɡˈoʊstɪd
+ghosting	en	suffix	ɡˈoʊstɪŋ
+chillin	en	suffix	tʃˈɪlɪn
+tiktoking	en	suffix	tˈɪktˌɑːkɪŋ
+# compound
+hostface	en	compound	hˈoʊstfˈeɪs
+# one letter
+q	en	cmu	kjˈuː
+# Japanese: her words, names, romaji, unknown names
+maji	ja	ja_words	まじ
+ne	ja	ja_words	ね
+jan	ja	ja_words	じゃん
+Shibuya	ja	ja_words	しぶや
+karaoke	ja	ja_words	カラオケ
+mmm	ja	ja_words	んー
+haha	ja	ja_words	ははっ
+tanoshikatta	ja	romaji	たのしかった
+hontoni	ja	romaji	ほんとに
+rizz	ja	loose	リッズ
