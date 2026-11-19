@@ -317,14 +317,6 @@ class EnglishWords:
             return Reading("en", "letter", ipa=self.letters_ipa(lower))
         return Reading("ja", "loose", kana=romaji_to_katakana_loose(lower.replace("'", "")))
 
-    def read_dotted(self, letters: str) -> Reading:
-        """Single letters typed with dots (a.m., e.g., U.S.A.), dots dropped: an override if the
-        table has one, else the letter names said as one word. Never Japanese."""
-        lower = letters.lower()
-        if lower in self.overrides:
-            return Reading("en", "dotted", ipa=self.arpabet_to_ipa(self.overrides[lower]))
-        return Reading("en", "dotted", ipa=self.letters_ipa(lower))
-
     def ipa_words(self, words: List[str]) -> str:
         """English words already known to be English: IPA joined by spaces (the last word may be strong)."""
         out = []

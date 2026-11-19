@@ -49,17 +49,14 @@ The shared English table, read the same way by training and (to come) by the pho
 - `en_ipa_table.json`: ARPAbet to IPA in espeak en-us style (stress mark before the vowel, AH0 ə / AH1 ʌ,
   ER0 ɚ / ER1 ɜː, IY0 i / IY1 iː, no flapping), weak forms of function words, overrides (her contractions
   without apostrophes, chat words), her romaji words (`ja_words`), letter names, numbers, suffix rules,
-  and the rules for cutting a line into sentences and segments and joining them (dotted letters such as
-  a.m. or U.S.A. are one word said as letters, tl;dr is one word, and a Japanese piece Open JTalk reads as
-  nothing, such as ※ or °, is left out without a stray pause). Japanese places and family names and the
-  romaji CMU would take for English (dake, kono, sensei, Ginza, Tanaka) are in `ja_words`; lowercase chat
-  letters and units (dm, bf, rn, cm, km) are overrides. Pinned to the CMU dictionary by sha256. `opendroid/tools/make_own_voice.sh` ships it in the voice assets.
+  and the rules for cutting a line into sentences and segments and joining them. Pinned to the CMU
+  dictionary by sha256. `opendroid/tools/make_own_voice.sh` ships it in the voice assets.
 - `en_phonemize.py` (English words), `mix_phonemize.py` (whole lines: Latin runs to English, kana and
   kanji and her romaji to Piper's JapanesePhonemizer; a pure Japanese sentence goes to Open JTalk whole,
   so her Japanese stays byte-identical to e800's training), `kana_text.py` (today's katakana route, for
   the A/B and the kana check).
 - `tests/`: `python -m unittest discover -s tests` (CMUDICT and PIPER_SRC set). `tests/make_golden.py`
-  writes `tests/fixtures/golden_mixed.tsv`, 816 texts with their codepoints, for the phone's Kotlin port.
+  writes `tests/fixtures/golden_mixed.tsv`, 615 texts with their codepoints, for the phone's Kotlin port.
 
 Her lines (`lang_lines/`, built by `build_lang_lines.py` into `lang_lines/out/`): about 2,670 English and
 660 mixed lines in her register (school English, street English learned in Japan, Japanese-flavoured

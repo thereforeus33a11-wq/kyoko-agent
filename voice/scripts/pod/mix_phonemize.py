@@ -57,9 +57,6 @@ def load_japanese_phonemizer():
 # Piper's _SENTENCE_END_PATTERN (phonemize_japanese.py at piper1-gpl 46c3c71), plus an ASCII "." that ends
 # a sentence: followed by optional closers and then whitespace or the end, and not part of "..".
 _SENT_END = re.compile(r"(?:[。．！？!?]+|(?<!\.)\.(?!\.)(?=[」』）】〉》”’\"')\]]*(?:\s|$)))[」』）】〉》”’\"')\]\s]*")
-# Single letters each with a dot (a.m., p.m., e.g., U.S.A.): one word, its dots dropped, said as letters.
-_DOTTED = re.compile(r"[A-Za-z](?:\.[A-Za-z])+\.?(?![A-Za-z])")
-_DOTTED_WORD = re.compile(r"[A-Za-z](?:\.[A-Za-z])+")
 _NUMBER = re.compile(r"[¥￥$€]?[0-9０-９]+(?:[,.:][0-9０-９]+)*(?:(?:st|nd|rd|th)(?![A-Za-z]))?%?")
 _EN_PUNCT = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~") | set("…‥—–―“”‘’")
 
@@ -80,8 +77,7 @@ class Tok:
     end: int
     route: str = ""  # en / ja for word, num, ja
     reading: object = None
-    word: str = ""  # what an English word token is read as (its text, the word for & + @ =, a dotted or joined word's letters)
-    dotted: bool = False  # single letters with dots (a.m., U.S.A.): said as letter names
+    word: str = ""  # what an English word token is read as (its text, or the word for & + @ =)
 
 
 @dataclass
@@ -111,7 +107,6 @@ class MixedPhonemizer:
         self.clause = set(seg["clause_punct"]) | {"..."}
         self.terminal = seg["terminal_punct"]
         self.dropped = set(seg["dropped_punct"])
-        self.joined = sorted(seg["joined_words"]["words"].items(), key=lambda kv: -len(kv[0]))
         b = self.en.t["boundaries"]
         self.word_sep, self.clause_mark, self.after_clause = b["word"], b["clause"], b["after_clause"]
         self.switch, self.end_default = b["switch"], b["sentence_end_default"]
@@ -132,7 +127,7 @@ class MixedPhonemizer:
             if m.group(0).startswith(".") and not m.group(0).startswith(".."):
                 before = text[start:m.start()]
                 word = re.search(r"([A-Za-z][A-Za-z.]*)$", before)
-                if word and (word.group(1).lower() in self.abbrev or _DOTTED_WORD.fullmatch(word.group(1))):
+                if word and word.group(1).lower() in self.abbrev:
                     continue
             if self._piper_decimal(text, m):
                 continue
@@ -160,18 +155,6 @@ class MixedPhonemizer:
         while i < n:
             c = s[i]
             if _is_latin(c):
-                # A word typed with marks inside (tl;dr) is one word (segmentation.joined_words).
-                joined = next(((k, w) for k, w in self.joined if s[i:i + len(k)].lower() == k
-                               and not (i + len(k) < n and _is_latin(s[i + len(k)]))), None)
-                if joined:
-                    toks.append(Tok("word", s[i:i + len(joined[0])], i, i + len(joined[0]), word=joined[1]))
-                    i += len(joined[0])
-                    continue
-                m = _DOTTED.match(s, i)
-                if m:
-                    toks.append(Tok("word", m.group(0), i, m.end(), word=m.group(0).replace(".", ""), dotted=True))
-                    i = m.end()
-                    continue
                 j = i + 1
                 while j < n and (_is_latin(s[j]) or (s[j] == "'" and j + 1 < n and _is_latin(s[j + 1]))):
                     j += 1
@@ -244,18 +227,17 @@ class MixedPhonemizer:
         for _, toks in sentences:
             for t in toks:
                 if t.kind == "word":
-                    t.word = t.word or t.text
-                    t.reading = self.en.read_dotted(t.word) if t.dotted else self.en.read(t.word)
+                    t.word = t.text
+                    t.reading = self.en.read(t.text)
                     t.route = t.reading.route
             # A symbol next to an English word (&, +, @, =) is said as an English word.
             for k, t in enumerate(toks):
                 if t.kind == "punct" and t.text in self.symbols and self._between_english(toks, k):
                     t.kind, t.route, t.word = "word", "en", self.symbols[t.text]
                     t.reading = self.en.read(t.word)
-        # A number is said in the language of the nearest word; Japanese with no letter or digit (°, ※, ＾) is no word.
-        line_words = [t for _, toks in sentences for t in toks if self._is_word(t)]
+        line_words = [t for _, toks in sentences for t in toks if t.kind in ("word", "ja")]
         for _, toks in sentences:
-            words = [t for t in toks if self._is_word(t)]
+            words = [t for t in toks if t.kind in ("word", "ja")]
             for k, t in enumerate(toks):
                 if t.kind != "num":
                     continue
@@ -271,18 +253,14 @@ class MixedPhonemizer:
                     t.route = line_words[0].route if line_words else "ja"
             # am / pm right after an English number is said as letters (7am, 7 pm).
             for k, t in enumerate(toks):
-                if t.kind == "word" and t.word.lower() in self.time_words and k > 0:
+                if t.kind == "word" and t.text.lower() in self.time_words and k > 0:
                     j = k - 1
                     while j >= 0 and toks[j].kind == "space":
                         j -= 1
                     if j >= 0 and toks[j].kind == "num" and toks[j].route == "en":
                         t.route = "en"
-                        t.reading = Reading("en", "time", ipa=self.en.arpabet_to_ipa(self.time_words[t.word.lower()]))
+                        t.reading = Reading("en", "time", ipa=self.en.arpabet_to_ipa(self.time_words[t.text.lower()]))
         return [self._plan_sentence(s, toks) for s, toks in sentences]
-
-    @staticmethod
-    def _is_word(t: Tok) -> bool:
-        return t.kind == "word" or (t.kind == "ja" and any(c.isalnum() for c in t.text))
 
     def _between_english(self, toks: List[Tok], k: int) -> bool:
         prev = next((t for t in reversed(toks[:k]) if t.kind in ("word", "ja", "num")), None)
@@ -329,7 +307,7 @@ class MixedPhonemizer:
         prev: Optional[Tok] = None
         for t in seg.toks:
             if t.kind == "word":
-                if t.reading is not None and t.reading.source in ("time", "dotted"):
+                if t.reading is not None and t.reading.source == "time":
                     ipa = t.reading.ipa
                 else:
                     ipa = self.en.read(t.word, final=(t is last)).ipa
@@ -390,34 +368,24 @@ class MixedPhonemizer:
                 elif strict and any(c.isalnum() for c in plan.text):
                     return None
                 continue
-            # Japanese pieces first: one that gives nothing (※, ＾, °) is left out, with no boundary
-            # of its own, and the pieces around it join as if it were not there.
-            ja_ph = {}
-            for k, seg in enumerate(plan.segments):
-                if seg.route == "ja":
-                    jt = self._ja_text(plan, seg, k == len(plan.segments) - 1)
-                    ph = self._ja_phonemes(jt)
-                    if not ph and strict and any(c.isalnum() for c in jt):
-                        return None
-                    ja_ph[k] = ph
-            said = [k for k, seg in enumerate(plan.segments)
-                    if seg.route == "en" or any(p not in (".", "?") for p in ja_ph[k])]
             phones: List[str] = []
-            prev = None
-            for k in said:
-                seg, last = plan.segments[k], k == said[-1]
+            for k, seg in enumerate(plan.segments):
+                last = k == len(plan.segments) - 1
+                if k > 0:
+                    phones += list(self.clause_mark + self.after_clause) if plan.pauses[k] else list(self.switch)
                 if seg.route == "en":
-                    piece = list(self._en_segment(seg, last))
+                    phones += list(self._en_segment(seg, last))
                 else:
-                    piece = ja_ph[k]
-                    if not last and piece[-1] in (".", "?"):
-                        piece = piece[:-1]
-                if prev is not None:
-                    pause = any(plan.pauses[j] for j in range(prev + 1, k + 1))
-                    phones += list(self.clause_mark + self.after_clause) if pause else list(self.switch)
-                phones += piece
-                prev = k
-            if said and plan.segments[said[-1]].route == "en":
+                    jt = self._ja_text(plan, seg, last)
+                    ph = self._ja_phonemes(jt)
+                    if not ph:
+                        if strict and any(c.isalnum() for c in jt):
+                            return None
+                        continue
+                    if not last and ph and ph[-1] in (".", "?"):
+                        ph = ph[:-1]
+                    phones += ph
+            if plan.segments and plan.segments[-1].route == "en":
                 phones.append(plan.terminal)
             # A switch that ended up next to nothing (an empty piece) leaves no stray space.
             while phones and phones[0] in (" ", ","):
@@ -462,9 +430,7 @@ class MixedPhonemizer:
                     if t.kind == "num":
                         said = " ".join(self.en.spell_number(t.text))
                     elif t.kind == "word" and t.reading is not None and t.reading.source == "time":
-                        said = ("" if s[t.start - 1:t.start].isspace() else " ") + t.word.lower()[0] + ".m."
-                    elif t.kind == "word" and t.dotted:
-                        said = " ".join(t.word.upper())
+                        said = ("" if s[t.start - 1:t.start].isspace() else " ") + t.text.lower()[0] + ".m."
                     elif t.kind == "word" and t.word != t.text:
                         said = t.word
                     if said is not None:

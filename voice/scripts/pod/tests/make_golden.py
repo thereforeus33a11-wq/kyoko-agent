@@ -42,12 +42,6 @@ HAND = [
     # numbers
     "0", "13", "105", "1,299", "2026", "1000000", "1st", "2nd", "3rd", "4th", "12th", "20th", "21st", "7:05",
     "10:00", "0.25", "007", "50%", "¥500", "$1", "$20", "５",
-    # dotted letters, joined words, romaji CMU knows, lowercase letter words and units
-    "11 p.m.", "a.m.", "a.m.?", "e.g.", "i.e. no", "o.k. fine", "U.S.A. is far jan", "see you at 11 p.m. Then we go",
-    "x.com", "Dr. Tanaka is here", "tl;dr whatever", "TL;DR ok", "kawaii dake ja dame desu ka", "sou dane",
-    "friday is hanakin", "im 158 cm", "i ran 5 km today", "my bf said hi", "dm me rn", "CM ugh",
-    # a Japanese piece Open JTalk gives nothing for
-    "thanks ＾＾", "so good ※。", "nice ※ day", "nice ※, day", "its 35° today", "where you from ※", "※ hi",
     # unreadable
     "안녕", "...", "♡",
 ]
@@ -68,8 +62,6 @@ def main():
         cases.append(f"{l.upper()}{l.upper()}")
     for w in t["ja_words"]["words"]:
         cases.append(f"ok {w}")
-    for w in t["segmentation"]["joined_words"]["words"]:
-        cases.append(f"so {w}")
     # One word per suffix rule (none of them in CMU).
     cases += ["tiktok's", "hoodies", "skinships", "boxeses", "tiktoked", "ghosted", "snored", "tiktoking",
               "vibin", "emojily", "cleverest", "gummies", "cheapnesses", "choker", "stammers", "affectations"]

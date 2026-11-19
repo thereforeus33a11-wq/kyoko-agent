@@ -149,15 +149,6 @@ class SentenceTest(unittest.TestCase):
         self.assertEqual(sp("Mr. Tanaka is here."), ["Mr. Tanaka is here."])
         self.assertEqual(sp("は？なにそれ。うける"), ["は？", "なにそれ。", "うける"])
         self.assertEqual(sp("why? because."), ["why?", "because."])
-        self.assertEqual(sp("U.S.A. is far. ok"), ["U.S.A. is far.", "ok"])
-        self.assertEqual(sp("at 11 p.m. Then go"), ["at 11 p.m. Then go"])
-
-    def test_dotted_and_joined_words(self):
-        toks = [t for t in self.mp.tokenize("a.m. e.g, U.S.A.? x.com tl;dr") if t.kind == "word"]
-        self.assertEqual([(t.text, t.word, t.dotted) for t in toks],
-                         [("a.m.", "am", True), ("e.g", "eg", True), ("U.S.A.", "USA", True), ("x", "", False),
-                          ("com", "", False), ("tl;dr", "tldr", False)])
-        self.assertEqual(EN.read_dotted("USA").ipa, "jˌuːˌɛsˈeɪ")
 
     def test_english_only_needs_no_japanese(self):
         mp = MixedPhonemizer(TABLE, CMUDICT, ja=_NoJapanese())
