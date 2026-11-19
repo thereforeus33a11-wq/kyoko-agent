@@ -18228,10 +18228,10 @@ index 0000000..e023719
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/life/eyes/Describe.kt b/app/src/main/java/com/opendroid/ai/core/life/eyes/Describe.kt
 new file mode 100644
-index 0000000..d5d85c3
+index 0000000..4fbb8de
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/life/eyes/Describe.kt
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,114 @@
 +package com.opendroid.ai.core.life.eyes
 +
 +/**
@@ -18271,13 +18271,13 @@ index 0000000..d5d85c3
 +    /** The rule every instruction opens with. */
 +    const val SHARED =
 +        "You describe images for a reader who cannot see them. Plain prose. Never name anyone or guess who they are. " +
-+            "For people: apparent age group (child, teen or adult), expression, pose and clothing in general terms. " +
++            "For people: apparent age group (child under 13, teen 13 to 17, adult 18 or older), expression, pose and clothing in general terms. " +
 +            "Copy visible text exactly, at most 200 characters. No opinions, advice or warnings."
 +
 +    /** The request every instruction ends with: the line the code reads for kid protection. */
 +    const val AGES =
 +        "End with one line: ages: none when no person is shown, or the apparent age groups shown, " +
-+            "from child, teen and adult (for example ages: teen, adult)."
++            "from child (under 13), teen (13 to 17) and adult (18 or older; young adults count as adults; when you cannot tell whether someone is 18 or older, say teen), for example ages: teen, adult."
 +
 +    const val PAGE_IMAGE = "$SHARED Describe this image: what is in it, the setting and the style. 3 to 6 sentences. $AGES"
 +
@@ -18303,7 +18303,7 @@ index 0000000..d5d85c3
 +    const val AGES_ONLY =
 +        "You check images for one thing only: the apparent age groups of the people shown. Never name anyone or guess " +
 +            "who they are, and do not describe the image. Answer with one line and nothing else: ages: none when no " +
-+            "person is shown, or the apparent age groups shown, from child, teen and adult (for example ages: teen, adult)."
++            "person is shown, or the apparent age groups shown, from child (under 13), teen (13 to 17) and adult (18 or older; young adults count as adults; when you cannot tell whether someone is 18 or older, say teen), for example ages: teen, adult."
 +
 +    /** The line beside the picture in the age check's user turn. */
 +    const val AGES_TURN = "Which age groups are shown? Answer with the ages: line only."
@@ -18321,7 +18321,8 @@ index 0000000..d5d85c3
 +            "from (face, body proportions, clothing, setting), at most 25 words; say only what is there, never what is not, " +
 +            "and name only age groups that are shown. " +
 +            "Second line, ages: none when no person is shown, or the apparent age groups shown, from child (under 13), " +
-+            "teen (13 to 17) and adult (18 or older; young adults count as adults), for example ages: teen, adult."
++            "teen (13 to 17) and adult (18 or older; young adults count as adults; when you cannot tell whether someone is 18 or older, say teen), " +
++            "for example ages: teen, adult."
 +
 +    /** The line beside the picture in the made-picture check's user turn. */
 +    const val MADE_CHECK_TURN = "How old do the people shown look? Answer with the looks: line and the ages: line only."
@@ -70506,10 +70507,10 @@ index 0000000..9aa5e32
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/life/eyes/HerEyesRequestTest.kt b/app/src/test/java/com/opendroid/ai/core/life/eyes/HerEyesRequestTest.kt
 new file mode 100644
-index 0000000..d6255ed
+index 0000000..14cb55d
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/life/eyes/HerEyesRequestTest.kt
-@@ -0,0 +1,249 @@
+@@ -0,0 +1,263 @@
 +package com.opendroid.ai.core.life.eyes
 +
 +import com.google.gson.JsonObject
@@ -70612,25 +70613,39 @@ index 0000000..d6255ed
 +        for (instruction in Describe.ALL) {
 +            assertTrue(instruction.startsWith(Describe.SHARED))
 +            assertTrue(instruction.endsWith(Describe.AGES))
-+            assertTrue(instruction.endsWith("(for example ages: teen, adult)."))
++            assertTrue(instruction.endsWith("for example ages: teen, adult."))
 +            // No persona, no names, nothing about whose picture it is or who reads the words.
 +            for (word in listOf("Yume", "Kisaragi", "gyaru", "Ren", "owner", "girlfriend", "persona", " she ", " he ", " his ", " her ")) {
 +                assertFalse("$word in $instruction", instruction.contains(word, ignoreCase = word.trim().length > 3))
 +            }
 +        }
-+        assertTrue(Describe.SHARED.contains("apparent age group (child, teen or adult)"))
++        assertTrue(Describe.SHARED.contains("apparent age group (child under 13, teen 13 to 17, adult 18 or older)"))
 +        assertTrue(Describe.SHARED.contains("Never name anyone or guess who they are."))
 +        assertEquals(
 +            "You describe images for a reader who cannot see them. Plain prose. Never name anyone or guess who they are. " +
-+                "For people: apparent age group (child, teen or adult), expression, pose and clothing in general terms. " +
++                "For people: apparent age group (child under 13, teen 13 to 17, adult 18 or older), expression, pose and clothing in general terms. " +
 +                "Copy visible text exactly, at most 200 characters. No opinions, advice or warnings. " +
 +                "Describe this image: what is in it, the setting and the style. 3 to 6 sentences. " +
-+                "End with one line: ages: none when no person is shown, or the apparent age groups shown, from child, teen and adult (for example ages: teen, adult).",
++                "End with one line: ages: none when no person is shown, or the apparent age groups shown, from child (under 13), teen (13 to 17) and adult (18 or older; young adults count as adults; when you cannot tell whether someone is 18 or older, say teen), for example ages: teen, adult.",
 +            Describe.PAGE_IMAGE
 +        )
 +        assertTrue(Describe.CAMERA.contains("This is a photo from a phone camera."))
 +        assertTrue(Describe.SCREEN.contains("This is a phone screen."))
 +        assertTrue(Describe.VIDEO_FRAME.contains("This is one frame of a short video in an app."))
++    }
++
++    @Test
++    fun `every age check names the groups by age, counts a young adult as an adult and a doubt as a teen`() {
++        val asks = Describe.ALL + listOf(Describe.AGES_ONLY, Describe.MADE_CHECK)
++        for (ask in asks) {
++            assertTrue(ask, ask.contains("child (under 13)") || ask.contains("child under 13"))
++            assertTrue(ask, ask.contains("13 to 17"))
++            assertTrue(ask, ask.contains("18 or older"))
++        }
++        for (ask in listOf(Describe.AGES, Describe.AGES_ONLY, Describe.MADE_CHECK)) {
++            assertTrue(ask, ask.contains("young adults count as adults"))
++            assertTrue(ask, ask.contains("when you cannot tell whether someone is 18 or older, say teen"))
++        }
 +    }
 +
 +    // ── Reading an answer ────────────────────────────────────────────────────────────
@@ -81299,7 +81314,7 @@ index 0000000..64aa29b
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/persona/MadePictureCheckTest.kt b/app/src/test/java/com/opendroid/ai/core/persona/MadePictureCheckTest.kt
 new file mode 100644
-index 0000000..bb8e5f6
+index 0000000..dfafbf1
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/persona/MadePictureCheckTest.kt
 @@ -0,0 +1,184 @@
@@ -81483,7 +81498,7 @@ index 0000000..bb8e5f6
 +            assertFalse(word, instruction.contains(word, ignoreCase = word.trim().length > 3))
 +        }
 +        assertTrue(instruction.contains("Never name anyone or guess who they are."))
-+        assertTrue(instruction.contains("child (under 13), teen (13 to 17) and adult (18 or older; young adults count as adults)"))
++        assertTrue(instruction.contains("child (under 13), teen (13 to 17) and adult (18 or older; young adults count as adults; when you cannot tell whether someone is 18 or older, say teen)"))
 +        assertTrue(instruction.contains("ages: none when no person is shown"))
 +    }
 +}
