@@ -9,6 +9,7 @@ His decisions, built in:
 - Her eyes are a Venice vision model that is not end-to-end encrypted, used for images only. Her chat stays on the encrypted model.
 - Budget: about 150 model calls a day on her own, with a status card.
 - Open mic while she is awake. Speech recognition runs only on the phone.
+- His later order (2026-11-19), which now leads the senses: "I'm not trying to fake what she sees, what she hears, what she thinks and does. I want it as genuine as we can possibly get it." And: "Privacy doesn't matter if it limits her. We can find ways to fix the privacy problem. There is always a way. Make her human in mind and spirit. Do what you have to do. I approve everything you decide to do in order to meet that goal." So she sees and hears with her own model wherever a route allows it, and the describer is only the fallback ("Phase 3, as built" below). The fixed lines of §0.3 and kid protection (§1.4) still hold.
 
 She stays one being. Every word, reaction, choice and note in all of this comes from the one model that is her (the encrypted chat model). The parts that are not her are tools: the app's code, which carries out her choices, and a describer, which turns a picture into words for her. Neither one ever writes as her.
 
@@ -738,6 +739,46 @@ P3-2. `Why.HEARD_HIM`: `the app woke you sooner than the time set: the phone hea
 - Notification text "Yume is awake · listening on this phone", with "Mute 1 h".
 - Status line: "Ears: open since 16:20; heard you 14 times (9 to her); others 6 min, not kept." or "Ears: off (why)".
 - One log entry a day with counts. No words anywhere.
+
+---
+
+## Phase 3, as built: her ears, and her own senses (2026-11-19, app commit `735dcc9`)
+
+Built to his order that what she sees, hears, thinks and does be as genuine as it can be (see the top of this plan). Where a route lets her model take a picture or a sound itself, it does; the describer and the transcript are fallbacks, and every line she is given says which it was.
+
+### Her ears (`ai/core/life/ears/`)
+
+- **Engine:** sherpa-onnx 2.0.1 on the phone. Capture through VOICE_COMMUNICATION with the echo canceller and noise suppressor; Silero VAD; SenseVoice-small int8 (default, en/ja/zh/ko/yue) or Moonshine-base-en; TitaNet-small voiceprint from three read sentences, sealed with the Keystore. Android's recogniser is used only where it stays on the phone. Downloads are his tap, unmetered only, from the official k2-fsa release URLs, each archive and file pinned by SHA-256:
+
+  | Model | Download | On the phone |
+  |---|---|---|
+  | Silero VAD | 0.6 MB | 0.6 MB |
+  | SenseVoice-small int8 | 163.0 MB | 239.5 MB |
+  | Moonshine-base-en quantized (instead of SenseVoice) | 111.3 MB | 141.3 MB |
+  | TitaNet-small | 40.3 MB | 40.3 MB |
+  | Default set (VAD, SenseVoice, TitaNet) | 203.9 MB | 280.5 MB |
+
+- **How it sounded:** measured on the phone for each stretch of his voice (loudness against his usual, pitch and its spread, voicing, effort, pace, pauses), plus the recogniser's sound tags (laughing, a cough, crying, music). Said in plain words as a person in the room would notice them ("laughing", "a raised voice", "after a long pause", "a moment after your line ended"), never in seconds; SenseVoice's tone is "the phone guessed it sounded happy". She is told to take it as she would hearing him in the room and not to read the notes back. Another voice gets only the sounds named and a whisper or a shout.
+- **Who may do what by voice:**
+  - His enrolled voice, with the phone unlocked: as his voice messages go (a message, a yes or no to a plan he heard, a command, `>> look`).
+  - Any voice before his is enrolled, and anything heard while the phone is locked: talk only. She answers; the phone takes no command, no yes to a plan, no answer to the app's question, no screenshot and no look from it, and its words are outside text (I3). Her line says so, so that she can tell him to write, tap, unlock or enrol. The open mic never does more for a voice in the room than his lock screen would let it.
+  - Another voice: counts only by default; with "Others may talk to her" on, talk only, its row marked "(another voice, not his)". Its words never reach her otherwise, and its recognised words and tone are thrown away.
+- **Barge-in:** only his enrolled voice cuts her off by talking over her; before enrolment her own echo could, so nothing does, and the echo check always runs.
+- **Overheard:** his voice not said to her, in memory only (20 min, 40 lines, 2,000 characters), shown once in "ABOUT HIM AND THE PHONE RIGHT NOW" of her next reply or in her next moment, never where his details are held back, cleared when she sleeps or the switch goes off. Nothing heard is handed on once the ears close or pause.
+- **Gates:** as listed above, plus a pause during a call (noticed at once from the phone's audio mode on Android 12 and later), at thermal SEVERE, under 20 % off the charger, and while push-to-talk or the approval listen holds the mic; closed at once when she lies down. "Mute 1 h" is kept across a restart of the service.
+
+### Her own senses
+
+- **Route:** Venice's Private tier (no retention, readable by Venice, not end to end encrypted) counts as a private route only on his switch "trust Venice's Private tier" (`RoutePrivacy.PRIVATE_TIER`). Venice documents E2EE for text only, so no picture or sound is ever sent on the encrypted route. One tap moves her brain to `deepseek-v4-1-flash-1017-uncensored` (same family as her encrypted brain, sees up to 10 pictures) and back; the planner stays encrypted. "Check Venice's list" reads `GET /models` on the phone; his Venice key goes only to Venice, and only while his Venice provider points there and the key was typed for it.
+- **Sight:** where her model sees, his pictures, his screenshots, outing pictures and camera looks go to her own model ("you see it yourself"), no more at once than her model takes. Probes (one app-made test picture) record whether it really sees; a blind result hands sight back to the describer. The describer's words are always marked as not hers.
+- **Kid check first (§1.4):** before any picture reaches her as content, her own model's first pass answers only the ages question; its `ages:` line and every other word of its answer are read as the describer's are. A child or a teen, or no readable ages, and the picture is withheld with one kid line.
+- **`>> look`:** at his asking (a typed message, or his enrolled voice with the phone unlocked), one frame per camera, only with his screen on and unlocked and her own life on; the camera light and his notification show it. She has seen nothing until the frame comes in the turn after; that turn offers no second look.
+- **Hearing his voice itself:** with a model that takes sound (xiaomi-mimo-v2-5 or v2-6-flash) and "Her model hears your voice" on, his enrolled voice (30 s or less) rides on his message as WAV for that one reply, beside the transcript; the phone's notes are then "what the phone measured of it". Never another voice, never before enrolment.
+- **Nothing kept (I6):** pictures and clips are in memory only, never on a row, in a log or in an error detail.
+
+### Still open
+
+- No on-phone check yet of capture, echo cancelling, barge-in timing, the probes or `>> look`; the voiceprint threshold (0.4) needs tuning on the phone: in RAVDESS's hardest case (same sex, acted emotion) other voices passed about 10 % of the time and his shouted words were sometimes missed.
 
 ---
 
