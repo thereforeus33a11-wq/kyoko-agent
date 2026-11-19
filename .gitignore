@@ -5,3 +5,5 @@ voice/data/
 # Her own phone voice (model, tokens, dictionary): built from her voice, never committed.
 opendroid/own_voice/
 __pycache__/
+# Her reference renders (3D model masters): never committed. The repo is public.
+opendroid/her_refs/

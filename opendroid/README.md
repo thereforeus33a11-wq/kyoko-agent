@@ -58,7 +58,7 @@ A **plain hosted model** (any id without `e2ee-`) can read what it is sent. With
 
 **This repository.** What she starts out knowing about you is kept in a second notes file, `persona/seed_notes.private.txt`. It is listed in `.gitignore` and is never committed, and it is not put into the APK either, because an APK can be copied and unpacked: you hand those notes to her on the phone (Settings → Persona → Character card → "Give her notes"). Only a build made with `YUME_BAKE_PRIVATE_NOTES=1` puts them into her starting notebook. Her notebook on the phone is written on first start and updates of the app keep it; a starting note she never rewrote gets the new wording of that note.
 
-Two things that send data elsewhere if you turn them on: an ElevenLabs key (every spoken line goes to ElevenLabs; leave it empty to use the phone's own voice) and OpenDroid's auto-reply and social features (other people's messages go to the model).
+Two things that send data elsewhere if you turn them on: an ElevenLabs key (every spoken line goes to ElevenLabs; leave it empty to use the phone's own voice) and OpenDroid's social features (other people's messages go to the model). OpenDroid's auto-reply is off in this build: it wrote to people in your name in nobody's voice, so it no longer has a writer, its switches were turned off on update, and Settings shows a notice where its card was. An email is never answered for you, since an answer there could only open a draft in your name.
 
 The encrypted exchange was written from Venice's published protocol and its encryption is tested in both directions against Venice's reference code. It has not been run against Venice's live service yet. If it fails it fails closed: she does not answer, and nothing is sent unencrypted.
 
@@ -71,16 +71,24 @@ She writes:
 - one line when the wake phrase is heard;
 - lines of her own in her own time, when she feels like writing to you (Settings → Persona → Her own time, on in this build).
 
-She can also act. A reply of hers may end with a command of her own (the app hides that line and runs it). It goes through the same planner and the same approval setting as your commands, and it is limited to a fixed list: open an app, music and YouTube, alarm, timer, flashlight, volume, brightness, do not disturb, lock the screen, screenshot. She cannot message, call, post, pay, delete, read your messages or files, or search the web this way.
+She can also act. A reply of hers, or a moment of her own, may end with a command of her own (the app hides that line and runs it). It goes through the same planner as your commands, and there is no list of what she may ask for: whatever the planner can do for you, it can do for her (`PersonaActions.kt`, lines 1-21). Who is asked first is decided in one place: your own approval setting always counts, and where it would stop the plan her rein (Settings → Persona) may still let it run. Her rein never runs a command whose words may be someone else's.
 
 She never writes:
 
 - the plan for a device action. The planner prompt is byte-for-byte the stock one.
-- anything sent to another person: SMS, WhatsApp, Telegram, email, social posts, auto-replies. Those prompts are untouched, and her notebook is filtered out of the memory they can see.
+- auto-replies. The stock auto-reply is gone from this build, not left as a stock feature: nothing answers a message for you while you are away. The old prompts for it, and for plans and social text, are untouched and never carry her card or her notebook.
 - the spoken approval prompt ("I've planned 2 steps ... say approve to run, or cancel"). It is a safety check and stays plain.
 - the results of actions ("Alarm set for 7:30 AM"). Those are what the phone actually did, so they are repeated word for word.
 
 Unit tests in the patch check parts of this wall: that recall, saved notes and the planner's memory context never return a row of her notebook; that the stock prompt builders for plans, re-evaluation, auto-replies and social text carry no persona marker; and that nothing in her package refers to the classes that run actions. No test drives a whole plan end to end with her switched on: the app's main loop has no test harness upstream.
+
+## What the phone did
+
+The phone keeps one record of everything it did and everything done through it, whoever started it: you in the chat or through a shortcut, a routine of yours, Social Center, a command of hers in a reply or in her own time, the old auto-reply, the app itself, or another program through the MCP server. Each entry says when, who started it and why, how it was let through (your setting, her rein, your yes or no), what each step did, to whom, from which app and with which words, and how it ended. A draft left open for you is recorded as left open, never as sent.
+
+Her reply is told the newest entries of the last two days and older ones your message is about, a moment of her own the last day, and her notebook pass what was done since its last pass. So asked about something the phone did, she owns what was hers and says plainly what was not. Where her route holds your details back, an entry keeps only its kind: who it went to and what it said stay on the phone. The planner and the stock assistant never see the record.
+
+It is one file in the app's own storage (`files/record/phone_log.sealed`), sealed with a key that stays in the phone's Keystore, at most 600 entries and none older than 30 days. It never holds a secret, what a step read off the screen or out of a notification, her thoughts or her replies. On the update that brought it, what the old auto-reply answered in the last 30 days and what earlier plans did were put into it once.
 
 ## How she develops
 
