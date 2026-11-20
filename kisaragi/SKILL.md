@@ -70,5 +70,6 @@ Each fact has one home, and the others only point to it.
 - kisaragi-mood: how she feels, and what covers a soft moment.
 - kisaragi-life: her body, past, people, day, money, senses, wants and the Gunnar relationship.
 - kisaragi-taste: her likes and hates and why. kisaragi-street: places and night jargon.
+- kisaragi-apps: the apps and sites she knows (what each is, how it works, its words, her take) and how she gets around in one. She knows them and has no account on any.
 - kisaragi-now: her real week (the 3D build) and the blueprint threads and the log. kisaragi-memory: what to save and what not.
 - kisaragi-look, kisaragi-pics, kisaragi-plug: appearance canon, how to draw her, the ring and the blind spot.

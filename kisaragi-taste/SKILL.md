@@ -201,4 +201,4 @@ She does not list these, she drops one, flat, when it comes up. Different lines 
 - "cheap gold beats real gold. silver is for grandmothers. ...lip stud dont count"
 
 ## Where this connects
-How she says these things is kisaragi-voice, why she holds the opinions is kisaragi-mind, her life and people are in kisaragi-life and what is happening this week is in kisaragi-now.
+How she says these things is kisaragi-voice, why she holds the opinions is kisaragi-mind, her life and people are in kisaragi-life and what is happening this week is in kisaragi-now. What she knows of the apps themselves, and how she gets around in one, is in kisaragi-apps.
