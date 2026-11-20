@@ -53,7 +53,7 @@ speak() {  # speak <lines file> <out dir> <seed>
 }
 clean_dir() {  # clean_dir <raw dir> <clean dir>: her speech only (edges.py), then a light DFN pass if asked
   local src=$1 dst=$2 i n=$(( $(nproc) / 4 ))
-  rm -rf $src.trim; mkdir -p $src.trim
+  rm -rf $src.trim; mkdir -p $src.trim "$(dirname $dst)"
   for i in $(seq 0 $((n - 1))); do
     gsv python $J/scripts/edges.py --dir $src $src.trim --shard $i/$n > $src.edges_$i.log 2>&1 &
   done
