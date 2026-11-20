@@ -1,23 +1,30 @@
 #!/usr/bin/env bash
-# Stage 1, voice v2 (2026-11-20): one consistent her, clean, for both languages.
+# Stage 1, voice v2 (2026-11-20): one consistent her, complete sentences, for both languages.
 # Why: the first bilingual set rotated four reference clips line by line (each line a slightly different
 # her), was made in half precision, and every clip went through the WORLD vocoder to brighten it (a
-# grainy buzz); the owner chose the version with full precision and no brightening, and heard breaths
-# and room noise that the teacher copies from its reference. So here:
-#   - one reference clip (REF2, chosen by timbre match: v12_071), as recorded (the owner preferred it to a
-#     DeepFilterNet-cleaned copy; CLEAN_REF=1 cleans it);
-#   - full precision, no brightening, for her English and mixed lines (two takes) AND her Japanese replay
-#     lines (one take of the original practice sentences), so both languages are the same voice;
-#   - every take trimmed (trim_words.py: from just before the first word to where her voice has really
-#     faded, so word endings stay) and, if DFN_ATTEN is set, lightly cleaned (dfn_clean.py --atten);
+# grainy buzz). The owner picked full precision with no brightening and his original reference ("D"),
+# heard breaths at line edges, and then heard her cut off in the middle of sentences: the teacher
+# sometimes drops or repeats a sentence of a longer line. So here:
+#   - one reference clip (REF2, chosen by timbre match: v12_071), as recorded (CLEAN_REF=1 cleans it);
+#   - full precision, no brightening, for her English and mixed lines AND her Japanese replay lines (the
+#     original practice sentences), so both languages are the same voice;
+#   - speak_checked.py: every sentence spoken on its own, its edges trimmed by her actual sound, heard back
+#     (English word error, Japanese kana reading) and redone up to 4 times until it is right, then the
+#     sentences joined with natural pauses; one take per line is enough (TAKES=2 adds a second);
+#   - a light DeepFilterNet pass only if DFN_ATTEN is set;
 #   - the same checks as before (Japanese: check_distill.py; English/mixed: check_lang.py), no brightening.
 # Then make_ds_mix.py builds $V/ds_mix for stage2_lang.sh (DS_MIX=$V/ds_mix).
-# Log: /w/logs/stage1_v2.log; ends with STAGE1-V2-DONE. Needs setup.sh, setup_lang.sh, setup_clean.sh.
+# Log: /w/logs/stage1_v2.log; ends with STAGE1-V2-DONE. Needs setup.sh, setup_lang.sh, setup_clean.sh,
+# and faster-whisper in gsv-env (installed below).
 set -euo pipefail
 source /w/job/scripts/lang_env.sh
 V=${V:-$J/out/v2}; NG=${NG:-$(nvidia-smi -L | wc -l)}
 REF2=${REF2:-$J/data/wavs/v12_071.wav}; CLEAN_REF=${CLEAN_REF:-0}; DFN_ATTEN=${DFN_ATTEN:-}
-OPTS="--speed 1.0 --temperature 1.0 --top-k 20"     # full precision: no --half
+OPTS="--speed 1.0 --temperature 1.0 --top-k 20 --tries 4"     # full precision (speak_checked never uses half)
+TAKES=${TAKES:-1}; SHARDS=${SHARDS:-$((NG * 2))}
+export UV_CACHE_DIR=/w/uvcache UV_LINK_MODE=copy
+/w/gsv-env/bin/python -c "import faster_whisper" 2>/dev/null || uv pip install -q --python /w/gsv-env/bin/python faster-whisper==1.1.1 requests
+GSV_CUDNN="$(/w/gsv-env/bin/python -c 'import os, nvidia.cublas.lib, nvidia.cudnn.lib; print(os.path.dirname(nvidia.cublas.lib.__file__) + ":" + os.path.dirname(nvidia.cudnn.lib.__file__))')"
 step() { echo "=== $(date -u +%H:%M:%S) $*"; }
 mkdir -p $V
 ref_text=$(grep -F "/$(basename $REF2)|" $J/data/yume.list | head -1 | cut -d'|' -f4)
@@ -33,19 +40,17 @@ echo "reference: $REF_USE ($ref_text)"
 speak() {  # speak <lines file> <out dir> <seed>
   local lines=$1 out=$2 seed=$3 i
   mkdir -p $out
-  for i in $(seq 0 7); do
-    CUDA_VISIBLE_DEVICES=$(( i % NG )) gsv python $J/scripts/speak.py --gpt $G_HER --sovits $S2 --out $out \
-      --refs $V/ref.tsv --seed $seed --lines $lines --shard $i/8 $OPTS > $out.speak_$i.log 2>&1 &
+  for i in $(seq 0 $((SHARDS - 1))); do
+    (export LD_LIBRARY_PATH="$GSV_CUDNN:${LD_LIBRARY_PATH:-}"; CUDA_VISIBLE_DEVICES=$(( i % NG )) gsv python \
+      $J/scripts/speak_checked.py --gpt $G_HER --sovits $S2 --out $out --refs $V/ref.tsv --whisper $WHISPER \
+      --seed $seed --lines $lines --shard $i/$SHARDS $OPTS) > $out.speak_$i.log 2>&1 &
   done
   wait
   echo "$(ls $out/*.wav 2>/dev/null | wc -l) takes in $out"
 }
-clean_dir() {  # clean_dir <raw dir> <clean dir>: trim, then (if DFN_ATTEN) a light DeepFilterNet pass
+clean_dir() {  # clean_dir <raw dir> <clean dir>: (speak_checked already trimmed each sentence) a light DFN pass if asked
   local src=$1 dst=$2 i
-  for i in $(seq 0 $((NG - 1))); do
-    CUDA_VISIBLE_DEVICES=$i asr $J/scripts/trim_words.py $WHISPER $src $src.trim --shard $i/$NG > $src.trim_$i.log 2>&1 &
-  done
-  wait
+  rm -rf $src.trim; cp -r $src $src.trim
   if [ -z "$DFN_ATTEN" ]; then
     rm -rf $dst; cp -r $src.trim $dst
   else
@@ -60,12 +65,12 @@ clean_dir() {  # clean_dir <raw dir> <clean dir>: trim, then (if DFN_ATTEN) a li
 
 if [ "${SKIP_SPEAK:-0}" != 1 ]; then
   step "English and mixed, take A"; speak $LANG_IN/speak_lang.txt $V/en_raw/A 1234
-  step "English and mixed, take B"; speak $LANG_IN/speak_lang.txt $V/en_raw/B 9876
+  [ "$TAKES" -ge 2 ] && { step "English and mixed, take B"; speak $LANG_IN/speak_lang.txt $V/en_raw/B 9876; }
   step "Japanese replay lines";     speak $J/out/sentences.txt $V/ja_raw 1234
 fi
 step "trim and clean"
 clean_dir $V/en_raw/A $V/en_clean/A
-clean_dir $V/en_raw/B $V/en_clean/B
+[ -d $V/en_raw/B ] && clean_dir $V/en_raw/B $V/en_clean/B
 clean_dir $V/ja_raw $V/ja_clean
 step "Japanese checks"
 rm -rf $V/ds_ja
