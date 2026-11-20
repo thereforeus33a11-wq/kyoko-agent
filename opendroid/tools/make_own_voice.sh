@@ -14,6 +14,11 @@
 # it ("yume_english", with the table's SHA-256), so the app says her English as English
 # (core/voice/own/BilingualVoice.kt). Without it the voice reads English the katakana way, as
 # every earlier voice of hers does; the repository's table is shipped all the same.
+# BREATHS: a folder holding her actress's recordings yume_07.wav and v12_040.wav (the private voice
+# clips). Her four real breaths are cut from them at the voice's sample rate into breaths/
+# (voice/scripts/breath_bank.py --format f32), and the app breathes with them between her sentences
+# (core/voice/own/Breathing.kt). Without it she pauses between sentences and adds no breath.
+# BREATH_PYTHON: a Python with numpy, scipy and soundfile for that (default python3).
 # OWN_VOICE_OUT: where to assemble it (default opendroid/own_voice).
 set -euo pipefail
 
@@ -35,6 +40,11 @@ cp -r "$DIC" "$OUT.tmp/open_jtalk_dic_utf_8-1.11"
 cp "$CMU" "$OUT.tmp/cmudict.dict"
 cp "$CMU_LICENSE" "$OUT.tmp/cmudict.LICENSE"
 cp "$TABLE" "$OUT.tmp/en_ipa_table.json"
+if [ -n "${BREATHS:-}" ]; then
+    RATE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["audio"]["sample_rate"])' "$CONFIG")
+    "${BREATH_PYTHON:-python3}" "$HERE/../voice/scripts/breath_bank.py" --clips "$BREATHS" \
+        --out "$OUT.tmp/breaths" --sr "$RATE" --format f32
+fi
 # The table names the CMU dictionary it was made with; a different one would read her English differently.
 WANT=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cmudict"]["sha256"])' "$TABLE")
 [ "$(sha256sum "$CMU" | cut -d' ' -f1)" = "$WANT" ] || { echo "cmudict.dict is not the one en_ipa_table.json was made with" >&2; exit 1; }
@@ -73,9 +83,10 @@ agreement, for this owner's phone only. Not for redistribution.
 open_jtalk_dic_utf_8-1.11: Open JTalk dictionary (Modified BSD; see its COPYING).
 cmudict.dict: The CMU Pronouncing Dictionary (BSD-style; see cmudict.LICENSE).
 en_ipa_table.json: how her English is read (made for this voice).
+breaths/ (when present): four breaths of her voice actress, cut from her recordings.
 EOF
 # The app unpacks the voice again whenever this stamp changes.
-STAMP="yume-$(date -u +%Y%m%d)-$(cat "$OUT.tmp/voice/model.onnx" "$OUT.tmp/voice/tokens.txt" "$OUT.tmp/voice/config.json" "$OUT.tmp/en_ipa_table.json" | sha256sum | cut -c1-12)"
+STAMP="yume-$(date -u +%Y%m%d)-$(cat "$OUT.tmp/voice/model.onnx" "$OUT.tmp/voice/tokens.txt" "$OUT.tmp/voice/config.json" "$OUT.tmp/en_ipa_table.json" $(ls "$OUT.tmp"/breaths/* 2>/dev/null) | sha256sum | cut -c1-12)"
 echo "$STAMP" > "$OUT.tmp/VERSION"
 rm -rf "$OUT"
 mv "$OUT.tmp" "$OUT"

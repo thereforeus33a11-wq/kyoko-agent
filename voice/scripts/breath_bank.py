@@ -17,8 +17,9 @@ clip (95th percentile of 25 ms frame levels), so breathe.py can place it as loud
 
 Never commit the output: it is her actress's voice (private, like own_voice).
 
-Usage: python breath_bank.py --clips DIR_WITH_HER_WAVS --out DIR [--sr 32000]
-Writes DIR/<name>.wav (float32 mono) and DIR/bank.json.
+Usage: python breath_bank.py --clips DIR_WITH_HER_WAVS --out DIR [--sr 32000] [--format wav|f32]
+Writes DIR/<name>.wav (float32 mono) or, for the phone (make_own_voice.sh BREATHS=...), DIR/<name>.f32
+(little-endian 32-bit float samples, what core/voice/own/Breathing.kt reads), and DIR/bank.json.
 """
 import argparse
 import json
@@ -63,6 +64,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--clips", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--sr", type=int, default=32000)
+    ap.add_argument("--format", choices=("wav", "f32"), default="wav")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     meta = {"sr": args.sr, "breaths": {}}
@@ -75,7 +77,10 @@ def main():
         g = np.gcd(sr, args.sr)
         y = resample_poly(seg, args.sr // g, sr // g).astype(np.float32)
         lv = features(y, args.sr)[0]
-        sf.write(os.path.join(args.out, f"{name}.wav"), y, args.sr, subtype="FLOAT")
+        if args.format == "f32":
+            y.astype("<f4").tofile(os.path.join(args.out, f"{name}.f32"))
+        else:
+            sf.write(os.path.join(args.out, f"{name}.wav"), y, args.sr, subtype="FLOAT")
         meta["breaths"][name] = {
             "source": clip, "from": a, "to": b, "seconds": round(len(y) / args.sr, 3),
             # Level of the breath (90th percentile of its frames) against her speech in the same clip.

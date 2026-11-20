@@ -60423,6 +60423,307 @@ index 0000000..66d3e9c
 +        kept.sentences
 +    }
 +}
+diff --git a/app/src/main/java/com/opendroid/ai/core/voice/own/Breathing.kt b/app/src/main/java/com/opendroid/ai/core/voice/own/Breathing.kt
+new file mode 100644
+index 0000000..da205a4
+--- /dev/null
++++ b/app/src/main/java/com/opendroid/ai/core/voice/own/Breathing.kt
+@@ -0,0 +1,295 @@
++package com.opendroid.ai.core.voice.own
++
++import kotlinx.serialization.json.Json
++import kotlinx.serialization.json.int
++import kotlinx.serialization.json.jsonObject
++import kotlinx.serialization.json.jsonPrimitive
++import java.io.File
++import java.nio.ByteBuffer
++import java.nio.ByteOrder
++import kotlin.math.PI
++import kotlin.math.cos
++import kotlin.math.log10
++import kotlin.math.max
++import kotlin.math.min
++import kotlin.math.pow
++import kotlin.math.roundToInt
++import kotlin.math.sin
++import kotlin.random.Random
++
++/**
++ * Her breathing while she talks, in her own voice: her own breaths, where her lungs would
++ * need them.
++ *
++ * The owner, on her breath: it should sound like it comes from a person like her, her
++ * diaphragm and lungs, the size of her body, her chest rising and falling. Her teacher
++ * voice breathed wrong (a dark rumble and a short hum around each sentence, which the
++ * voice build now cuts away: voice/scripts/pod/edges.py). This puts breath back the way
++ * she breathes on record: the sound is four breaths of her voice actress's own
++ * ([BreathBank], made by voice/scripts/breath_bank.py), and when and how deep follows a
++ * small model of her lungs (the same as voice/scripts/breathe.py, which made the
++ * listening samples):
++ *
++ *  - She is an adult woman of 157 cm. People talk on the middle of their lungs: a breath
++ *    group uses about 0.3-0.6 L of air.
++ *  - Speaking uses about [AIR_PER_SECOND] L of air per second of her speech.
++ *  - A breath group is whole sentences, as many as fit in [GROUP_MAX_L]. When the next
++ *    sentence would not fit she breathes at that sentence boundary, never inside one.
++ *  - The breath is what the next group needs plus [RESERVE_L], drawn through the mouth at
++ *    [INFLOW] L/s: a quick catch before a short group, up to about half a second before a
++ *    long one. Her voice starts a moment after it ends (the hold).
++ *  - The first words of a line are often said on the air she has, breathed while she
++ *    listened: under [OPENER_S] of speech always, under [SOFT_OPENER_S] half the time,
++ *    otherwise she starts on a quiet catch. Her own takes show the same: mostly no audible
++ *    breath at all.
++ *  - A breath is as loud as the air going in: a catch about 34 dB under her speech, a deep
++ *    breath about 27 dB under ([LEVEL_DB]).
++ *  - As the air of a group runs down her voice falls a little, [DECLINE_DB] across the
++ *    group, and comes back after the next breath.
++ *  - Between two sentences of one breath, a pause of about [SENTENCE_PAUSE_S], varied.
++ *  - Never the same breath twice: every one is cut from another place, drawn a few percent
++ *    faster or slower, and a little louder or softer.
++ *
++ * Her feelings are words she writes; nothing here reads them. This is her baseline manner,
++ * the cool, unhurried one. A line that follows her last within [CARRY_MILLIS] goes on the
++ * same breath.
++ *
++ * Without a bank in the build she pauses between sentences as before and adds no breath.
++ */
++class Breathing(
++    private val bank: BreathBank,
++    private val sampleRate: Int,
++    private val random: Random = Random.Default,
++    private val clock: () -> Long = System::currentTimeMillis,
++) {
++
++    enum class Kind(val asset: String) { CATCH("catch"), SOFT("soft"), QUICK("quick"), DEEP("deep") }
++
++    /** What is heard before one sentence of hers. */
++    sealed interface Before {
++        /** Nothing: she says it on the air she has. */
++        data object Air : Before
++
++        /** A pause between two sentences of one breath. */
++        data class Pause(val seconds: Float) : Before
++
++        /** One of her breaths, then the moment her voice takes to start. */
++        class Breath(val kind: Kind, val samples: FloatArray, val holdSeconds: Float) : Before
++    }
++
++    // Seconds of her speech since her last breath, the seconds the group was planned for,
++    // and when her last line ended: what carries from one line to the next.
++    private var groupUsed = 0f
++    private var groupPlanned = 0f
++    private var lastEnded = Long.MIN_VALUE / 2
++
++    /** A line of hers whose sentences hold [codepointCounts] phoneme codepoints each. */
++    fun line(codepointCounts: IntArray): Line = Line(codepointCounts, clock() - lastEnded < CARRY_MILLIS)
++
++    inner class Line internal constructor(private val counts: IntArray, private val continuing: Boolean) {
++        private var index = 0
++        private var secondsPerCodepoint = FIRST_SECONDS_PER_CODEPOINT
++        private var levels = 0f
++        private var levelCount = 0
++
++        /**
++         * Sentence by sentence, in order, as each is made: what to play before it, and the
++         * sentence with her voice's fall across the breath. [pace] is the speech rate the
++         * line is said at (pauses follow it; breaths do not).
++         */
++        fun next(samples: FloatArray, pace: Float = 1f): Pair<Before, FloatArray> {
++            val k = index++
++            val seconds = samples.size / sampleRate.toFloat()
++            counts.getOrNull(k)?.takeIf { it > 0 }?.let { n ->
++                val measured = seconds / n
++                secondsPerCodepoint = if (k == 0) measured else (secondsPerCodepoint + measured) / 2
++            }
++            if (samples.isNotEmpty()) {
++                levels += speechLevel(samples, sampleRate); levelCount++
++            }
++            val speechDb = if (levelCount > 0) levels / levelCount else -20f
++
++            fun estimate(i: Int) = if (i == k) seconds else (counts.getOrNull(i) ?: 0) * secondsPerCodepoint
++            fun groupFrom(start: Int): Float {
++                var t = 0f
++                for (i in start until max(counts.size, start + 1)) {
++                    val d = estimate(i)
++                    if (t > 0f && AIR_PER_SECOND * (t + d) > GROUP_MAX_L) break
++                    t += d
++                }
++                return t
++            }
++            fun breathFor(group: Float, cap: Float = Float.MAX_VALUE): Before.Breath {
++                val inSeconds = min(((AIR_PER_SECOND * group + RESERVE_L) / INFLOW).coerceIn(0.12f, 0.65f), cap)
++                return breath(inSeconds, speechDb)
++            }
++
++            val before: Before = when {
++                k == 0 && !continuing -> {
++                    val group = groupFrom(0)
++                    groupPlanned = group; groupUsed = 0f
++                    when {
++                        group < OPENER_S -> Before.Air
++                        group < SOFT_OPENER_S && random.nextBoolean() -> Before.Air
++                        group < SOFT_OPENER_S -> breathFor(group, cap = 0.2f)
++                        else -> breathFor(group)
++                    }
++                }
++                AIR_PER_SECOND * (groupUsed + seconds) > GROUP_MAX_L -> {
++                    val group = groupFrom(k)
++                    groupPlanned = group; groupUsed = 0f
++                    breathFor(group)
++                }
++                // A line right after her last, on the breath she still has: the gap between
++                // the two lines is its pause.
++                k == 0 -> Before.Air
++                else -> Before.Pause(SENTENCE_PAUSE_S * PAUSE_SCALE * random.range(0.85f, 1.15f) / pace.coerceIn(0.5f, 2f))
++            }
++            groupPlanned = maxOf(groupPlanned, groupUsed + seconds, 1e-3f)
++            val shaped = fall(samples, groupUsed / groupPlanned, (groupUsed + seconds) / groupPlanned)
++            groupUsed += seconds
++            return before to shaped
++        }
++
++        /** The line is over (said to its end or cut off): the next one may go on its breath. */
++        fun ended() {
++            lastEnded = clock()
++        }
++    }
++
++    private fun fall(samples: FloatArray, from: Float, to: Float): FloatArray {
++        val a = from.coerceIn(0f, 1f); val b = to.coerceIn(0f, 1f)
++        val out = FloatArray(samples.size)
++        val n = max(1, samples.size - 1)
++        for (i in samples.indices) {
++            val db = -DECLINE_DB * (a + (b - a) * i / n)
++            out[i] = samples[i] * 10f.pow(db / 20f)
++        }
++        return out
++    }
++
++    internal fun breath(inSeconds: Float, speechDb: Float): Before.Breath {
++        val kind = when {
++            inSeconds < 0.25f -> Kind.CATCH
++            inSeconds < 0.42f -> Kind.SOFT
++            else -> Kind.DEEP
++        }
++        // The fuller breath lends its slow start and its fast end too.
++        val pool = when (kind) {
++            Kind.CATCH -> listOf(Kind.CATCH)
++            Kind.SOFT -> listOf(Kind.SOFT, Kind.QUICK, Kind.DEEP)
++            Kind.QUICK -> listOf(Kind.QUICK, Kind.DEEP)
++            Kind.DEEP -> listOf(Kind.DEEP)
++        }
++        val source = bank.clip(pool[random.nextInt(pool.size)])
++        val drawn = resample(source, random.range(0.94f, 1.06f))
++        val n = (inSeconds * sampleRate).roundToInt().coerceAtLeast(1)
++        val y = when {
++            drawn.size > n -> {
++                val off = random.nextInt(drawn.size - n + 1)
++                drawn.copyOfRange(off, off + n)
++            }
++            drawn.size < n * 0.8f -> resample(drawn, max(1f / 1.3f, drawn.size / n.toFloat()))
++            else -> drawn.copyOf()
++        }
++        val fadeIn = max(1, (0.35f * y.size).toInt())
++        val fadeOut = max(1, min(y.size / 3, (0.03f * sampleRate).toInt()))
++        for (i in 0 until min(fadeIn, y.size)) y[i] *= sin(PI / 2 * i / fadeIn).pow(2).toFloat()
++        for (i in 0 until min(fadeOut, y.size)) {
++            val j = y.size - fadeOut + i
++            if (j >= 0) y[j] *= cos(PI / 2 * (i + 1) / fadeOut).pow(2).toFloat()
++        }
++        val have = percentile(frameLevels(y, sampleRate), 0.90f)
++        val want = speechDb + LEVEL_DB.getValue(kind) + LEVEL_OFFSET_DB + random.range(-1f, 1f)
++        val gain = 10f.pow((want - have) / 20f)
++        for (i in y.indices) y[i] *= gain
++        return Before.Breath(kind, y, random.range(HOLD_MIN_S, HOLD_MAX_S))
++    }
++
++    private fun Random.range(a: Float, b: Float) = a + (b - a) * nextFloat()
++
++    companion object {
++        const val AIR_PER_SECOND = 0.12f
++        const val INFLOW = 1.4f
++        const val GROUP_MAX_L = 0.6f
++        const val RESERVE_L = 0.08f
++        const val OPENER_S = 1.3f
++        const val SOFT_OPENER_S = 4.0f
++        const val SENTENCE_PAUSE_S = 0.32f
++        const val PAUSE_SCALE = 1.10f
++        const val HOLD_MIN_S = 0.10f
++        const val HOLD_MAX_S = 0.16f
++        const val DECLINE_DB = 1.5f
++        const val LEVEL_OFFSET_DB = -1.5f
++        val LEVEL_DB = mapOf(Kind.CATCH to -34f, Kind.SOFT to -31f, Kind.QUICK to -30f, Kind.DEEP to -27f)
++        /** A line that follows her last within this goes on the same breath. */
++        const val CARRY_MILLIS = 2_000L
++        /** How long she takes per phoneme codepoint, before her first sentence says better. */
++        const val FIRST_SECONDS_PER_CODEPOINT = 0.075f
++
++        /** Levels (dB) of 25 ms frames every 10 ms, Hann-windowed, as the voice build measures them. */
++        fun frameLevels(x: FloatArray, sampleRate: Int): FloatArray {
++            val w = (0.025 * sampleRate).toInt().coerceAtLeast(1); val h = (0.01 * sampleRate).toInt().coerceAtLeast(1)
++            val padded = if (x.size < w) x.copyOf(w) else x
++            val n = 1 + (padded.size - w) / h
++            val window = DoubleArray(w) { 0.5 - 0.5 * cos(2 * PI * it / (w - 1).coerceAtLeast(1)) }
++            return FloatArray(n) { f ->
++                var s = 0.0
++                for (i in 0 until w) { val v = padded[f * h + i] * window[i]; s += v * v }
++                (10 * log10(s / w + 1e-12)).toFloat()
++            }
++        }
++
++        /** Her speech level in [x]: the 95th percentile of its frame levels. */
++        fun speechLevel(x: FloatArray, sampleRate: Int): Float = percentile(frameLevels(x, sampleRate), 0.95f)
++
++        fun percentile(values: FloatArray, q: Float): Float {
++            if (values.isEmpty()) return -120f
++            val s = values.sorted()
++            val pos = q * (s.size - 1)
++            val lo = pos.toInt(); val hi = min(lo + 1, s.size - 1)
++            return s[lo] + (s[hi] - s[lo]) * (pos - lo)
++        }
++
++        /** [x] drawn [rate] times faster (linear interpolation; a breath is noise and takes it well). */
++        fun resample(x: FloatArray, rate: Float): FloatArray {
++            if (x.isEmpty() || rate <= 0f) return x.copyOf()
++            val n = max(1, (x.size / rate).toInt())
++            return FloatArray(n) { i ->
++                val p = i * rate
++                val a = p.toInt().coerceAtMost(x.size - 1); val b = min(a + 1, x.size - 1)
++                x[a] + (x[b] - x[a]) * (p - a)
++            }
++        }
++    }
++}
++
++/**
++ * Her breaths as the build ships them (own_voice/breaths, from voice/scripts/breath_bank.py):
++ * bank.json with the sample rate, and one file of little-endian 32-bit float samples per
++ * breath (catch.f32, soft.f32, quick.f32, deep.f32). Her voice actress's own breath:
++ * private, like the rest of her voice.
++ */
++class BreathBank(private val clips: Map<Breathing.Kind, FloatArray>) {
++
++    fun clip(kind: Breathing.Kind): FloatArray = clips.getValue(kind)
++
++    companion object {
++        const val DIR = "breaths"
++
++        /** The bank in [dir] at [sampleRate], or null when it is missing or incomplete (she then adds no breath). */
++        fun load(dir: File, sampleRate: Int): BreathBank? = runCatching {
++            val meta = Json.parseToJsonElement(File(dir, "bank.json").readText()).jsonObject
++            val rate = meta.getValue("sr").jsonPrimitive.int
++            val clips = Breathing.Kind.entries.associateWith { kind ->
++                val bytes = File(dir, "${kind.asset}.f32").readBytes()
++                require(bytes.size >= 4 && bytes.size % 4 == 0) { "${kind.asset}.f32 is not float samples" }
++                val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
++                val raw = FloatArray(buf.remaining()).also { buf.get(it) }
++                require(raw.all { it.isFinite() }) { "${kind.asset}.f32 has samples that are not numbers" }
++                if (rate == sampleRate) raw else Breathing.resample(raw, rate / sampleRate.toFloat())
++            }
++            BreathBank(clips)
++        }.getOrNull()
++    }
++}
 diff --git a/app/src/main/java/com/opendroid/ai/core/voice/own/EnglishPhonemes.kt b/app/src/main/java/com/opendroid/ai/core/voice/own/EnglishPhonemes.kt
 new file mode 100644
 index 0000000..e94c23d
@@ -61915,10 +62216,10 @@ index 0000000..c06dd4a
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/voice/own/OwnVoice.kt b/app/src/main/java/com/opendroid/ai/core/voice/own/OwnVoice.kt
 new file mode 100644
-index 0000000..d8d58c0
+index 0000000..fb7f4c1
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/voice/own/OwnVoice.kt
-@@ -0,0 +1,326 @@
+@@ -0,0 +1,348 @@
 +package com.opendroid.ai.core.voice.own
 +
 +import android.content.Context
@@ -61948,12 +62249,16 @@ index 0000000..d8d58c0
 + * private folder that is never committed) and are unpacked once into the app's own
 + * storage, because Open JTalk reads its dictionary from files.
 + *
++ * She breathes as she talks ([Breathing]): her actress's own breaths, where her lungs would
++ * need them, from own_voice/breaths when the build carries it; without it she pauses
++ * between sentences and adds no breath.
++ *
 + * One line at a time: [say] blocks until the line has been heard to its end, or [stop]
 + * cut it off.
 + */
 +class OwnVoice(private val context: Context) {
 +
-+    private class Engine(val tts: OfflineTts, val jtalk: OpenJTalk, val reader: LineReader)
++    private class Engine(val tts: OfflineTts, val jtalk: OpenJTalk, val reader: LineReader, val breathing: Breathing?)
 +
 +    private val lock = Any()
 +    // Held by a line from the moment it reads the engine until its sound is released, so
@@ -61997,7 +62302,9 @@ index 0000000..d8d58c0
 +                val jtalk = OpenJTalk.open(File(home, DICTIONARY).path)
 +                    ?: run { tts.release(); error("Open JTalk could not read its dictionary") }
 +                val dict = CmuDict.load(File(home, CMUDICT))
-+                engine = Engine(tts, jtalk, lineReader(voiceDir, jtalk, dict))
++                val breaths = BreathBank.load(File(home, BreathBank.DIR), tts.sampleRate())
++                if (breaths == null) Log.i(TAG, "No breaths of hers in this build: pauses only")
++                engine = Engine(tts, jtalk, lineReader(voiceDir, jtalk, dict), breaths?.let { Breathing(it, tts.sampleRate()) })
 +                true
 +            } catch (e: Throwable) {
 +                // A broken or missing voice must not take the app's speech with it: the
@@ -62036,6 +62343,7 @@ index 0000000..d8d58c0
 +        if (released || cancelled()) return false
 +        val codepoints = e.reader.read(normalized)?.toTypedArray() ?: return null
 +        if (codepoints.isEmpty()) return true
++        val breath = e.breathing?.line(IntArray(codepoints.size) { codepoints[it].size })
 +
 +        val rate = e.tts.sampleRate()
 +        val minBuffer = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
@@ -62073,7 +62381,8 @@ index 0000000..d8d58c0
 +            var first = true
 +            var failure: Throwable? = null
 +            // Each sentence plays as soon as it is made, while the next is being made, with a
-+            // short pause between sentences, as a person leaves. The native side calls this
++            // short pause between sentences, as a person leaves, or with her breath where her
++            // lungs would take one ([Breathing]). The native side calls this
 +            // by name as invoke(float[]) returning Integer: a lambda compiled the usual way
 +            // (invokedynamic) has only the erased invoke(Object), so nothing would be called
 +            // and nothing heard. An object declares it. Nothing is thrown back into native code.
@@ -62082,9 +62391,22 @@ index 0000000..d8d58c0
 +                    if (stopFlag.get()) {
 +                        0
 +                    } else {
-+                        if (!first) play(pause)
-+                        first = false
-+                        play(samples)
++                        if (breath != null) {
++                            val (before, voice) = breath.next(samples, pace)
++                            when (before) {
++                                Breathing.Before.Air -> Unit
++                                is Breathing.Before.Pause -> play(FloatArray((rate * before.seconds).toInt()))
++                                is Breathing.Before.Breath -> {
++                                    play(before.samples)
++                                    play(FloatArray((rate * before.holdSeconds).toInt()))
++                                }
++                            }
++                            play(voice)
++                        } else {
++                            if (!first) play(pause)
++                            first = false
++                            play(samples)
++                        }
 +                        if (stopFlag.get()) 0 else 1
 +                    }
 +                } catch (t: Throwable) {
@@ -62110,6 +62432,7 @@ index 0000000..d8d58c0
 +            Log.e(TAG, "Her own voice failed on a line", t)
 +            return false
 +        } finally {
++            breath?.ended()
 +            track = null
 +            runCatching { if (stopFlag.get()) { audio.pause(); audio.flush() } ; audio.stop() }
 +            audio.release()
@@ -133139,6 +133462,210 @@ index 0000000..a4d4fda
 +
 +    private fun resource(name: String): ByteArray =
 +        javaClass.classLoader!!.getResourceAsStream(name)!!.use { it.readBytes() }
++}
+diff --git a/app/src/test/java/com/opendroid/ai/core/voice/own/BreathingTest.kt b/app/src/test/java/com/opendroid/ai/core/voice/own/BreathingTest.kt
+new file mode 100644
+index 0000000..ca93723
+--- /dev/null
++++ b/app/src/test/java/com/opendroid/ai/core/voice/own/BreathingTest.kt
+@@ -0,0 +1,198 @@
++package com.opendroid.ai.core.voice.own
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Rule
++import org.junit.Test
++import org.junit.rules.TemporaryFolder
++import java.io.File
++import java.nio.ByteBuffer
++import java.nio.ByteOrder
++import kotlin.math.PI
++import kotlin.math.abs
++import kotlin.math.pow
++import kotlin.math.sin
++import kotlin.math.sqrt
++import kotlin.random.Random
++
++/**
++ * Her breathing while she talks: only between sentences, only when her lungs need it, as
++ * quiet as her own breaths, never the same breath twice, and her voice falling a little
++ * across a breath.
++ */
++class BreathingTest {
++
++    @get:Rule val folder = TemporaryFolder()
++
++    private val rate = 22050
++
++    private fun noise(seconds: Float, seed: Int, amp: Float = 0.05f, sr: Int = rate): FloatArray {
++        val r = Random(seed)
++        return FloatArray((seconds * sr).toInt()) { (r.nextFloat() * 2 - 1) * amp }
++    }
++
++    private val bank = BreathBank(mapOf(
++        Breathing.Kind.CATCH to noise(0.26f, 1),
++        Breathing.Kind.SOFT to noise(0.28f, 2),
++        Breathing.Kind.QUICK to noise(0.31f, 3),
++        Breathing.Kind.DEEP to noise(0.65f, 4),
++    ))
++
++    /** A sentence of [seconds]: a steady voiced tone, about as loud as her speech. */
++    private fun sentence(seconds: Float) = FloatArray((seconds * rate).toInt()) { (0.3 * sin(2 * PI * 220 * it / rate)).toFloat() }
++
++    private var now = 1_000_000L
++    private fun breathing(seed: Int = 7) = Breathing(bank, rate, Random(seed)) { now }
++
++    /** Says sentences of these lengths as one line; what came before each. */
++    private fun say(b: Breathing, vararg seconds: Float): List<Pair<Breathing.Before, FloatArray>> {
++        val line = b.line(IntArray(seconds.size) { (seconds[it] / 0.075f).toInt() })
++        return seconds.map { line.next(sentence(it)) }.also { line.ended() }
++    }
++
++    @Test
++    fun `a short line is said on the air she has`() {
++        repeat(20) { seed ->
++            val out = say(breathing(seed), 0.6f, 0.5f)
++            assertEquals(Breathing.Before.Air, out[0].first)
++            assertTrue(out[1].first is Breathing.Before.Pause)
++            now += 60_000
++        }
++    }
++
++    @Test
++    fun `she breathes only between sentences, before her air would run out`() {
++        val lengths = floatArrayOf(1.5f, 1.4f, 1.6f, 1.2f, 1.5f, 1.7f, 1.3f, 1.4f)
++        val out = say(breathing(), *lengths)
++        var sinceBreath = 0f
++        var breaths = 0
++        out.forEachIndexed { i, (before, _) ->
++            if (before is Breathing.Before.Breath) { breaths++; sinceBreath = 0f }
++            sinceBreath += lengths[i]
++            // A group's air never goes past what one breath holds (one sentence may, alone).
++            assertTrue("group at sentence $i holds ${sinceBreath}s", Breathing.AIR_PER_SECOND * sinceBreath <= Breathing.GROUP_MAX_L + 1e-4f || sinceBreath == lengths[i])
++        }
++        assertTrue("an 11.6 s line takes breaths on the way ($breaths)", breaths >= 2)
++        // Every boundary is either a breath or a pause; never nothing in the middle of a line.
++        out.drop(1).forEach { assertFalse(it.first == Breathing.Before.Air) }
++    }
++
++    @Test
++    fun `a breath is as quiet as hers, under her speech`() {
++        val out = say(breathing(), 2.5f, 2.4f, 2.6f, 2.2f)
++        val speech = Breathing.speechLevel(sentence(1f), rate)
++        val breaths = out.mapNotNull { it.first as? Breathing.Before.Breath }
++        assertTrue(breaths.isNotEmpty())
++        for (b in breaths) {
++            val level = Breathing.percentile(Breathing.frameLevels(b.samples, rate), 0.90f)
++            val under = speech - level
++            assertTrue("${b.kind} sits $under dB under her speech", under in 24f..39f)
++            assertTrue(b.holdSeconds in Breathing.HOLD_MIN_S..Breathing.HOLD_MAX_S)
++        }
++    }
++
++    @Test
++    fun `never the same breath twice`() {
++        val b = breathing()
++        val drawn = (0 until 12).map { b.breath(0.3f, -10f).samples }
++        for (i in drawn.indices) for (j in i + 1 until drawn.size) {
++            val same = drawn[i].size == drawn[j].size && drawn[i].indices.all { abs(drawn[i][it] - drawn[j][it]) < 1e-6f }
++            assertFalse("breaths $i and $j are the same", same)
++        }
++    }
++
++    @Test
++    fun `a breath is deeper before a longer group`() {
++        val b = breathing()
++        val catch = b.breath(0.15f, -10f)
++        val deep = b.breath(0.55f, -10f)
++        assertEquals(Breathing.Kind.CATCH, catch.kind)
++        assertEquals(Breathing.Kind.DEEP, deep.kind)
++        assertTrue(deep.samples.size > catch.samples.size)
++    }
++
++    @Test
++    fun `her voice falls a little across a breath and comes back after the next`() {
++        val lengths = floatArrayOf(1.5f, 1.5f, 1.5f, 1.5f, 1.5f, 1.5f)
++        val out = say(breathing(), *lengths)
++        val n = (0.05f * rate).toInt()
++        fun ratio(i: Int, atStart: Boolean): Float {
++            val src = sentence(lengths[i]); val y = out[i].second
++            val range = if (atStart) 0 until n else (y.size - n) until y.size
++            return sqrt(range.sumOf { (y[it] * y[it]).toDouble() } / range.sumOf { (src[it] * src[it]).toDouble() }).toFloat()
++        }
++        val next = (1 until out.size).first { out[it].first is Breathing.Before.Breath }
++        val start = ratio(0, true); val end = ratio(next - 1, false)
++        assertTrue("starts full: $start", start > 0.98f)
++        assertTrue("falls: $start -> $end", end < start - 0.05f)
++        assertTrue("by no more than ${Breathing.DECLINE_DB} dB: $end", end >= 10f.pow(-Breathing.DECLINE_DB / 20f) - 0.005f)
++        assertTrue("full again after the breath", ratio(next, true) > 0.98f)
++    }
++
++    @Test
++    fun `a line right after her last goes on the same breath`() {
++        val b = breathing()
++        say(b, 1.5f, 1.2f)
++        now += 800
++        val next = say(b, 0.8f)
++        assertEquals(Breathing.Before.Air, next[0].first)
++        // Long after, a new line starts fresh: a short one on the air she has.
++        now += 60_000
++        assertEquals(Breathing.Before.Air, say(b, 0.7f)[0].first)
++        // Right after a long line that used her breath, the next sentence needs a new one.
++        now += 60_000
++        say(b, 2.5f, 2.3f)
++        now += 500
++        assertTrue(say(b, 1.5f)[0].first is Breathing.Before.Breath)
++    }
++
++    @Test
++    fun `pauses follow her speech rate`() {
++        val slow = say(breathing(3), 0.5f, 0.5f)[1].first as Breathing.Before.Pause
++        now += 60_000
++        val b = breathing(3)
++        val line = b.line(intArrayOf(6, 6))
++        line.next(sentence(0.5f), pace = 2f)
++        val fast = line.next(sentence(0.5f), pace = 2f).first as Breathing.Before.Pause
++        assertEquals(slow.seconds / 2f, fast.seconds, 1e-4f)
++        assertTrue(slow.seconds in 0.29f..0.41f)
++    }
++
++    private fun writeBank(dir: File, sr: Int, kinds: List<Breathing.Kind> = Breathing.Kind.entries) {
++        dir.mkdirs()
++        // As breath_bank.py --format f32 writes it, extra fields and all.
++        File(dir, "bank.json").writeText("""{"sr": $sr, "breaths": {"catch": {"source": "yume_07.wav", "from": 2.9, "to": 3.16, "seconds": 0.26, "level_re_speech_db": -30.7}}}""")
++        for (k in kinds) {
++            val x = noise(0.3f, k.ordinal, sr = sr)
++            val buf = ByteBuffer.allocate(x.size * 4).order(ByteOrder.LITTLE_ENDIAN)
++            x.forEach { buf.putFloat(it) }
++            File(dir, "${k.asset}.f32").writeBytes(buf.array())
++        }
++    }
++
++    @Test
++    fun `the bank loads as the build ships it, at her voice's sample rate`() {
++        val same = folder.newFolder("same").also { writeBank(it, rate) }
++        val bankSame = BreathBank.load(same, rate)
++        assertNotNull(bankSame)
++        assertEquals((0.3f * rate).toInt(), bankSame!!.clip(Breathing.Kind.DEEP).size)
++        val other = folder.newFolder("other").also { writeBank(it, 44100) }
++        val bankOther = BreathBank.load(other, rate)
++        assertNotNull(bankOther)
++        val want = (0.3f * 44100).toInt() / 2
++        assertTrue(abs(bankOther!!.clip(Breathing.Kind.CATCH).size - want) <= 2)
++    }
++
++    @Test
++    fun `no bank, or a broken one, means no breath`() {
++        assertNull(BreathBank.load(File(folder.root, "absent"), rate))
++        val missing = folder.newFolder("missing").also { writeBank(it, rate, listOf(Breathing.Kind.CATCH)) }
++        assertNull(BreathBank.load(missing, rate))
++        val torn = folder.newFolder("torn").also { writeBank(it, rate) }
++        File(torn, "deep.f32").writeBytes(byteArrayOf(1, 2, 3))
++        assertNull(BreathBank.load(torn, rate))
++    }
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/voice/own/EnglishPhonemesTest.kt b/app/src/test/java/com/opendroid/ai/core/voice/own/EnglishPhonemesTest.kt
 new file mode 100644
