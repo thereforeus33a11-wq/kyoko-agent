@@ -11,7 +11,7 @@ export UV_CACHE_DIR=/w/uvcache UV_LINK_MODE=copy
 # English recogniser. CTranslate2 needs cuBLAS 12 and cuDNN 9; the pip wheels bring them (asr_env.sh
 # puts them on LD_LIBRARY_PATH).
 [ -x /w/asr-env/bin/python ] || uv venv -q -p 3.11 /w/asr-env
-uv pip install -q --python /w/asr-env/bin/python faster-whisper==1.1.1 'nvidia-cublas-cu12' 'nvidia-cudnn-cu12==9.*' \
+uv pip install -q --python /w/asr-env/bin/python faster-whisper==1.1.1 requests 'nvidia-cublas-cu12' 'nvidia-cudnn-cu12==9.*' \
     soundfile huggingface_hub
 uv pip install -q --python /w/asr-env/bin/python whisper-normalizer || echo "whisper-normalizer missing: check_lang.py falls back to its own normalizer"
 [ -s $M/faster-whisper-large-v3/model.bin ] || /w/asr-env/bin/python -c \
