@@ -76,6 +76,8 @@ if [ "${SKIP_SPEAK:-0}" != 1 ]; then
   [ "$TAKES" -ge 2 ] && { step "English and mixed, take B"; speak $LANG_IN/speak_lang.txt $V/en_raw/B 9876; }
   step "Japanese replay lines";     speak $J/out/sentences.txt $V/ja_raw 1234
 fi
+W=$V/work
+if [ "${FROM:-}" != sim ]; then   # FROM=sim: the takes are cleaned and checked already; redo timbre, pick, outliers, mix
 step "edges and clean"
 clean_dir $V/en_raw/A $V/en_clean/A
 [ -d $V/en_raw/B ] && clean_dir $V/en_raw/B $V/en_clean/B
@@ -84,7 +86,7 @@ step "Japanese checks"
 rm -rf $V/ds_ja
 gsv python $J/scripts/check_distill.py $V/ja_clean $J/out/sentences.txt $V/ds_ja --no-brighten --jobs $(( $(nproc) - 4 )) | tail -3
 step "English and mixed checks"
-W=$V/work; rm -rf $W $V/ds_lang; mkdir -p $W
+rm -rf $W $V/ds_lang; mkdir -p $W
 for i in $(seq 0 $((NG - 1))); do
   CUDA_VISIBLE_DEVICES=$i asr $J/scripts/check_lang.py asr --lines $LANG_IN/lines_lang.tsv --raw $V/en_clean --work $W \
     --shard $i/$NG --model $WHISPER > $W/asr_$i.log 2>&1 &
@@ -92,9 +94,17 @@ done
 wait
 gsv python $J/scripts/check_lang.py prep --lines $LANG_IN/lines_lang.tsv --raw $V/en_clean --work $W --no-brighten \
   --jobs $(( $(nproc) - 4 )) > $W/prep.log 2>&1
+fi
+step "timbre and pick"
+rm -rf $V/ds_lang
+[ -f $V/ds_ja/metadata.all.csv ] && cp $V/ds_ja/metadata.all.csv $V/ds_ja/metadata.csv
 CUDA_VISIBLE_DEVICES=0 gsv python $J/scripts/check_lang.py sim --work $W --refs $V/ref.tsv --ja-wavs $V/ds_ja/wavs \
-  --model $WAVLM --no-brighten > $W/sim.log 2>&1 || echo "timbre check failed (see $W/sim.log)"
+  --model $WAVLM --no-brighten > $W/sim.log 2>&1 || { echo "timbre check failed (see $W/sim.log)"; exit 1; }
 gsv python $J/scripts/check_lang.py pick --lines $LANG_IN/lines_lang.tsv --work $W --out $V/ds_lang --ja-wavs $V/ds_ja/wavs | tail -45
+step "outliers"   # within each language, takes whose timbre or pitch stands far from her usual are left out
+for ds in $V/ds_ja $V/ds_lang; do
+  CUDA_VISIBLE_DEVICES=0 gsv python $J/scripts/outliers.py --ds $ds --refs $V/ref.tsv --model $WAVLM | tail -1
+done
 step "mix"
 cd /w/piper1-gpl
 /w/piper-env/bin/python $J/scripts/make_ds_mix.py --ja-ds $V/ds_ja --lang-ds $V/ds_lang \

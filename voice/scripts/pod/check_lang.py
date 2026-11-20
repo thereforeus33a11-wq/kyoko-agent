@@ -300,6 +300,10 @@ def cmd_sim(a):
     def embed(x, sr):
         if sr != 16000:
             x = librosa.resample(x, orig_sr=sr, target_sr=16000)
+        # The x-vector's convolutions need about 0.1 s; a very short take (a word cut tight) is padded
+        # with silence to 0.5 s instead of stopping the whole check.
+        if len(x) < 8000:
+            x = np.pad(x, (0, 8000 - len(x)))
         inp = fe(x, sampling_rate=16000, return_tensors="pt", padding=True)
         with torch.no_grad():
             e = model(**{k: v.to(a.device) for k, v in inp.items()}).embeddings
