@@ -6,7 +6,7 @@ What set it off: an email draft to Tumblr, signed with his name, that she knew n
 
 This plan builds on the save point (app tree at `328231b`, patch at repo commit `000bf09`). Paths are relative to `app/src/main/java/com/opendroid/ai/` (written `ai/`).
 
-**Status:** being built. None of this is in `patch/yume-persona.patch` yet.
+**Status:** built and in `patch/yume-persona.patch` (app tree commit `7ab763c`). The full unit suite passes: 3,779 tests, 0 failed. Nothing of it has run on the phone yet.
 
 ---
 
@@ -27,17 +27,17 @@ Every place in the app that writes words that leave the phone, or acts on the ph
 
 The Tumblr draft fits two of these: the auto-reply email channel (if its switches were ever on) and a planner-written `SEND_EMAIL` body. Both are closed below.
 
-## 2. The rules
+## 2. The rules, as built
 
 1. **Words that leave the phone are his or hers, never a tool's.** Before a plan runs, every text a step would send to a person, post publicly or type into another app is checked against where it may come from: his message for his command, her command for hers. A text that is not his or her own words is not sent as the planner wrote it: she is asked to write it herself, as herself, knowing who it goes to, from whose account, and what he asked. Her words replace the planner's on the card and in the step. If she will not write it, or her model cannot be reached, that step does not run, and the plan says why. The same check runs again whenever re-evaluation rewrites a step.
    - Out of scope, on purpose: search words (web search, weather, news, translate) and the clipboard. They go to a search engine or stay on the phone. The record keeps them.
    - Words pasted from an earlier step's result (`$$sN`) are the phone's own output, not anyone's composition. They pass, and the card shows them as such.
 2. **On his accounts she does not sign as him unless he asked.** Her words prompt says so. Whether he asked is hers to judge from his message.
-3. **Never answer an automated sender.** One classifier (`core/agent/AutomatedSender.kt`) knows no-reply and notification addresses, mailer daemons, SMS short codes and sender IDs, and bot handles. A step addressed to one does not run.
+3. **Never answer an automated sender.** One classifier (`core/agent/AutomatedSender.kt`) knows no-reply and notification addresses, mailer daemons, SMS short codes and sender IDs, and bot handles. A step addressed to one does not run; one that also reaches people runs without that address, and a call whose fallback would text one runs without the fallback. A plan's steps and a macro's steps are judged the same way. An emergency line (911, 112, 999 and the like) is never taken for a short code: people answer it, and a text to it is how someone who cannot speak safely asks for help.
 4. **Auto-reply has no writer in this build.** The stock prompt is gone, its switches are turned off once on update, the plan step that switched it on refuses, and Settings shows a notice in place of its card. Nothing answers a message for him.
 5. **Social writers are hers or off.** While she is on, the composer, the campaign generator and the comment-reply engine do not run: posts and replies are written by him or by her. `SOCIAL_CREATE_POST` carries its words in the step and goes through rule 1. Publishing stays his tap, and goes on the record.
 6. **The MCP server is off in this build**, and so is the privileged shell behind it. The switch is turned off once on update and is no longer in Settings.
-7. **Macros and routines.** `CREATE_MACRO`'s stored words go through rule 1 when it is created. `RUN_MACRO`'s card lists the words its steps will send, a disabled macro does not run, and every inner step goes on the record.
+7. **Macros and routines.** `CREATE_MACRO`'s stored words go through rule 1 when it is created. `RUN_MACRO`'s card lists the words its steps will send, numbered by their place in the macro. While she is on, a plan that runs a macro whose steps send words is always shown on his card first: words saved in a macro are nobody's in this moment, so neither his approval setting nor her rein sends them before he has seen them, and she is told so. A disabled macro does not run, and every inner step goes on the record.
 8. **No words in nobody's voice.** The UPI note and the calendar-invite footer are removed.
 
 ## 3. The record of what the phone did
@@ -47,7 +47,7 @@ One record of everything the phone did and everything done through it, whoever s
 - **Who started it:** him in the chat, by voice, a shortcut or the app's screens; her in a reply or in her own time; a macro or a routine; the app itself.
 - **Why:** his message, her command, or the macro's name, cut short.
 - **How it was let through:** his setting, her rein, his yes, his no.
-- **What each step did:** the action, to whom, from which app, the words it sent, and how it ended. A draft left open for him is recorded as left open, never as sent.
+- **What each step did:** the action, to whom, from which app, the words it sent, and how it ended. A draft left open for him is recorded as left open, never as sent; so is a post saved as a draft for him to publish.
 
 **What it never holds:** secrets, what a step read off the screen or out of a notification, her thoughts, or her replies.
 
@@ -63,6 +63,14 @@ The planner and the stock assistant never see the record.
 
 ## 4. What is unchanged
 
-- His approval setting and her rein decide what runs without asking, exactly as before.
+- His approval setting and her rein decide what runs without asking, exactly as before, with one exception while she is on: a macro whose steps send words is always shown on his card first (rule 7).
 - The planner prompt stays the stock one. It never carries her card, and her prompts never carry the planner's.
-- With her switched off the app is stock OpenDroid, except for the switch-offs in rules 4, 6 and 8.
+- With her switched off the app is stock OpenDroid, except for the switch-offs in rules 4, 6 and 8. One line of the planner's action list differs: `SOCIAL_CREATE_POST` names a `content` param for the post's own words, which the planner sees whoever is on. With her off the action reads it as stock did, as what the composer writes from, and the composer still writes the post.
+
+## 5. Known gaps
+
+- A macro edited after his card was shown runs its new steps.
+- The spoken approval prompt names the steps but not the words a macro will send, so a voice yes approves words he has not seen. The card shows them.
+- With her off, the record lists a post's topic or content, not the words the composer then writes.
+- When his own setting would have run a word-sending macro, the card appears with no chat row saying why. Her commands get one.
+

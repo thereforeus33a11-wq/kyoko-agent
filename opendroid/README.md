@@ -73,6 +73,28 @@ She writes:
 
 She can also act. A reply of hers, or a moment of her own, may end with a command of her own (the app hides that line and runs it). It goes through the same planner as your commands, and there is no list of what she may ask for: whatever the planner can do for you, it can do for her (`PersonaActions.kt`, lines 1-21). Who is asked first is decided in one place: your own approval setting always counts, and where it would stop the plan her rein (Settings → Persona) may still let it run. Her rein never runs a command whose words may be someone else's.
 
+### Words that leave the phone are yours or hers
+
+While she is on, no tool writes words that leave the phone. This covers what a plan would send to a person, post, or type into another app: a message, an email, a post, an invitation, a payment note, the words in a share link.
+
+**Before a plan runs**, each such text is checked against where it may come from: your message for your command, her command for hers. Words that are yours or hers go as they are.
+
+**Words the planner made up** are not sent. She is asked to write them herself, as herself, told who they go to, from whose account, and what was asked. She is never shown the planner's draft. If you asked her to write it for you she may write it the way you would send it. Otherwise it is from her, and on your accounts she never signs with your name or writes as you unless you asked. If she says no, or her model cannot be reached, that step is left out and the chat says so. The same check runs again whenever re-evaluation rewrites a step.
+
+**Senders that only send are never answered:** no-reply and notification addresses, mailer daemons, SMS short codes and sender IDs, bot handles. A step addressed only to one is left out, and one that also reaches people goes without that address. An emergency line (911, 112, 999 and the like) is never taken for a short code.
+
+**Macros:**
+- A macro stores only your words or hers.
+- Its card lists the words its steps will send. While she is on, a plan that runs a macro whose steps send words is always shown to you first, whatever your approval setting.
+- A switched-off macro does not run.
+
+**Off in this build:**
+- **Social:** while she is on, the stock social writers (post composer, campaign generator, comment-reply drafts) are off. Posts and replies are written by you or by her, and publishing is still your tap.
+- **MCP server:** off in this build, and the privileged shell behind it with it.
+- **Template words:** the "Created by OpenDroid" footer on invitations and the "Sent via OpenDroid" payment note are gone.
+
+The rules and what is left open are in `WHOLE_APP_PLAN.md`.
+
 She never writes:
 
 - the plan for a device action. The planner prompt is byte-for-byte the stock one.
@@ -115,13 +137,13 @@ Nothing in the app filters, softens or rewrites what she says. The only changes 
 
 ## Building it yourself
 
-You need git, JDK 21 and the Android SDK (platform 36, build-tools 36.0.0), with `ANDROID_HOME` set.
+You need git, curl, JDK 21 and the Android SDK (platform 36, build-tools 36.0.0, NDK 27.2.12479018, CMake 3.22.1), with `ANDROID_HOME` set.
 
 ```
 ./build.sh
 ```
 
-The APK lands in `out/yume-opendroid-debug.apk`. A debug build is signed with the debug key of the machine that built it. An APK built on another machine cannot update one already installed: Android will ask you to uninstall first, and that removes her notebook and your settings. To keep updates installable, keep the same `~/.android/debug.keystore` between builds.
+The APK lands in `out/yume.apk`, signed with your own key in `keys/` (made on the first build, never committed). Keep that folder: an APK signed with any other key cannot update the one installed. Android will ask you to uninstall first, and that removes her notebook and your settings. Her own voice comes from `own_voice/` (never committed). A build made without it speaks with the phone's voice.
 
 ## Licence
 
