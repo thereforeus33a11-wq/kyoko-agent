@@ -78,53 +78,58 @@ def _frames(x, sr):
     if len(lv) < 3:
         return None
     sp = np.percentile(lv, 95)
-    strong = lv > sp - 15
-    if not strong.any():
-        return None
 
     def speech(i, start):
-        return (voi[i] >= 0.55 and lv[i] > sp - 32) or (cen[i] > 1500 and lv[i] > sp - (30 if start else 32))
+        # Voiced, or a bright consonant, or loud enough to be her even when breathy (a whispered
+        # "いや" is not voiced, and is 10-18 dB under her speech; the rumble stays 21 dB or more under).
+        return (voi[i] >= 0.55 and lv[i] > sp - 32) or (cen[i] > 1500 and lv[i] > sp - (30 if start else 32)) \
+            or lv[i] > sp - 18
 
-    # Sound that is not a dark, quiet stretch: speech, consonants and anything within 20 dB.
-    act = np.array([speech(k, False) or lv[k] > sp - 20 for k in range(len(lv))])
-    clusters = []
-    for r in _runs(act):
-        if clusters and r[0] - clusters[-1][1] <= 5:
-            clusters[-1] = (clusters[-1][0], r[1])
+    # Her words: runs of speech frames (30 ms gaps bridged) at least 60 ms long that reach within
+    # 25 dB of her speech level. A soft first word ("my", "no", "which") is one; the rumble is not
+    # (not voiced, dark).
+    sp_mask = np.array([speech(k, False) for k in range(len(lv))])
+    runs = []
+    for r in _runs(sp_mask):
+        if runs and r[0] - runs[-1][1] <= 3:
+            runs[-1] = (runs[-1][0], r[1])
         else:
-            clusters.append(r)
-    clusters = [c for c in clusters if lv[c[0]:c[1] + 1].max() > sp - 22]
+            runs.append(r)
+    words = [r for r in runs if r[1] - r[0] + 1 >= 6 and lv[r[0]:r[1] + 1].max() > sp - 25]
+    if not words:
+        return None
 
     def snort(c):
         """A short, low hum (the teacher's snort): at most 120 ms within 22 dB, centroid under 400 Hz."""
         loud = lv[c[0]:c[1] + 1] > sp - 22
-        return loud.sum() <= 12 and np.mean(cen[c[0]:c[1] + 1][loud]) < 400
+        return loud.sum() <= 12 and loud.any() and np.mean(cen[c[0]:c[1] + 1][loud]) < 400
 
     stop = len(lv) - 1
-    while len(clusters) > 1 and clusters[-1][0] - clusters[-2][1] > 6 and snort(clusters[-1]):
-        stop = clusters.pop()[0] - 1
-    if not clusters:
-        return None
-    first = int(np.argmax(strong))
-    seg = strong[:clusters[-1][1] + 1]
-    last = len(seg) - 1 - int(np.argmax(seg[::-1])) if seg.any() else clusters[-1][1]
-    # Start: grow back over speech (2 frames' grace), then over a breathy attack within 20 dB (40 ms).
-    a, miss, i = first, 0, first - 1
-    while i >= max(0, first - 25):
-        if speech(i, True):
-            a, miss = i, 0
+    while len(words) > 1 and words[-1][0] - words[-2][1] > 6 and snort(words[-1]):
+        stop = words.pop()[0] - 1
+    # Start: the first word, grown back over a consonant onset: an "s", "sh" or "f" (bright, above
+    # 3 kHz, within 38 dB) for up to 200 ms, an "h" or aspiration (1.5-3 kHz, within 30 dB) or a
+    # breathy attack (within 20 dB) for up to 100 ms, with one frame's grace.
+    a, i, miss, n_fric, n_asp = words[0][0], words[0][0] - 1, 0, 0, 0
+    while i >= 0:
+        if cen[i] > 3000 and lv[i] > sp - 38 and n_fric < 20:
+            a, miss, n_fric = i, 0, n_fric + 1
+        elif (cen[i] > 1500 and lv[i] > sp - 30 or lv[i] > sp - 20) and n_asp < 10:
+            a, miss, n_asp = i, 0, n_asp + 1
         else:
             miss += 1
-            if miss > 2:
+            if miss > 1:
                 break
         i -= 1
-    k = 0
-    while a - 1 >= 0 and k < 4 and lv[a - 1] > sp - 20:
-        a, k = a - 1, k + 1
-    # End: grow forward over speech (3 frames' grace: the closure in "st"), never into a snort.
-    b, miss, i = last, 0, last + 1
-    while i <= min(stop, last + 40):
-        if speech(i, False):
+    # End: the last word, grown forward over her voice's decay (voiced, within 38 dB), a final
+    # "s" (bright, above 3 kHz, within 38 dB), a released "t" or "k" (1.5-3 kHz, within 32 dB), and
+    # the breathy release of a final consonant, whatever its colour, while it stays within 24 dB
+    # (the dark tail after "back", "work" or "drink" is part of the word: without it a listener
+    # hears "bat"), with 3 frames' grace (the closure in "st"), at most 400 ms, never into a snort.
+    b, i, miss = words[-1][1], words[-1][1] + 1, 0
+    while i <= min(stop, words[-1][1] + 40):
+        if (voi[i] >= 0.5 and lv[i] > sp - 38) or (cen[i] > 3000 and lv[i] > sp - 38) \
+                or (cen[i] > 1500 and lv[i] > sp - 32) or lv[i] > sp - 24:
             b, miss = i, 0
         else:
             miss += 1

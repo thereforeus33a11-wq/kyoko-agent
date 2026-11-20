@@ -123,7 +123,9 @@ def english_normalizer(mp):
 
 
 def cmd_asr(a):
+    import numpy as np
     from faster_whisper import WhisperModel
+    from faster_whisper.audio import decode_audio
     from mix_phonemize import MixedPhonemizer
     mp = MixedPhonemizer()
     norm = english_normalizer(mp)
@@ -141,8 +143,12 @@ def cmd_asr(a):
             wav = os.path.join(a.raw, take, f"{r['n']:04d}.wav")
             if not os.path.exists(wav):
                 continue
-            segs, _ = model.transcribe(wav, language="en", beam_size=5, condition_on_previous_text=False,
-                                       without_timestamps=True, vad_filter=False)
+            # 0.3 s of silence either side: a take cut tight to her first sound (edges.py) would
+            # otherwise often lose its first word to the recogniser, not to the take.
+            audio = decode_audio(wav, sampling_rate=16000)
+            pad = np.zeros(int(0.3 * 16000), dtype=audio.dtype)
+            segs, _ = model.transcribe(np.concatenate([pad, audio, pad]), language="en", beam_size=5,
+                                       condition_on_previous_text=False, without_timestamps=True, vad_filter=False)
             hyp_raw = " ".join(s.text.strip() for s in segs)
             hyp = norm(hyp_raw).split()
             sd, ins = edit_ops(ref, hyp)

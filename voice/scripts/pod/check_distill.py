@@ -81,7 +81,10 @@ def one(item):
     if x.ndim > 1:
         x = x.mean(axis=1)
     dur = len(x) / sr
-    s = REC.create_stream(); s.accept_waveform(sr, x); REC.decode_stream(s)
+    # 0.3 s of silence either side for the recogniser only: a take cut tight to her first sound
+    # (edges.py) must not lose its first mora to it.
+    pad = np.zeros(int(0.3 * sr), dtype=np.float32)
+    s = REC.create_stream(); s.accept_waveform(sr, np.concatenate([pad, x, pad])); REC.decode_stream(s)
     hyp = s.result.text
     e = cer(reading(text), reading(hyp))
     ok = e <= A.max_cer and 0.5 <= dur <= 15
