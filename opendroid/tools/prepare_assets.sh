@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Puts her into an OpenDroid source tree: the character card, the notes her notebook
-# starts with, and her whole library (every kisaragi*/SKILL.md of this repository).
+# starts with, her whole library (every kisaragi*/SKILL.md of this repository), and, only
+# where the owner approved them, her reference pictures (opendroid/her_refs).
 #
 # The library files are copied as they are, with one change: the owner's name as it is
 # written in them becomes a placeholder, so that the app fills in whatever name he gave
@@ -69,6 +70,77 @@ if [ -f "$HERE/persona/library_index.txt" ]; then
 fi
 
 echo "Persona assets: card, $(grep -c '|' "$DEST/seed_notes.txt") starting notes ($EARLIER earlier wordings), $count library files -> $DEST"
+
+# Her reference pictures (her masters): opendroid/her_refs is never committed. Only where the
+# owner has approved them, by putting a file named APPROVED beside them, do they go into the
+# build: every PNG there and provenance.json, with a list the app reads on its first start
+# (assets/her_refs/manifest.json: each file's name, kind ORIGINAL or MASTER, the side of her it
+# shows, its SHA-256 and where it came from). The app puts each in once, byte for byte, and
+# never sets back what he changed about one. Without APPROVED nothing is copied, and a list
+# from an earlier run is removed, so a build never carries pictures he has not approved.
+# Only a PNG that provenance.json describes, with its SHA-256, goes in: one it does not
+# describe, or describes without a hash, is left out and named (a later render or a made
+# picture left beside the approved ones is never bundled as one of them). Making the list
+# needs python3; a PNG whose hash differs from provenance.json stops the build.
+REFS_SRC="$HERE/her_refs"
+REFS_DEST="$APP/app/src/main/assets/her_refs"
+rm -rf "$REFS_DEST"
+if [ -f "$REFS_SRC/APPROVED" ]; then
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "her_refs is approved, but python3 is needed to write its list" >&2
+        exit 1
+    fi
+    if [ ! -f "$REFS_SRC/provenance.json" ]; then
+        echo "her_refs is approved, but provenance.json is missing" >&2
+        exit 1
+    fi
+    mkdir -p "$REFS_DEST"
+    python3 -I - "$REFS_SRC" "$REFS_DEST" <<'PY'
+import hashlib, json, os, shutil, sys
+
+src, dest = sys.argv[1], sys.argv[2]
+with open(os.path.join(src, "provenance.json"), encoding="utf-8") as f:
+    provenance = json.load(f)
+described = provenance.get("files", {}) or {}
+if not isinstance(described, dict):
+    sys.exit("provenance.json: its files are not a list by name")
+default_kind = str(provenance.get("kind", "ORIGINAL")).upper()
+note = "; ".join(str(part) for part in (provenance.get("subject"), provenance.get("date")) if part)
+entries = []
+for name in sorted(os.listdir(src)):
+    path = os.path.join(src, name)
+    if not name.lower().endswith(".png") or not os.path.isfile(path):
+        continue
+    with open(path, "rb") as f:
+        data = f.read()
+    if not data.startswith(b"\x89PNG"):
+        sys.exit(f"{name} is not a PNG")
+    sha = hashlib.sha256(data).hexdigest()
+    about = described.get(name)
+    if not isinstance(about, dict):
+        print(f"Left out {name}: provenance.json does not describe it")
+        continue
+    if not str(about.get("sha256") or "").strip():
+        print(f"Left out {name}: provenance.json gives it no SHA-256 to check it by")
+        continue
+    if str(about["sha256"]).strip().lower() != sha:
+        sys.exit(f"{name} is not the file provenance.json describes (its SHA-256 differs)")
+    kind = str(about.get("kind", default_kind)).upper()
+    if kind not in ("ORIGINAL", "MASTER"):
+        sys.exit(f"{name} is {kind}: only originals and masters go into the app")
+    entries.append({"file": name, "kind": kind, "view": about.get("view", ""), "sha256": sha, "bytes": len(data), "note": note})
+# Copied only once every picture has passed, so a build that stops carries none of them.
+for entry in entries:
+    shutil.copyfile(os.path.join(src, entry["file"]), os.path.join(dest, entry["file"]))
+shutil.copyfile(os.path.join(src, "provenance.json"), os.path.join(dest, "provenance.json"))
+with open(os.path.join(dest, "manifest.json"), "w", encoding="utf-8") as f:
+    json.dump({"version": 1, "files": entries}, f, indent=1, ensure_ascii=False)
+    f.write("\n")
+print(f"Her reference pictures: {len(entries)} approved -> {dest}")
+PY
+else
+    echo "No APPROVED file in $REFS_SRC: no reference pictures of her go into this build."
+fi
 
 # Her own voice (a real person's voice, used with her agreement): opendroid/own_voice is
 # never committed, and only a build made where it exists carries the voice. Without it
