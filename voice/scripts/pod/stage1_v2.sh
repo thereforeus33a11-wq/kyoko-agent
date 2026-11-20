@@ -4,17 +4,19 @@
 # her), was made in half precision, and every clip went through the WORLD vocoder to brighten it (a
 # grainy buzz); the owner chose the version with full precision and no brightening, and heard breaths
 # and room noise that the teacher copies from its reference. So here:
-#   - one reference clip (REF2, chosen by timbre match: v12_071), cleaned with DeepFilterNet if CLEAN_REF=1;
+#   - one reference clip (REF2, chosen by timbre match: v12_071), as recorded (the owner preferred it to a
+#     DeepFilterNet-cleaned copy; CLEAN_REF=1 cleans it);
 #   - full precision, no brightening, for her English and mixed lines (two takes) AND her Japanese replay
 #     lines (one take of the original practice sentences), so both languages are the same voice;
-#   - every take trimmed to its words (trim_words.py) and lightly cleaned (dfn_clean.py);
+#   - every take trimmed (trim_words.py: from just before the first word to where her voice has really
+#     faded, so word endings stay) and, if DFN_ATTEN is set, lightly cleaned (dfn_clean.py --atten);
 #   - the same checks as before (Japanese: check_distill.py; English/mixed: check_lang.py), no brightening.
 # Then make_ds_mix.py builds $V/ds_mix for stage2_lang.sh (DS_MIX=$V/ds_mix).
 # Log: /w/logs/stage1_v2.log; ends with STAGE1-V2-DONE. Needs setup.sh, setup_lang.sh, setup_clean.sh.
 set -euo pipefail
 source /w/job/scripts/lang_env.sh
 V=${V:-$J/out/v2}; NG=${NG:-$(nvidia-smi -L | wc -l)}
-REF2=${REF2:-$J/data/wavs/v12_071.wav}; CLEAN_REF=${CLEAN_REF:-1}
+REF2=${REF2:-$J/data/wavs/v12_071.wav}; CLEAN_REF=${CLEAN_REF:-0}; DFN_ATTEN=${DFN_ATTEN:-}
 OPTS="--speed 1.0 --temperature 1.0 --top-k 20"     # full precision: no --half
 step() { echo "=== $(date -u +%H:%M:%S) $*"; }
 mkdir -p $V
@@ -38,16 +40,21 @@ speak() {  # speak <lines file> <out dir> <seed>
   wait
   echo "$(ls $out/*.wav 2>/dev/null | wc -l) takes in $out"
 }
-clean_dir() {  # clean_dir <raw dir> <clean dir>: trim to words, then DeepFilterNet
+clean_dir() {  # clean_dir <raw dir> <clean dir>: trim, then (if DFN_ATTEN) a light DeepFilterNet pass
   local src=$1 dst=$2 i
   for i in $(seq 0 $((NG - 1))); do
     CUDA_VISIBLE_DEVICES=$i asr $J/scripts/trim_words.py $WHISPER $src $src.trim --shard $i/$NG > $src.trim_$i.log 2>&1 &
   done
   wait
-  for i in $(seq 0 $((NG - 1))); do
-    CUDA_VISIBLE_DEVICES=$i /w/dfn-env/bin/python $J/scripts/dfn_clean.py --dir $src.trim $dst --shard $i/$NG > $dst.dfn_$i.log 2>&1 &
-  done
-  wait
+  if [ -z "$DFN_ATTEN" ]; then
+    rm -rf $dst; cp -r $src.trim $dst
+  else
+    for i in $(seq 0 $((NG - 1))); do
+      CUDA_VISIBLE_DEVICES=$i /w/dfn-env/bin/python $J/scripts/dfn_clean.py --atten $DFN_ATTEN --dir $src.trim $dst \
+        --shard $i/$NG > $dst.dfn_$i.log 2>&1 &
+    done
+    wait
+  fi
   echo "$(ls $dst/*.wav 2>/dev/null | wc -l) clean takes in $dst"
 }
 
