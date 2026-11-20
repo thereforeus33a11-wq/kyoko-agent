@@ -1,5 +1,6 @@
 """Check each generated clip against its text with Japanese speech recognition, keep the clean ones,
-brighten them (younger.py settings), resample to 22050 Hz mono 16-bit, and write the Piper CSV.
+brighten them (younger.py settings; --no-brighten skips the WORLD resynthesis, which added a grainy
+buzz), resample to 22050 Hz mono 16-bit, and write the Piper CSV.
 
 Usage: python check_distill.py <raw dir> <sentences.txt> <out dir> [--max-cer 0.25] [--jobs N]
 Outputs: <out>/wavs/*.wav, <out>/metadata.csv ("file.wav|text"), <out>/report.tsv
@@ -89,7 +90,8 @@ def one(item):
         return (row, None)
     name = f"yume_{n:04d}.wav"
     tmp = f"{A.out}/wavs/_b_{name}"
-    sf.write(tmp, brighten(x, sr, A.semitones, A.formant).astype(np.float32), sr, subtype="PCM_16")
+    y = x if A.no_brighten else brighten(x, sr, A.semitones, A.formant).astype(np.float32)
+    sf.write(tmp, y, sr, subtype="PCM_16")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", tmp, "-ac", "1", "-ar", "22050",
                     "-sample_fmt", "s16", f"{A.out}/wavs/{name}"], check=True)
     os.remove(tmp)
@@ -104,6 +106,7 @@ def main():
     ap.add_argument("--formant", type=float, default=1.04)
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--asr-dir", default="/w/sherpa-onnx-zipformer-ja-reazonspeech-2024-08-01")
+    ap.add_argument("--no-brighten", action="store_true", help="keep the voice as the teacher made it (no WORLD resynthesis)")
     a = ap.parse_args()
     lines = [l.rstrip("\n") for l in open(a.sentences, encoding="utf-8") if l.strip()]
     items = [(n, l.partition("|")[2]) for n, l in enumerate(lines)]

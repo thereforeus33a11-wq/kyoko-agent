@@ -306,7 +306,8 @@ def cmd_sim(a):
         x, sr = sf.read(p, dtype="float32")
         if x.ndim > 1:
             x = x.mean(axis=1)
-        ref_e.append(embed(brighten(x, sr).astype(np.float32), sr))
+        # The takes were brightened like her data unless --no-brighten: compare like with like.
+        ref_e.append(embed(x if a.no_brighten else brighten(x, sr).astype(np.float32), sr))
     centre = np.mean(ref_e, axis=0); centre /= np.linalg.norm(centre)
     out = open(os.path.join(a.work, "sim.tsv"), "w", encoding="utf-8")
     out.write("n\ttake\tsim\n")

@@ -8,7 +8,7 @@
 # RESUME_LR (3e-5; "none" keeps e800's end-of-anneal 1e-5), RESUME_LR_FINAL, KEEP_EVERY, VAL_EVERY.
 set -euo pipefail
 source /w/job/scripts/lang_env.sh
-D=$J/out/ds_mix; W=/workspace/piper-lang; CACHE=/w/piper-cache-lang
+D=${DS_MIX:-$J/out/ds_mix}; W=${PIPER_ROOT:-/workspace/piper-lang}; CACHE=${PIPER_CACHE:-/w/piper-cache-lang}
 source /w/piper-env/bin/activate
 cd /w/piper1-gpl
 CK=${CK:-$(ls -t /workspace/piper-out/lightning_logs/version_*/checkpoints/last.ckpt | head -1)}
