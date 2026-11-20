@@ -46,6 +46,7 @@ export_sherpa() {  # export_sherpa <ckpt> <dir>
    rm -f $2/export.onnx)
 }
 speak_and_check() {  # speak_and_check <sherpa dir> <work dir> <route>
+  mkdir -p $2
   (source /w/piper-env/bin/activate; cd /w/piper1-gpl
    python $J/scripts/phone_test_lang.py $1 $S/lines.tsv $2/raw/S --route $3 --threads 4 > $2/phone_test.log 2>&1)
   CUDA_VISIBLE_DEVICES=0 asr $J/scripts/check_lang.py asr --lines $S/lines.tsv --raw $2/raw --work $2 --shard 0/1 \
