@@ -10,6 +10,8 @@ set -euo pipefail
 source /w/job/scripts/lang_env.sh
 MODE=${MODE:-full}
 step() { echo "=== $(date -u +%H:%M:%S) $*"; }
+# GPUs on this pod (the run was planned on 4; the migration pod has 3).
+NG=${NG:-$(nvidia-smi -L | wc -l)}
 mkdir -p $OL
 make_refs $OL/refs.tsv
 cat $OL/refs.tsv | cut -f1
@@ -18,7 +20,7 @@ speak_set() {  # speak_set <gpt> <lines file> <out dir> <seed> <ref offset> <sha
   local gpt=$1 lines=$2 out=$3 seed=$4 off=$5 shards=$6 i
   mkdir -p $out
   for i in $(seq 0 $((shards - 1))); do
-    CUDA_VISIBLE_DEVICES=$(( i % 4 )) gsv python $J/scripts/speak.py --gpt $gpt --sovits $S2 --out $out \
+    CUDA_VISIBLE_DEVICES=$(( i % NG )) gsv python $J/scripts/speak.py --gpt $gpt --sovits $S2 --out $out \
       --refs $OL/refs.tsv --ref-offset $off --seed $seed --lines $lines --shard $i/$shards $SPEAK_LANG_OPTS \
       > $out.speak_$i.log 2>&1 &
   done
@@ -29,9 +31,9 @@ speak_set() {  # speak_set <gpt> <lines file> <out dir> <seed> <ref offset> <sha
 check_set() {  # check_set <lines tsv> <raw dir with take folders> <work> <out ds>
   local lines=$1 raw=$2 work=$3 out=$4 i
   mkdir -p $work
-  for i in 0 1 2 3; do
+  for i in $(seq 0 $((NG - 1))); do
     CUDA_VISIBLE_DEVICES=$i asr $J/scripts/check_lang.py asr --lines $lines --raw $raw --work $work \
-      --shard $i/4 --model $WHISPER > $work/asr_$i.log 2>&1 &
+      --shard $i/$NG --model $WHISPER > $work/asr_$i.log 2>&1 &
   done
   wait
   gsv python $J/scripts/check_lang.py prep --lines $lines --raw $raw --work $work --jobs $(( $(nproc) - 4 )) > $work/prep.log 2>&1
@@ -55,12 +57,12 @@ with open(f"{out}/lines.tsv", "w", encoding="utf-8") as f, open(f"{out}/speak.tx
         g.write(f"{r['teacher_lang']}|{r['teacher_text']}\n")
 print(len(rows), "pilot lines")
 PY
-  step "pilot: her GPT on GPUs 0-1, the pretrained GPT on GPUs 2-3, at the same time"
+  step "pilot: her GPT and the pretrained GPT at the same time, spread over $NG GPUs"
   speak_set $G_HER $P/speak.txt $P/her_raw/A 1234 0 2 &
   (
     mkdir -p $P/base_raw/A
     for i in 2 3; do
-      CUDA_VISIBLE_DEVICES=$i gsv python $J/scripts/speak.py --gpt $G_BASE --sovits $S2 --out $P/base_raw/A \
+      CUDA_VISIBLE_DEVICES=$(( i % NG )) gsv python $J/scripts/speak.py --gpt $G_BASE --sovits $S2 --out $P/base_raw/A \
         --refs $OL/refs.tsv --seed 1234 --lines $P/speak.txt --shard $((i - 2))/2 $SPEAK_LANG_OPTS > $P/base_speak_$i.log 2>&1 &
     done
     wait

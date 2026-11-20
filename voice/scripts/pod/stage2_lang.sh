@@ -18,7 +18,7 @@ ck = torch.load(sys.argv[1], map_location="cpu", weights_only=False, mmap=True)
 print("resuming from", sys.argv[1], "epoch", ck["epoch"], "lr", [o["param_groups"][0]["lr"] for o in ck["optimizer_states"]])
 assert ck["epoch"] >= 799, "not the e800 checkpoint"
 PY
-EPOCHS=${EPOCHS:-1100}; GPUS=${GPUS:-4}; PRECISION=${PRECISION:-bf16-mixed}
+EPOCHS=${EPOCHS:-1100}; GPUS=${GPUS:-$(nvidia-smi -L | wc -l)}; PRECISION=${PRECISION:-bf16-mixed}
 export PIPER_MIXED_DIR=$J/scripts PIPER_CMUDICT=$CMUDICT PIPER_VAL_IDS=$D/val_ids.txt
 export PIPER_KEEP_EVERY=${KEEP_EVERY:-25} PIPER_KEEP_DIR=${KEEP_DIR:-/w/piper-lang-keep}
 RESUME_LR=${RESUME_LR:-3e-5}
