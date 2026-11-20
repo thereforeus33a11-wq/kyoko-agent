@@ -11,7 +11,10 @@
 #   - speak_checked.py: every sentence spoken on its own, its edges trimmed by her actual sound, heard back
 #     (English word error, Japanese kana reading) and redone up to 4 times until it is right, then the
 #     sentences joined with natural pauses; one take per line is enough (TAKES=2 adds a second);
-#   - a light DeepFilterNet pass only if DFN_ATTEN is set;
+#   - edges.py on every sentence (2026-11-20, the owner heard "labored, forced" breath): the teacher puts a
+#     dark rumble before and after sentences and a short hum (a snort) after some; only her speech is kept,
+#     and her breathing is added on the phone from her own recorded breaths (breathe.py, breath_bank.py);
+#   - a light DeepFilterNet pass (DFN_ATTEN=10 dB, the owner's pick "D3 light clean"; DFN_ATTEN= for none);
 #   - the same checks as before (Japanese: check_distill.py; English/mixed: check_lang.py), no brightening.
 # Then make_ds_mix.py builds $V/ds_mix for stage2_lang.sh (DS_MIX=$V/ds_mix).
 # Log: /w/logs/stage1_v2.log; ends with STAGE1-V2-DONE. Needs setup.sh, setup_lang.sh, setup_clean.sh,
@@ -19,7 +22,7 @@
 set -euo pipefail
 source /w/job/scripts/lang_env.sh
 V=${V:-$J/out/v2}; NG=${NG:-$(nvidia-smi -L | wc -l)}
-REF2=${REF2:-$J/data/wavs/v12_071.wav}; CLEAN_REF=${CLEAN_REF:-0}; DFN_ATTEN=${DFN_ATTEN:-}
+REF2=${REF2:-$J/data/wavs/v12_071.wav}; CLEAN_REF=${CLEAN_REF:-0}; DFN_ATTEN=${DFN_ATTEN-10}
 OPTS="--speed 1.0 --temperature 1.0 --top-k 20 --tries 4"     # full precision (speak_checked never uses half)
 TAKES=${TAKES:-1}; SHARDS=${SHARDS:-$((NG * 2))}
 export UV_CACHE_DIR=/w/uvcache UV_LINK_MODE=copy
@@ -48,9 +51,14 @@ speak() {  # speak <lines file> <out dir> <seed>
   wait
   echo "$(ls $out/*.wav 2>/dev/null | wc -l) takes in $out"
 }
-clean_dir() {  # clean_dir <raw dir> <clean dir>: (speak_checked already trimmed each sentence) a light DFN pass if asked
-  local src=$1 dst=$2 i
-  rm -rf $src.trim; cp -r $src $src.trim
+clean_dir() {  # clean_dir <raw dir> <clean dir>: her speech only (edges.py), then a light DFN pass if asked
+  local src=$1 dst=$2 i n=$(( $(nproc) / 4 ))
+  rm -rf $src.trim; mkdir -p $src.trim
+  for i in $(seq 0 $((n - 1))); do
+    gsv python $J/scripts/edges.py --dir $src $src.trim --shard $i/$n > $src.edges_$i.log 2>&1 &
+  done
+  wait
+  echo "$(ls $src.trim/*.wav 2>/dev/null | wc -l) edge-cleaned takes in $src.trim"
   if [ -z "$DFN_ATTEN" ]; then
     rm -rf $dst; cp -r $src.trim $dst
   else
@@ -68,7 +76,7 @@ if [ "${SKIP_SPEAK:-0}" != 1 ]; then
   [ "$TAKES" -ge 2 ] && { step "English and mixed, take B"; speak $LANG_IN/speak_lang.txt $V/en_raw/B 9876; }
   step "Japanese replay lines";     speak $J/out/sentences.txt $V/ja_raw 1234
 fi
-step "trim and clean"
+step "edges and clean"
 clean_dir $V/en_raw/A $V/en_clean/A
 [ -d $V/en_raw/B ] && clean_dir $V/en_raw/B $V/en_clean/B
 clean_dir $V/ja_raw $V/ja_clean
