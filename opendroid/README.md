@@ -67,9 +67,9 @@ The encrypted exchange was written from Venice's published protocol and its encr
 She writes:
 
 - every chat reply (anything that is talk and not a device command);
-- the short lines the app speaks around a command ("flashlight. ok", "done", "didnt work. try again");
-- one line when the wake phrase is heard;
 - lines of her own in her own time, when she feels like writing to you (Settings → Persona → Her own time, on in this build).
+
+A few short spoken lines are fixed, in her manner, and no model writes them: the word before a shortcut runs ("flashlight. ok"), that a plan was dropped, broke off or did not go through, which contact is meant, the words around the approval prompt, and the answer to the wake phrase ("mm?"). They cost no model call and say only that much; Settings → Persona says so under her switch. How a plan ended is never one of them: that is told from what its steps did.
 
 She can also act. A reply of hers, or a moment of her own, may end with a command of her own (the app hides that line and runs it). It goes through the same planner as your commands, and there is no list of what she may ask for: whatever the planner can do for you, it can do for her (`PersonaActions.kt`, lines 1-21). Who is asked first is decided in one place: your own approval setting always counts, and where it would stop the plan her rein (Settings → Persona) may still let it run. Her rein never runs a command whose words may be someone else's.
 
@@ -99,14 +99,14 @@ She never writes:
 
 - the plan for a device action. The planner prompt is byte-for-byte the stock one.
 - auto-replies. The stock auto-reply is gone from this build, not left as a stock feature: nothing answers a message for you while you are away. The old prompts for it, and for plans and social text, are untouched and never carry her card or her notebook.
-- the spoken approval prompt ("I've planned 2 steps ... say approve to run, or cancel"). It is a safety check and stays plain.
+- the spoken approval prompt. Its step count and step lines are the app's own text, word for word; while she is on, only the few fixed words around them are in her manner, and no model writes those. With her off it is the stock prompt ("I've planned 2 steps ... say approve to run, or cancel").
 - the results of actions ("Alarm set for 7:30 AM"). Those are what the phone actually did, so they are repeated word for word.
 
 Unit tests in the patch check parts of this wall: that recall, saved notes and the planner's memory context never return a row of her notebook; that the stock prompt builders for plans, re-evaluation, auto-replies and social text carry no persona marker; and that nothing in her package refers to the classes that run actions. No test drives a whole plan end to end with her switched on: the app's main loop has no test harness upstream.
 
 ## What the phone did
 
-The phone keeps one record of everything it did and everything done through it, whoever started it: you in the chat or through a shortcut, a routine of yours, Social Center, a command of hers in a reply or in her own time, the old auto-reply, the app itself, or another program through the MCP server. Each entry says when, who started it and why, how it was let through (your setting, her rein, your yes or no), what each step did, to whom, from which app and with which words, and how it ended. A draft left open for you is recorded as left open, never as sent.
+The phone keeps one record of everything it did and everything done through it, whoever started it: you in the chat or through a shortcut, a routine of yours, Social Center, a command of hers in a reply or in her own time, or the app itself. (What the old auto-reply sent before this build was put into it once; see below.) Each entry says when, who started it and why, how it was let through (your setting, her rein, your yes or no), what each step did, to whom, from which app and with which words, and how it ended. A draft left open for you is recorded as left open, never as sent.
 
 Her reply is told the newest entries of the last two days and older ones your message is about, a moment of her own the last day, and her notebook pass what was done since its last pass. So asked about something the phone did, she owns what was hers and says plainly what was not. Where her route holds your details back, an entry keeps only its kind: who it went to and what it said stay on the phone. The planner and the stock assistant never see the record.
 
@@ -114,7 +114,7 @@ It is one file in the app's own storage (`files/record/phone_log.sealed`), seale
 
 ## How she develops
 
-- **Notebook.** Every few chat replies she is asked, as herself, what she wants to keep, and writes up to three short notes in the first person: things about you, where the two of you stand, what is still going on, what she has decided she thinks, and corrections you gave her. Nobody chooses for her. The notes go into her chat prompt from then on, which is how she is the same person next time. They are stored as rows in the app's Memory tab (keys starting `yume.`), where you can read and delete them.
+- **Notebook.** Every few chat replies she is asked, as herself, what she wants to keep, and writes up to three short notes in the first person: things about you, where the two of you stand, what is still going on, what she has decided she thinks, and corrections you gave her. Nobody chooses for her. The notes go into her chat prompt from then on, which is how she is the same person next time. They are hers: the app keeps them as rows of its own (keys starting `yume.`) that the Memory tab does not list and no other part of the app reads. In Settings → Persona → Her notebook (on the card screen, below the card) you can give her notes, copy her notebook to move it to another phone, or empty it.
 - **Card editor.** Settings → Persona → Character card. Edit the text, save, and she runs on it from her next reply. "Restore built-in" goes back to the shipped card.
 
 Nothing in the app filters, softens or rewrites what she says. The only changes made to a reply are mechanical: a leading name label, quotation marks around the whole line and a gesture in asterisks at the edge of a line are removed, and an emphasised word loses its asterisks and keeps the word.
@@ -138,7 +138,7 @@ Every picture of her the app holds is marked as one of three kinds:
 
 Only originals and masters are ever sent as references when a picture of her is drawn or changed. A derived picture never is, so her look does not drift from pictures made off pictures.
 
-**Make her reference sheets** (Settings → Persona) makes front, back and side sheets from her masters, in a plain fitted base layer and in her outfit. Each sheet is age-checked before it is shown, and it becomes a master only when you approve it.
+**Make her reference sheets** (Settings → Persona; the row shows once "She can make pictures of herself" is on) makes front, back and side sheets from her masters, in a plain fitted base layer and in her outfit. Each sheet is age-checked before it is shown, and it becomes a master only when you approve it.
 
 Renders of her 3D model go into the APK only when `her_refs/APPROVED` exists. It does not exist yet, so this build carries none.
 
@@ -147,7 +147,7 @@ Renders of her 3D model go into the APK only when `her_refs/APPROVED` exists. It
 - Her phone voice reads English the way it was trained. Her current voice (`yume-20261118-f037defb1012`) learned English through katakana, so that is how it reads English, exactly as before. A bilingual voice, trained on her English and marked as such in its files, is read with the same English phonemes it was trained on. Those phonemes are held byte for byte to the training side by tests.
 - The text sent to speech is cleaned first: emoji, markdown and links are dropped from every spoken line. Her own lines, and only hers, also get a respelling for the speech engine: `www` becomes a laugh, `~` is removed, stretched words are shortened, and her missing apostrophes are put back so `dont` and `im` are pronounced. What you see in chat is not changed, and a message from someone else that is read aloud is read as written.
 - Wake phrases: "hey yume", "hey yumi", "ok yume" and a few more spellings, plus the stock "opendroid". If your phone's recogniser hears the name some other way, add that spelling in Settings → Persona. Wake phrases only run while the floating button is off (that is how stock OpenDroid works).
-- Pitch and speed sliders for the phone's own voice, and a field for the ElevenLabs model id. Until you move a slider, the phone's own text-to-speech settings apply.
+- Her own voice has its own speed: Settings → Persona, under "Her own voice". The pitch and speed sliders under ElevenLabs are for the phone's own voice, which says what the app itself says, and a line of hers only where her own voice is off or cannot say it. Beside them is a field for the ElevenLabs model id.
 
 ## Other changes that came with it
 
@@ -157,7 +157,7 @@ Renders of her 3D model go into the APK only when `her_refs/APPROVED` exists. It
 - A model id you type by hand is no longer replaced by the first model in the provider's list. Settings shows a note when the id in use is not in that list.
 - Her chat replies can come from a different model than the one that plans device actions: a second model on the same provider, or a different provider altogether.
 - Words such as "ring", "text" and "call" no longer force a message onto the planner when they are only part of another word ("boring", "context", "basically").
-- The app installs beside stock OpenDroid: its package id ends in `.yume`, it is named "Yume", and it uses local port 8766.
+- The app installs beside stock OpenDroid: its package id ends in `.yume` and it is named "Yume".
 
 ## Building it yourself
 
