@@ -15,7 +15,7 @@ WHISPER=${WHISPER:-/workspace/models/faster-whisper-large-v3}
 WAVLM=${WAVLM:-/workspace/models/wavlm-base-plus-sv}
 JA_DS=${JA_DS:-$J/out/ds}           # her Japanese training set from stage 1 (wavs + metadata.csv)
 gsv() { (source /w/gsv-env/bin/activate; export PYTHONPATH="$R:$R/GPT_SoVITS:$R/GPT_SoVITS/BigVGAN:$R/tools:$J/scripts" NLTK_DATA=/w/gsv-env/nltk_data version=v2ProPlus; cd $R; "$@"); }
-asr() { (export LD_LIBRARY_PATH="$(/w/asr-env/bin/python -c 'import os, nvidia.cublas.lib, nvidia.cudnn.lib; print(os.path.dirname(nvidia.cublas.lib.__file__) + ":" + os.path.dirname(nvidia.cudnn.lib.__file__))'):${LD_LIBRARY_PATH:-}"; /w/asr-env/bin/python "$@"); }
+asr() { (export LD_LIBRARY_PATH="$(/w/asr-env/bin/python -c 'import os, nvidia.cublas.lib, nvidia.cudnn.lib; print(list(nvidia.cublas.lib.__path__)[0] + ":" + list(nvidia.cudnn.lib.__path__)[0])'):${LD_LIBRARY_PATH:-}"; /w/asr-env/bin/python "$@"); }
 make_refs() {  # make_refs <out.tsv>: "clip.wav<TAB>text" for REFS_LANG
   : > "$1"
   for c in $REFS_LANG; do
