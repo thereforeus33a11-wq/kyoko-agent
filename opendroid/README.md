@@ -119,8 +119,32 @@ It is one file in the app's own storage (`files/record/phone_log.sealed`), seale
 
 Nothing in the app filters, softens or rewrites what she says. The only changes made to a reply are mechanical: a leading name label, quotation marks around the whole line and a gesture in asterisks at the edge of a line are removed, and an emphasised word loses its asterisks and keeps the word.
 
+## Her time on your screen
+
+Settings → HER OWN LIFE → **Lend her your screen**, off until you switch it on. With it on, a moment of hers may borrow your unlocked screen for one of your social or video apps (TikTok, YouTube, Instagram, X and the like). She scrolls, opens posts and comments, searches and watches.
+
+- **She chooses, the app moves.** Each step is her own model looking at the screen and choosing what to do next. The app moves the way a person of her nature would: curved swipes, uneven speed, pauses to read, now and then a small overshoot or a short scroll. Nothing is staged and nothing is perfect.
+- **Look only.** She has no accounts of her own, so it is your app and your account. She never likes, follows, subscribes, comments, replies, posts, messages, shares, saves, buys or gifts. She never opens your inbox, notifications or profile, and she types only into a search box. Her searches and the posts she opens are made from your account, so they show in that app's history and can change what it recommends to you.
+- **It is yours again the moment you touch it.** It also ends if you lock the phone or a call comes in, and the screen goes back to what you had. It never starts while the phone is locked or was in your hand a moment ago.
+- **On the record.** Her time on your screen goes on "Her day" and on the phone's record.
+- **What she knows.** She knows the major social and entertainment apps (her canon page `kisaragi-apps`): what each is, how it works, its words, and her take on it. She has no account on any of them.
+
+## Her pictures: originals and masters
+
+Every picture of her the app holds is marked as one of three kinds:
+- **Original:** one you gave it, kept exactly as given.
+- **Master:** a reference you approved as a base, also kept exactly.
+- **Derived:** anything a model made.
+
+Only originals and masters are ever sent as references when a picture of her is drawn or changed. A derived picture never is, so her look does not drift from pictures made off pictures.
+
+**Make her reference sheets** (Settings → Persona) makes front, back and side sheets from her masters, in a plain fitted base layer and in her outfit. Each sheet is age-checked before it is shown, and it becomes a master only when you approve it.
+
+Renders of her 3D model go into the APK only when `her_refs/APPROVED` exists. It does not exist yet, so this build carries none.
+
 ## Voice
 
+- Her phone voice reads English the way it was trained. Her current voice (`yume-20261118-f037defb1012`) learned English through katakana, so that is how it reads English, exactly as before. A bilingual voice, trained on her English and marked as such in its files, is read with the same English phonemes it was trained on. Those phonemes are held byte for byte to the training side by tests.
 - The text sent to speech is cleaned first: emoji, markdown and links are dropped from every spoken line. Her own lines, and only hers, also get a respelling for the speech engine: `www` becomes a laugh, `~` is removed, stretched words are shortened, and her missing apostrophes are put back so `dont` and `im` are pronounced. What you see in chat is not changed, and a message from someone else that is read aloud is read as written.
 - Wake phrases: "hey yume", "hey yumi", "ok yume" and a few more spellings, plus the stock "opendroid". If your phone's recogniser hears the name some other way, add that spelling in Settings → Persona. Wake phrases only run while the floating button is off (that is how stock OpenDroid works).
 - Pitch and speed sliders for the phone's own voice, and a field for the ElevenLabs model id. Until you move a slider, the phone's own text-to-speech settings apply.

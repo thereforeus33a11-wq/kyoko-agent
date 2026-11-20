@@ -1080,6 +1080,25 @@ A flagged item is one line, and PK-1 is included (§1.4). The verbs are glossed 
 
 ---
 
+## Phase 5, as built (2026-11-20): his screen, lent, and no accounts of hers
+
+His order changed this phase: "Dont make her accounts. She should just know, have knowledge about all the major social media and entertainment sites/apps. Along with that, being able to navigate like a person of her personality and nature (not perfectly nor intentionally making it wacky but with subtle and natural movement)."
+
+- **No work profile, no logins of hers.** Phase 4 (her Bluesky account) and the work profile above are not built.
+- **What she knows:** a canon page, `kisaragi-apps`, offered from her library by cue words.
+- **Lend mode** (HER OWN LIFE → "Lend her your screen", off by default):
+  - Outing kinds: `go: scroll <app>`, `go: watch <app or what>`, `go: look <app>`.
+  - Only on his unlocked screen, not within a minute of his last touch.
+  - It ends the instant he touches it, locks it, or a call takes the foreground. Then his screen goes back.
+- **How each step works:**
+  - She looks, through her eyes, at a picture of her app's window only.
+  - She answers with one verb: scroll, open, back, tab, search, watch, done.
+  - The code carries it out with `HumanMotion`: curved swipes with ease-in and ease-out, natural variation, small tap offsets kept off other controls, reading pauses, rare overshoots and short scrolls. Her energy and mood set the pace.
+- **Look only:** the guard (`LookOnly`) refuses likes, follows, subscribes, comments, replies, posts, messages, shares, saves, buys, gifts and settings. Typing goes only into a search box.
+- **On the record:** each outing goes on HerLog and on the phone's record, as hers, in his app.
+- **He is told before lending:** her searches and the posts she opens are made from his account.
+- **Phase 6 (her own screen)** is not built.
+
 ## Phase 6 — her own screen beside his (shell service)
 
 ### Files
