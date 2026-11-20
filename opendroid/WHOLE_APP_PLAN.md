@@ -63,14 +63,12 @@ The planner and the stock assistant never see the record.
 
 ## 4. What is unchanged
 
-- His approval setting and her rein decide what runs without asking, exactly as before, with one exception while she is on: a macro whose steps send words is always shown on his card first (rule 7).
+- His approval setting and her rein decide what runs without asking, exactly as before, with one exception while she is on: a macro whose steps send words is always shown on his card first (rule 7). Such a plan is approved by a tap on the card only, never by a yes said aloud, and its macros run only as the card showed them: one edited, switched on or made since does not run under that yes.
 - The planner prompt stays the stock one. It never carries her card, and her prompts never carry the planner's.
 - With her switched off the app is stock OpenDroid, except for the switch-offs in rules 4, 6 and 8. One line of the planner's action list differs: `SOCIAL_CREATE_POST` names a `content` param for the post's own words, which the planner sees whoever is on. With her off the action reads it as stock did, as what the composer writes from, and the composer still writes the post.
 
 ## 5. Known gaps
 
-- A macro edited after his card was shown runs its new steps.
-- The spoken approval prompt names the steps but not the words a macro will send, so a voice yes approves words he has not seen. The card shows them.
 - With her off, the record lists a post's topic or content, not the words the composer then writes.
 - When his own setting would have run a word-sending macro, the card appears with no chat row saying why. Her commands get one.
 
