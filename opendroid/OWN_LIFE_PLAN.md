@@ -1263,10 +1263,10 @@ About 105 calls in all, which leaves room inside 150.
 | `WEB_SEARCH`, `GET_NEWS`, `SUMMARIZE_URL` and `FACT_CHECK` claim results they never read | P1 truth fix |
 | The notification listener has no profile filter | P5 |
 | Her app use would be learned as his habits | P5 |
-| The MCP privileged shell becomes shell-level once Shizuku is granted | P6 |
+| The MCP privileged shell becomes shell-level once Shizuku is granted | Gone: the MCP server and Shizuku were removed from the build in the whole-app audit (2026-11-20); Phase 6 brings Shizuku back only with its own lockout |
 | `VisionEngine` ignores the route | Not reused; fix separately |
 | `ReEvaluationEngine` runs her own-time plans on the main route (line 250) | Outings avoid it; the ledger counts it; route fix recommended separately |
-| `RECORD_SCREEN` reports a simulated success | Out of scope; still a facts-rule breach |
+| `RECORD_SCREEN` reports a simulated success | Gone: the action was removed in the whole-app audit (2026-11-20); the planner can no longer pick it |
 
 ## UNCONFIRMED, carried from research
 

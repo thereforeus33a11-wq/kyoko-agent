@@ -90,7 +90,7 @@ While she is on, no tool writes words that leave the phone. This covers what a p
 
 **Off in this build:**
 - **Social:** while she is on, the stock social writers (post composer, campaign generator, comment-reply drafts) are off. Posts and replies are written by you or by her, and publishing is still your tap.
-- **MCP server:** off in this build, and the privileged shell behind it with it.
+- **MCP server:** removed from this build, and the privileged shell behind it with it.
 - **Template words:** the "Created by OpenDroid" footer on invitations and the "Sent via OpenDroid" payment note are gone.
 
 The rules and what is left open are in `WHOLE_APP_PLAN.md`.
