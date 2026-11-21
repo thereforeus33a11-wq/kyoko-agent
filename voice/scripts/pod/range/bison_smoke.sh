@@ -10,13 +10,19 @@
 #  5. piper1-gpl imports and loads her phone voice's checkpoint on the GPU and runs it;
 #  6. nvidia-smi sees the work on the GPU.
 # Writes /workspace/yume/SETUP_OK (one line per env) only when every test passes.
-# Outputs (her timbre: private) in /workspace/yume/range_build/smoke. Ends with SMOKE-PASSED or SMOKE-FAILED.
+# Outputs (her timbre: private) on the container disk in /w/range_build/smoke, then kept on the volume as one file,
+# /workspace/yume/range_build/smoke.tar. Ends with SMOKE-PASSED or SMOKE-FAILED.
 set -uo pipefail
-Y=/workspace/yume; O=$Y/range_build/smoke; RF=/workspace/range_proto/refs; S=/w/range/scripts
+if [ "${BISON_LOCAL:-0}" != 1 ]; then   # run from the container disk (bash reads a script as it goes)
+  cp "$0" /w/bison_smoke.run.sh && BISON_LOCAL=1 exec bash /w/bison_smoke.run.sh "$@"
+fi
+Y=/workspace/yume; O=/w/range_build/smoke; RF=/workspace/range_proto/refs; S=/w/range/scripts
 PIPER_CKPT=${PIPER_CKPT:-$Y/piper-lang2-keep/keep-epoch=974.ckpt}
 [ -f $Y/XFER_OK ] || { echo "no $Y/XFER_OK yet"; echo SMOKE-FAILED; exit 1; }
 source /w/job/scripts/lang_env.sh
 export CUDA_VISIBLE_DEVICES=0
+# the image points these into /workspace (many small files): kept on the container disk
+export HF_HOME=/w/hf HF_XET_CACHE=/w/hf/xet PIP_CACHE_DIR=/w/pipcache UV_CACHE_DIR=/w/uvcache
 rm -rf $O; mkdir -p $O/teacher $O/irodori $O/dfn $O/kana
 fail=0
 pass() { echo "PASS $*"; }
@@ -138,6 +144,8 @@ echo "  memory used idle ${idle} MiB, peak ${peak} MiB; samples naming a python 
 grep -m3 "python" $O/gpu.log
 awk -v p="$peak" -v i="$idle" 'BEGIN {exit !(p > i + 1000)}' && pass "nvidia-smi saw the jobs on the GPU (peak $peak MiB)" || bad "no GPU use seen"
 
+tar cf $Y/range_build/smoke.tar.part -C /w/range_build smoke && mv -f $Y/range_build/smoke.tar.part $Y/range_build/smoke.tar \
+  && echo "  outputs kept as $Y/range_build/smoke.tar"
 if [ $fail = 0 ]; then
   st=$(date -u +%FT%TZ)
   v() { $1 -c "import importlib.metadata as m; print(' '.join(f'{p} {m.version(p)}' for p in '$2'.split()))" 2>/dev/null; }
