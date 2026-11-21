@@ -29,7 +29,7 @@
 #   /workspace/yume/source/yume_voice_clips.zip    her clips (4 wavs) and her lists
 #   /workspace/yume/xfer.tar + xfer_finish2.sh     her data pack; XFER_OK holds its sha256
 # Run (the script copies itself to /w and runs from there):
-#   setsid nohup bash /workspace/yume/setup/bison_setup.sh > /w/logs/bison_setup.log 2>&1 < /dev/null &
+#   mkdir -p /w/logs && setsid nohup bash /workspace/yume/setup/bison_setup.sh > /w/logs/bison_setup.log 2>&1 < /dev/null &
 # Builds: two lanes (gsv, dfn, asr | irodori, piper), each env's log in /w/logs/bison_setup_<env>.log.
 # CACHE_SAVE=0 skips writing uvcache.tar. Ends with BISON-SETUP-DONE, or BISON-SETUP-FAILED.
 set -euo pipefail
@@ -334,16 +334,26 @@ CMUDICT=$J/data/cmudict.dict PIPER_SRC=/w/piper1-gpl/src /w/piper-env/bin/python
 grep -v "^WARNING" $ELOG/bison_unittest.log | tail -3
 
 # --- every env passed: the uv cache onto the volume as one tar (when it is new or this run added to it) ---
+# "Added to it" by the cache's entries (unpacked wheels, built sdists, git checkouts, Pythons), not by mtimes:
+# uv python install refreshes its version links on every run.
+cache_sig() {
+  (cd /w && find uvcache/archive-v0 uvpython -mindepth 1 -maxdepth 1; find uvcache/sdists-v* uvcache/git-v* -mindepth 1 -maxdepth 4) \
+    2>/dev/null | LC_ALL=C sort | sha256sum | cut -d' ' -f1
+}
 if [ "${CACHE_SAVE:-1}" = 1 ]; then
-  if [ ! -s $UVTAR ] || [ -n "$(find /w/uvcache/archive-v0 /w/uvcache/sdists-v* /w/uvpython -mindepth 1 -maxdepth 1 \
-         -newer $UVTAR -print -quit 2>/dev/null)" ]; then
+  sig=$(cache_sig)
+  if [ ! -s $UVTAR ] || [ "$(cat $UVTAR.sig 2>/dev/null)" != "$sig" ]; then
+    # The volume's quota (about 50 GB: her pack, this tar, the models) has no room for a second copy: the stale
+    # tar goes first (the cache it came from is on /w, so nothing is lost if the write fails).
     step "uv cache -> $UVTAR"
     mkdir -p $CACHE; t0=$(date +%s)
-    vol tar cf $UVTAR.part -C /w --exclude='uvcache/.tmp*' --exclude='uvcache/builds-v0' uvcache uvpython
-    mv -f $UVTAR.part $UVTAR
+    rm -f $UVTAR $UVTAR.sig $UVTAR.part
+    vol tar cf $UVTAR.part -C /w --exclude='uvcache/.tmp*' --exclude='uvcache/builds-v0' uvcache uvpython \
+      || { rm -f $UVTAR.part; echo "could not write $UVTAR (volume quota?)"; step BISON-SETUP-FAILED; exit 1; }
+    mv -f $UVTAR.part $UVTAR && echo "$sig" > $UVTAR.sig
     echo "wrote $UVTAR: $(du -h $UVTAR | cut -f1) in $(( $(date +%s) - t0 )) s"
   else
-    echo "uv cache unchanged since $UVTAR"
+    echo "uv cache unchanged since $UVTAR was written"
   fi
 fi
 

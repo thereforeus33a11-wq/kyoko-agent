@@ -15,7 +15,7 @@
 # f0 <= 345 Hz (her adult cap); heard right (kana error <= 0.15 Japanese, word error <= 0.20 English; kana recogniser
 # CER <= 0.15). Before each GPU job: the GPU must have the job's memory plus 8 GB free (other agents share it).
 # Writes /w/range_build/SETUP_OK (one line per env) only when every test passes. Ends with SMOKE-PASSED or SMOKE-FAILED.
-# Run: setsid nohup bash /w/job/scripts/range/bison_smoke.sh > /w/logs/bison_smoke.log 2>&1 < /dev/null &
+# Run (after bison_setup.sh): setsid nohup bash /w/job/scripts/range/bison_smoke.sh > /w/logs/bison_smoke.log 2>&1 < /dev/null &
 set -uo pipefail
 if [ "${SMOKE_LOCAL:-0}" != 1 ]; then   # bash reads a script as it runs: run a copy on the container disk
   mkdir -p /w/range && cp "$0" /w/range/bison_smoke.run.sh && SMOKE_LOCAL=1 exec bash /w/range/bison_smoke.run.sh "$@"
