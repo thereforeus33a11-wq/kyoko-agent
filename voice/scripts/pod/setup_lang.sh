@@ -19,7 +19,9 @@ uv pip install -q --python /w/asr-env/bin/python whisper-normalizer || echo "whi
 # Timbre: WavLM base plus, speaker verification head (transformers is already in gsv-env).
 [ -s $M/wavlm-base-plus-sv/config.json ] || /w/gsv-env/bin/python -c \
   "from huggingface_hub import snapshot_download; snapshot_download('microsoft/wavlm-base-plus-sv', local_dir='$M/wavlm-base-plus-sv')"
-/w/gsv-env/bin/python -c "import librosa, pyworld, sherpa_onnx, pyopenjtalk; print('gsv-env ok', pyopenjtalk.__version__)"
+# pyopenjtalk fetches its dictionary on first use: once here, not in check_lang.py's prep workers all at once
+# (they raced on a fresh env, two died and the pool hung).
+/w/gsv-env/bin/python -c "import librosa, pyworld, sherpa_onnx, pyopenjtalk; pyopenjtalk.g2p('テスト'); print('gsv-env ok', pyopenjtalk.__version__)"
 
 # Piper: her mixed phonemizer at the phonemize step, a fixed validation list, kept checkpoints,
 # and a learning-rate restart for the resumed run (all off unless their variables are set).

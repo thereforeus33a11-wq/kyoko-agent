@@ -55,19 +55,23 @@ speak_and_check() {  # speak_and_check <sherpa dir> <work dir> <route>
     --jobs 16 > $2/prep.log 2>&1
 }
 
+# SCORE_SERIAL=1: one set at a time (and a failing step stops the run). A one-GPU pod (24 GB card, 41 GB
+# container) cannot hold a large-v3 recogniser and 16 prep workers per set for six sets at once.
+bg() { if [ "${SCORE_SERIAL:-0}" = 1 ]; then "$@"; else "$@" & fi; }
+
 step "e800, today's route"
 if [ ! -s $E800_SHERPA/model.onnx ]; then
   CK=${CK:-$(ls -t /workspace/piper-out/lightning_logs/version_*/checkpoints/last.ckpt | head -1)}
   export_sherpa $CK $S/e800; E800_SHERPA=$S/e800/sherpa
 fi
-speak_and_check $E800_SHERPA $S/e800 kana &
+bg speak_and_check $E800_SHERPA $S/e800 kana
 SETS="e800=$S/e800"
 for E in $EPOCHS_TO_SCORE; do
   CK_E=$K/keep-epoch=$E.ckpt
   [ -s $CK_E ] || CK_E=$(ls -t $W/lightning_logs/version_*/checkpoints/last.ckpt | head -1)
   step "epoch $E: $CK_E"
   export_sherpa $CK_E $S/e$E
-  speak_and_check $S/e$E/sherpa $S/e$E mixed &
+  bg speak_and_check $S/e$E/sherpa $S/e$E mixed
   SETS="$SETS e$E=$S/e$E"
 done
 wait
