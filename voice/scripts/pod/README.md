@@ -22,6 +22,14 @@ Order on the pod (4x RTX 4090; image runpod/pytorch:1.0.2-cu1281-torch280-ubuntu
 Files move to and from the pod only through the Runpod API's exec call (`podio.py`), which
 reads the API key from a local file and never prints it.
 
+When the API key may not run commands on a pod (the exec call answers 403), `jupio.py` does the same three
+jobs (`exec`, `up`, `down`) through the pod's own Jupyter server, over plain HTTPS only:
+- the pod's Jupyter token is added by the session's network proxy (a network secret for
+  `<pod>-8888.proxy.runpod.net`); the script never reads or prints it;
+- a small job runner in `/root/jupio` is started once through a Jupyter kernel spec, runs each command dropped
+  into its queue under `timeout`, and leaves stdout, stderr and the exit code to be read back;
+- uploads use Jupyter's chunked file upload; every transfer is checked by sha256, as in `podio.py`.
+
 Two traps worth knowing:
 - GPT-SoVITS at this commit: on GPU, its CUDA-graph decoder cuts lines short. `speak.py` turns
   it off.
