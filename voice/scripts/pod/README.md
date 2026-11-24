@@ -109,3 +109,16 @@ line with sid = its style). Nothing here is voice data. On the pod (one RTX PRO 
    clips' kept span is widened to all their sound; `trim_check.py` measures it), the fit resumed from the warm start,
    `keep_copy.sh` copying each kept checkpoint to the volume, `check_ids.py` (reads a multi-speaker CSV now).
    `tb_scalars.py` dumps the run's scalars. The plan and the exact command: /w/range_build/styles/PLAN.md.
+
+Scoring the five-style run (after STAGE2-STYLES-DONE; outputs in /w/range_build/styles/eval, nothing of hers here):
+1. `styles_eval_export.sh E ... base`: every kept checkpoint (a slim-only one merged into a full one first) to a
+   sherpa voice with the five-speaker config, plus seeded copies (`seed_onnx.py`); `base` = the phone voice (e974).
+2. `styles_eval.py lines`, `sets`, then `styles_eval_speak.sh <voices>`: the scoring lines the phone's way, sid 0
+   lines with seeds 1234 and 5678 (e974 with four seeds: its run-to-run noise), each style's held-out lines with its sid.
+3. `styles_eval_run.sh`: `styles_eval.py items / asr / measure / embed / wer` (three faster-whisper hearings, the
+   sets' measures, WavLM), then `styles_eval_score.py`: every gate for every candidate (score/table.md, gates.json,
+   clips.tsv) and the choice. `styles_eval_cls_cv.py`: how the classifier's features were chosen (cross-validation on
+   the training clips only).
+4. `styles_eval_ship.sh <voice>` (the chosen voice to /workspace/yume/phone_styles with .sha256 files),
+   `rtf_onnx.py` (size and speed against phone_lang2, with an A/A control), `styles_eval_packrun.sh <voice>` and
+   `styles_eval_pack.py` (the owner's listening pack).

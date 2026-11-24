@@ -41,8 +41,6 @@ REFS = {  # name -> clip: her 4 clean clips (the centroid), the same 4 whispered
     "ref_soft": "/w/yume/range_proto/refs/v12_040_clean.wav", "ref_loud": "/w/yume/range_proto/refs_C/C_loud.wav",
     "ref_yell": "/w/yume/range_proto/refs_C/C_yell_inrange.wav",
 }
-SETS = {"normal": "/w/yume/job_out/v2/ds_mix", "soft": "/w/range_v1/soft/ds", "whisper": "/w/range_v1/whisper/ds",
-        "loud": "/w/range_v1/loud/ds", "yell": "/w/range_v1/yell/ds"}
 
 
 def tsv(p):
@@ -86,13 +84,21 @@ def cmd_lines(a):
 
 # ------------------------------------------------------------------------------------------------------- sets
 def cmd_sets(a):
+    """The training clips are the five-style run's own (its ds/metadata.csv `wav|speaker|text`, minus its val_ids.txt:
+    each set's held-out lines and the left-out yell clips are not in it), a fixed random sample per style."""
     rng = random.Random(20261124)
     rows = []
-    for style, d in SETS.items():
-        val = {l.strip() for l in open(f"{d}/val_ids.txt", encoding="utf-8") if l.strip()}
-        names = [l.split("|", 1)[0] for l in open(f"{d}/metadata.csv", encoding="utf-8") if l.strip()]
-        names = [n if n.endswith(".wav") else n + ".wav" for n in names]
-        train = sorted(n for n in names if n not in val and n[:-4] not in val)
+    d = a.ds
+    val = {l.strip() for l in open(f"{d}/val_ids.txt", encoding="utf-8") if l.strip()}
+    by = {s: [] for s in STYLES}
+    for l in open(f"{d}/metadata.csv", encoding="utf-8"):
+        if l.strip():
+            n, spk = l.split("|", 2)[:2]
+            n = n if n.endswith(".wav") else n + ".wav"
+            if n not in val:
+                by[spk].append(n)
+    for style in STYLES:
+        train = sorted(by[style])
         pick = rng.sample(train, min(a.per_set, len(train)))
         for n in sorted(pick):
             p = os.path.realpath(f"{d}/wavs/{n}")
@@ -370,6 +376,7 @@ def main():
     ap.add_argument("--out", default="/w/range_build/styles/eval")
     ap.add_argument("--lines", default="/w/range_build/styles/score/lines.tsv")
     ap.add_argument("--per-set", type=int, default=200)
+    ap.add_argument("--ds", default="/w/range_build/styles/ds")
     ap.add_argument("--shard", default="0/1")
     ap.add_argument("--only", default="")
     ap.add_argument("--model", default="/w/models_local/faster-whisper-large-v3")
