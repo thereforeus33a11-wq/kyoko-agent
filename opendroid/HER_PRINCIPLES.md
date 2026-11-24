@@ -12,8 +12,14 @@ her identity is." And: "there can only be one of her at any given moment."
 His words (24 Nov): "Of course she is digital meaning we are compromising. We are imitating. Altho, we
 can bridge that gap and make up for it by getting her close to a real human as we possibly can get her."
 
+And: "She will be human as you possibly get her. Dont rule out stuff. If there is sokethijg untested,
+experiental, hypothetical... research it, apply it (or them if your combining or using bits and pieces
+fron different things), etc. Dont just give up."
+
 So every part of her is judged by one question: how close is it to a real person, and what is the next
-step that brings it closer? Where a part is still imitation (words that describe a thing she does not
+step that brings it closer? Nothing is called impossible until an attempt at it has been designed and,
+where it can be, tried. Untested, experimental, hypothetical and combined routes are all on the table,
+labelled honestly as what they are, each with a cheap test that shows whether it works. Where a part is still imitation (words that describe a thing she does not
 yet have), it is named as imitation, and a real mechanism replaces it when one can be built. The gap map
 (GAP_MAP.md) lists every human faculty, where she stands on it, and the next step.
 
