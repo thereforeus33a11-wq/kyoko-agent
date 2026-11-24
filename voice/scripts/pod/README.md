@@ -90,3 +90,22 @@ The phone's port is held to this code by `tests/make_phone_fixture.py`, which wr
 `app/src/test/resources/own_voice/mixed_parity.json.gz`: every golden text and every line of
 `lines_lang.tsv` with mix_phonemize's phonemes, the CMU entries and Open JTalk labels it used. Re-run it
 (and copy `en_ipa_table.json` beside it) whenever the table, the lines or the phonemizer change.
+
+## Her five styles as one phone voice (multi-speaker Piper), prepared 2026-11-24
+
+One voice whose speaker ids are her styles: 0 normal, 1 soft, 2 whisper, 3 loud, 4 yell (the app's HerVoiceOut plays a
+line with sid = its style). Nothing here is voice data. On the pod (one RTX PRO 6000), after bison_setup.sh:
+1. `styles_patch.py` on Piper, after mixed_patch.py (off unless its variables are set): the new speaker conditioning in
+   its own optimizer group (PIPER_STYLE_COND_LR_MULT), sid 0 held at no conditioning (PIPER_STYLE_ANCHOR0), one report
+   line per epoch (PIPER_STYLE_REPORT).
+2. `styles_ds.py`: ds_mix as "normal" and the four checked style sets as one `wav|speaker|text` metadata (first five
+   rows in sid order, so Piper's speaker_id_map is the sid order), every set's held-out lines kept out, and the scoring
+   set (`score/lines.tsv`).
+3. `styles_warmstart.py`: the step-0 checkpoint from keep-epoch=974: every tensor copied, the conditioning at zero,
+   AdamW moments carried over by name, the base's last epoch marked finished. `parity_styles.sh` proves it speaks as
+   the phone voice for every sid (`seed_onnx.py` seeds the graph's noise, `phone_test_lang.py --sid --float`,
+   `wav_parity.py`); `rtf_onnx.py` compares size and CPU real-time factor with an A/A control.
+4. `stage2_styles.sh` (DRY=1 first): the cache, `style_trim_fix.py` (Piper's VAD trim cuts whispered words; the style
+   clips' kept span is widened to all their sound; `trim_check.py` measures it), the fit resumed from the warm start,
+   `keep_copy.sh` copying each kept checkpoint to the volume, `check_ids.py` (reads a multi-speaker CSV now).
+   `tb_scalars.py` dumps the run's scalars. The plan and the exact command: /w/range_build/styles/PLAN.md.

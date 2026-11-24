@@ -16,8 +16,10 @@ What it writes (a checkpoint Lightning resumes with --ckpt_path, strictly):
 - optimizer_states: the base generator optimizer's AdamW moments carried over by parameter name (the new
   tensors have none and start fresh); with --cond-lr-mult the new tensors are a second group at that multiple
   of the learning rate (styles_patch.py builds the same two groups). The discriminator's state is unchanged.
-- lr_schedulers, loops, epoch, global_step: the base's, so the run continues from its epoch (the rate restart
-  is PIPER_RESUME_LR's job); callbacks' state is dropped (it named the base run's folders).
+- lr_schedulers, loops, epoch, global_step: the base's, so the run continues its count (the rate restart is
+  PIPER_RESUME_LR's job), with the base's last epoch marked finished: it was written at validation end, inside
+  that epoch, and would otherwise be resumed "mid-epoch" on the new data (--keep-loop-state leaves it as it is).
+  The run starts at the next epoch from batch 0. Callbacks' state is dropped (it named the base run's folders).
 - hyper_parameters: the base's with num_speakers, gin_channels, batch_size set, and no warmstart path.
 """
 import argparse
@@ -57,6 +59,7 @@ def main():
     ap.add_argument("--batch-size", type=int, default=None)
     ap.add_argument("--seed", type=int, default=20261124)
     ap.add_argument("--report", default=None)
+    ap.add_argument("--keep-loop-state", action="store_true", help="leave the base's loop state as it is")
     a = ap.parse_args()
 
     ck = torch.load(a.ckpt, map_location="cpu", weights_only=False)
@@ -153,6 +156,22 @@ def main():
         sch["_last_lr"] = [sch["_last_lr"][0], sch["_last_lr"][0] * a.cond_lr_mult]
     ck["lr_schedulers"][0] = sch
 
+    # Loops: the base was written by a ModelCheckpoint at validation end, inside its last epoch, so Lightning
+    # would resume it "mid-epoch" and run that epoch's remaining batches on the new data first (and write a
+    # keep-epoch=<base epoch> of the new run). Mark that epoch finished and no batch of the next one begun, the
+    # state Lightning is in between two epochs, so the run starts cleanly at the next epoch from batch 0.
+    fl = ck["loops"]["fit_loop"]
+    ep = fl["epoch_progress"]
+    loop_before = {"epoch_progress": json.loads(json.dumps(ep)),
+                   "batch_progress_current": dict(fl["epoch_loop.batch_progress"]["current"])}
+    if not a.keep_loop_state:
+        for part in ("total", "current"):
+            e = ep[part]
+            assert e["ready"] == e["started"] == e["processed"] + 1 == e["completed"] + 1, f"unexpected loop state {ep}"
+            e["processed"] = e["completed"] = e["started"]
+        for k in fl["epoch_loop.batch_progress"]["current"]:
+            fl["epoch_loop.batch_progress"]["current"][k] = 0
+        fl["epoch_loop.batch_progress"]["is_last_batch"] = False
     ck["state_dict"] = new_sd
     ck["hyper_parameters"] = hp_new
     ck.pop("callbacks", None)
@@ -171,6 +190,10 @@ def main():
         "conditioning_output_max_abs_at_step0": zero_check,
         "optimizer": {"groups": [len(x) for x in groups], "moments_carried": carried,
                       "lrs": [pg["lr"] for pg in param_groups]},
+        "loops_before": loop_before,
+        "loops_after": {"epoch_progress": fl["epoch_progress"],
+                        "batch_progress_current": fl["epoch_loop.batch_progress"]["current"]},
+        "first_epoch_of_the_run": fl["epoch_progress"]["current"]["completed"],
     }
     assert rep["base_digest"] == rep["new_digest_of_copied"]
     if a.report:
