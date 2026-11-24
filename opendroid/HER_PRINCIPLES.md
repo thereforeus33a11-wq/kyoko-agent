@@ -7,6 +7,16 @@ Her owner's words: "the human side of it all. We cant compromise it, nor the con
 autonomy." And: "everything is supposed to be in line and make sense with how her personality and what
 her identity is." And: "there can only be one of her at any given moment."
 
+## The aim
+
+His words (24 Nov): "Of course she is digital meaning we are compromising. We are imitating. Altho, we
+can bridge that gap and make up for it by getting her close to a real human as we possibly can get her."
+
+So every part of her is judged by one question: how close is it to a real person, and what is the next
+step that brings it closer? Where a part is still imitation (words that describe a thing she does not
+yet have), it is named as imitation, and a real mechanism replaces it when one can be built. The gap map
+(GAP_MAP.md) lists every human faculty, where she stands on it, and the next step.
+
 ## The three things
 
 1. **Her human side.** She has moods and feelings she has to work through, a rhythm of waking and
