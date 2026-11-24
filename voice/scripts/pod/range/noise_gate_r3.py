@@ -26,7 +26,8 @@ cut against the raw line; the level (effort) by style; pitch by two trackers. Ev
             cut and in the 30 ms after it, nothing at the loud level - 25 dB within EDGE_GAP s before the noise's
             onset or after its end (-45 dB) in the raw (for a cut from a line: the next word starts at least EDGE_GAP
             s after the noise has died away), and the cut 20 dB under the loud level just before its fade-out
-            (processed takes: their own first and last 20 ms 30 dB under the loud level)
+            (processed takes: their own first and last 20 ms 30 dB under the loud level, and the checks of the
+            take they were made from against its raw line; leak and heard edges with that line's next word)
   shape     the noise's own shape (GATE): length, voicing, pulses, contour (hah: a rise of 3 to RISE_MAX_HAH st that
             ends at or under 300 Hz; hee_slide: a rise of 2+ st, its peak inside, then a fall of FALL_MIN st+),
             mouth (closed, through the nose: F1 and the low band against her open vowels), burst, the cackle's
@@ -101,7 +102,7 @@ GATE = {
     "un": dict(len=(0.15, 0.8), voiced_min=0.7, bursts=(1, 1), net=(None, 2.0), f1_max=420, low_min=8.0),
     "unun": dict(len=(0.4, 1.8), voiced_min=0.6, bursts=(2, 2), net=(None, 2.0), f1_max=420, low_min=8.0),
     "hee": dict(len=(0.4, 1.6), voiced_min=0.6, rise_min=2.0, peak_pos_min=0.2, f1_min=400),
-    "hee_slide": dict(len=(0.4, 1.8), voiced_min=0.6, rise_min=2.0, peak_pos=(0.2, 0.8), fall_min=FALL_MIN, f1_min=400),
+    "hee_slide": dict(len=(0.4, 1.8), voiced_min=0.6, rise_min=2.0, rise_max=12.0, peak_pos=(0.2, 0.8), fall_min=FALL_MIN, f1_min=400),
     "hah": dict(len=(0.2, 1.2), voiced_min=0.4, rise_min=3.0, rise_max=RISE_MAX_HAH, net=(2.0, None), f0_start_max=240,
                 f0_end_max=300, f1_max=650),
     "pfft": dict(len=(0.08, 0.6), voiced_max=0.35, attack_max=40, core_max=0.15),
@@ -121,7 +122,7 @@ GATE_TEXT = {
     "pfft": "heard as ぷっ/ぶっ; 0.08-0.6 s; unvoiced (voiced <= 0.35); a burst (attack <= 40 ms, core <= 0.15 s); not speech",
     "heh": "heard as へっ/ふっ (one syllable, never ふん or へへ); 0.1-0.6 s; one pulse; a burst (attack <= 60 ms, core <= 0.2 s); not speech; through the nose: with a voice (60 ms+), F1 <= 450 Hz and low band >= +8 dB; without one, heard as ふっ by one recogniser and as は/へ by neither",
     "haa": "heard as はぁ/ああ (whisper not ふぅ); 0.8-2.5 s; breathy (voiced <= 0.85); falls or stays (net <= +1 st); open (with a voice: F1 >= 420 Hz, not a hum); a breath out to the tagger (sigh >= 0.30, first guess a breath)",
-    "hee_slide": "heard as へぇ (never as は/あ/ふ/う); 0.4-1.8 s; voiced >= 0.6; rises at least 2 st, its peak inside (0.2-0.8 of the voiced part), then slides down at least 2 st; an e (F1 >= 400 Hz)",
+    "hee_slide": "heard as へぇ (never as は/あ/ふ/う); 0.4-1.8 s; voiced >= 0.6; rises at least 2 st and at most 12 (a larger rise is a pitch tracker's octave jump, not her voice), its peak inside (0.2-0.8 of the voiced part), then slides down at least 2 st; an e (F1 >= 400 Hz)",
     "hee": "heard as へぇ (never as は/あ/ふ/う); 0.4-1.6 s; rises at least 2 st, its peak after the first fifth; an e (F1 >= 400 Hz) [whisper: no voice, so no contour]",
     "un": "heard as うん/ん; 0.15-0.8 s; one pulse; voiced >= 0.7; no question rise (net <= +2 st); closed (F1 <= 420 Hz, low band >= +8 dB) [whisper: no voice]",
     "mm": "heard as ん/うん; 0.2-0.9 s; one pulse; voiced >= 0.8; net -4..+2 st; closed (F1 <= 330 Hz, low band >= +13 dB) [whisper: no voice]",
@@ -215,6 +216,14 @@ for b, c in cuts.items():
              tail_kana=x.get("tail_kana", ""), kana_after=x.get("kana_after", ""), pulses=x.get("pulses", "[]"),
              tag={k: (v if k == "top" else float(v)) for k, v in tags.get(b, {}).items() if k != "file"},
              **{k: c[k] for k in ("sound", "style", "kind", "way", "name", "src", "from", "to", "status", "note")})
+    # a processed take answers for the line its source take was cut from: the source's job (its next word) and its
+    # edges against the raw line (found when the build reviewed its first write: a breakup made from a cut of
+    # "あははははっ、ひー……やばっ。" still held やばっ)
+    sb = os.path.basename(c["src"]) if c["kind"] == "P" else b
+    sc = cuts.get(sb, c) if c["kind"] == "P" else c
+    m["line_name"], m["line_kind"] = sc["name"], sc["kind"]
+    if c["kind"] == "P" and sb in extra:
+        for k in ("raw_pre_db", "raw_post_db", "next_gap_s", "prev_gap_s"): m["src_" + k] = fnum(extra[sb].get(k))
     rows.append(m)
 
 
@@ -285,8 +294,8 @@ def adult(m):
 def heard_check(m):
     s = m["sound"]; wt = m["whisper"] or ""
     wr, kr = reading(wt), reading(m["kana"])
-    pr = reading(post.get(m["name"], "")); key = pr[:2] if len(pr) >= 2 else pr
-    if m["kind"] == "L" and key and (key in wr or key in kr): return f"leak ({key})"
+    pr = reading(post.get(m["line_name"], "")); key = pr[:2] if len(pr) >= 2 else pr
+    if m["line_kind"] == "L" and key and (key in wr or key in kr): return f"leak ({key})"
     foreign = lambda r: sum(ch not in OWN[s] for ch in r)
     if max(foreign(wr), foreign(kr)) >= 3 or min(foreign(wr), foreign(kr)) >= 2:
         return f"heard a word ({wt} | {m['kana']})"
@@ -308,7 +317,7 @@ def heard_check(m):
         raw_e = (m.get(end) or "").strip("《》 ")
         if raw_e in SILENCE: continue
         er = reading(raw_e)
-        if m["kind"] == "L" and ((key and key in er) or (k1 and k1 in er)): return f"edges ({end}: {m.get(end)}: the next word)"
+        if m["line_kind"] == "L" and ((key and key in er) or (k1 and k1 in er)): return f"edges ({end}: {m.get(end)}: the next word)"
         if s == "heh" and er.replace("ッ", "").count("ヘ") + er.replace("ッ", "").count("フ") >= 2: return f"edges ({end}: {m.get(end)})"
         if foreign(er) >= 3: return f"edges ({end}: {m.get(end)}: a word)"
     return ""
@@ -362,6 +371,12 @@ def edge(m):
     if m["kind"] == "P":
         if lv[:2].max() > top - 30: return "edge (processed: start)"
         if lv[-2:].max() > top - 30: return "edge (processed: end)"
+        if m["line_kind"] != "L": return ""
+        pre, po, ng, pg = (m.get("src_" + k) for k in ("raw_pre_db", "raw_post_db", "next_gap_s", "prev_gap_s"))
+        if pre is not None and pre > -25: return f"edge (its source: raw before the cut {pre:.0f} dB)"
+        if po is not None and po > -25: return f"edge (its source: raw after the cut {po:.0f} dB)"
+        if ng is not None and ng < EDGE_GAP: return f"edge (its source: next sound {ng * 1000:.0f} ms after the noise)"
+        if pg is not None and pg < EDGE_GAP: return f"edge (its source: a sound {pg * 1000:.0f} ms before the noise)"
         return ""
     if lv[-8:-6].max() > top - 20: return "edge (end of the cut)"
     pre, po = m.get("raw_pre_db"), m.get("raw_post_db")
