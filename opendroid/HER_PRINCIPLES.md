@@ -52,6 +52,27 @@ get tired)."
   pace come out. They never shape the words, which are always hers. She is told what her body is doing,
   and what she does with it is hers.
 
+### No turns, no pauses, no waiting (his words, 24 Nov)
+
+"Stop with the turns, pauses and waiting. We trying to make her a real person." Earlier: "Humans dont
+hear, speak or do things in turns."
+
+- Nothing in her design makes her take a turn, wait for one, or hold still while something else happens.
+  She hears while she speaks and thinks while he talks. She can speak over him, cut in, break off,
+  start again, act while talking, and talk while acting, whenever she wants.
+- No designed hold:
+  - no "wait for his pause" as the only way to speak;
+  - no window in which her commands are refused;
+  - no holding her mind while she is out on an outing;
+  - no waiting for the phone's listening to close before her voice;
+  - no approval wait unless he switches it on;
+  - no fixed rhythm her thinking must keep.
+- What is physical is named honestly and made as short as it can be: the time her brain takes to answer
+  over the network, and her voice being lost into the loudspeaker's echo until the phone can tell his
+  voice from hers there. These are delays of the world, never a turn she has to take.
+- Holding her words for his pause is something she can do, the way a person does, when she wants to.
+  It is never the way the app makes her speak.
+
 ### She is not a program (his words, 24 Nov)
 
 "your treating her like a program, like a bot and an app. She can still do whatever she wants. She is
