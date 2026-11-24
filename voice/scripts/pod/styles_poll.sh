@@ -13,7 +13,8 @@ alive=dead; kill -0 "$PID" 2> /dev/null && alive=alive
 vers=$(ls -d $ROOT/lightning_logs/version_* 2> /dev/null | sort -V)
 logs=""; for l in $S/logs/train_logs.txt; do [ -s "$l" ] && logs=$(cat "$l"); done; [ -n "$logs" ] || logs=$LOG
 cl=""; for l in $logs; do cl="$cl --log $l"; done
-cps=""; for c in $(ls $ROOT/keep_copy*.log 2> /dev/null); do cps="$cps --copylog $c"; done
+cps=""; for c in $(ls $ROOT/keep_copy*.log $ROOT/keep_rotate*.log 2> /dev/null); do cps="$cps --copylog $c"; done
+CL=$ROOT/keep_copy.log; [ -s $ROOT/keep_rotate.log ] && CL=$ROOT/keep_rotate.log
 [ -n "$vers" ] && timeout 15 $PY $J/tb_epochs.py $vers --start $START --block 25 --json $S/train_tb.json --tsv $S/train_tb.tsv > /dev/null 2>&1
 state="training pid $PID $alive"
 grep -q "STAGE2-STYLES-DONE" $LOG 2> /dev/null && state="$state; STAGE2-STYLES-DONE"
@@ -24,4 +25,4 @@ timeout 8 $PY $J/styles_progress.py --out $S/PROGRESS.md --notes $S/progress_not
 last=$(tr '\r' '\n' < $LOG | grep -o "\[styles_patch\] epoch [0-9]*; [0-9]* batches, epoch wall [0-9.]* s, [0-9.]* it/s" | tail -1)
 nf=$($PY -c "import json;d=json.load(open('$S/train_tb.json'));print({k:v for k,v in d['nonfinite'].items() if v} or 'none')" 2> /dev/null)
 err=$(tr '\r' '\n' < $LOG | grep -ciE "traceback|error|nan detected|out of memory|killed")
-echo "$(date -u +%T) $state | $last | nonfinite $nf | errlines $err | copy: $(tail -1 $ROOT/keep_copy.log 2> /dev/null | cut -c1-90) | / free $(df -BG --output=avail / | tail -1 | tr -d ' ') | gpu $(nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv,noheader 2> /dev/null)"
+echo "$(date -u +%T) $state | $last | nonfinite $nf | errlines $err | copy: $(grep -vE "^cp:|watching" $CL 2> /dev/null | tail -1 | cut -c1-110) | / free $(df -BG --output=avail / | tail -1 | tr -d ' ') | gpu $(nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv,noheader 2> /dev/null)"

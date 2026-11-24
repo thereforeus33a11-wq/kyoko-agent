@@ -183,10 +183,10 @@ for tg in TAGS:
     if os.path.exists(f"{B}/asr_{tg}.jsonl"):
         for l in open(f"{B}/asr_{tg}.jsonl", encoding="utf-8"):
             r = json.loads(l); heard[os.path.basename(r["file"])] = r["text"]
-post = {}
+post, jkind = {}, {}
 for l in open(f"{B}/meta_all.tsv", encoding="utf-8"):
     q = l.rstrip("\n").split("\t")
-    if len(q) >= 6 and q[0] != "name": post[q[0]] = q[4]
+    if len(q) >= 6 and q[0] != "name": post[q[0]] = q[4]; jkind[q[0]] = q[3]
 # calibration: the bank's own takes measured with the same code (style and natural references)
 calm = {r["file"]: r for r in read_tsv(f"{CAL}/measure.tsv")}
 calx = {r["file"]: r for r in read_tsv(f"{CAL}/extra.tsv")}
@@ -221,7 +221,10 @@ for b, c in cuts.items():
     # "あははははっ、ひー……やばっ。" still held やばっ)
     sb = os.path.basename(c["src"]) if c["kind"] == "P" else b
     sc = cuts.get(sb, c) if c["kind"] == "P" else c
-    m["line_name"], m["line_kind"] = sc["name"], sc["kind"]
+    # the job's own kind: a cut the cutter took as the sound alone ("alone": no word heard in the raw take) of a
+    # line that had words after the noise is still checked for that line's next word
+    m["line_name"] = sc["name"]; m["line_kind"] = "L" if jkind.get(sc["name"]) == "L" else sc["kind"]
+    m["line_status"] = sc["status"]
     if c["kind"] == "P" and sb in extra:
         for k in ("raw_pre_db", "raw_post_db", "next_gap_s", "prev_gap_s"): m["src_" + k] = fnum(extra[sb].get(k))
     rows.append(m)
@@ -518,6 +521,8 @@ def check(m, cand_ref=None, final=False):
     a = adult(m)
     if a: return a
     if m["whisper"] is None: return "not heard by whisper"
+    if m["line_kind"] == "L" and m["line_status"] == "alone":
+        return "cut (a take of a line cut whole as the sound alone: the line's next word may be inside it)"
     h = heard_check(m)
     if h: return h
     t = tagger(m)
