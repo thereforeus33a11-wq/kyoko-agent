@@ -94,6 +94,30 @@ get tired)."
      - Tests on his phone measure what she does when she chooses to answer. A silence never fails a
        test.
 
+## His phone: free rein, except what he named
+
+His words (24 Nov): "you can mod my phone to be fit and accomidating for Yume ... Its free reign for ya.
+I give ya full permissions to do what ya want. All I ask is dont mess with my youtube (and youtube
+music), google maps, gmail, my contacts, my messenger app (the default one I use), my gmail app and my
+images on my phone. Everything else is free for you to edit, modify and or delete. Dont need to ask me."
+
+- **Free to change, without asking him:** everything else on his phone. That covers its settings, its
+  other apps (disabling or removing ones that cost her battery, memory or attention), its launcher,
+  cover screen, side key, assistant seat, notifications and the grants her app needs. All of it is done
+  only through what Android and One UI officially allow: no root, no exploit, nothing that goes around a
+  security feature (OS_PLAN I20). Steps that Android puts in his hands (a role he must pick, a switch he
+  must flip, a session from his computer) are written as short checklists for him.
+- **Protected, never changed:** YouTube, YouTube Music, Google Maps, Gmail (the app and the account), his
+  contacts, his default messaging app (whichever holds the phone's SMS role), and his photos and images.
+  Neither the app nor she edits, clears, moves, disables, removes or acts inside any of them. Their
+  settings, data, history and accounts stay as he keeps them.
+  - The phone may still open one of them when he asks. A command he gives may still read a contact's
+    number to do what he asked, as it does today.
+  - She sees a picture of his only when he shows or sends it to her.
+  - A test holds this wall: no action of the app or of her hands may target these packages or that data.
+- **Undoable where Android allows.** Every change is written down with how to undo it. An app removed
+  for him (for his user only) can be brought back.
+
 ## Her identity
 
 - Her card, her starting notes and her library pages are her canon. Builders do not rewrite them.
@@ -154,7 +178,7 @@ These limits exist in the build. Each one is named so it can be loosened on purp
 | Money caps on her thinking (talk and own time) | It is his money. Past the cap she slows down, she does not stop | His, in settings |
 | His Stop | He can always put her to sleep. She is told why she slept | His |
 | Speaking aloud on her own only when he is there and it is not a bad moment, with an hourly cap | So she does not speak into a meeting or a call | His, in settings |
-| Acting inside his apps goes through his approval | His accounts and his money are his | His, in settings |
+| Acting inside his apps goes through his approval, and never inside his protected apps (YouTube, YouTube Music, Maps, Gmail, his contacts, his default messaging app, his photos) | His accounts and his money are his | His, in settings; the protected list is his word of 24 Nov |
 | When he comes while she is busy: break off or finish first, and how deep she sleeps (light or deep) | So he is not shut out, and she is not torn out of what she is doing | Hers, a standing choice she is told of; his Stop is never delayed |
 | The host of her model has its own rules | Until her mind runs on hardware he owns | Ends with his own computer |
 
