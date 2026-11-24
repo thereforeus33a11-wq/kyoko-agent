@@ -7,20 +7,26 @@
 #
 # Storage. /workspace is MooseFS: many small files there hung the previous pod (a uv cache on it, five installs
 # writing to it at once). So:
-#  - container disk (/w and the rest of /, 50 GB, wiped when the pod stops): the envs, the repos, the uv cache
+#  - container disk (/w and the rest of /, 150 GB, wiped when the pod stops): the envs, the repos, the uv cache
 #    /w/uvcache (UV_LINK_MODE=hardlink: every env links its files from it, so torch is stored once), uv's Pythons
 #    /w/uvpython, her data /w/yume (xfer_finish2.sh), unpacked archives (kana recogniser, nltk_data), every log;
 #  - volume, big single files only:
 #      /workspace/yume/cache/uvcache.tar   /w/uvcache + /w/uvpython, written when every env passes; restored at
 #                                          the start when /w/uvcache is missing (the envs then link from it again)
+#      /workspace/yume/cache/envs.freeze.txt  every env's packages and versions as that tar gives them
 #      /workspace/yume/models/             fetched once: gsv_pretrained/ (linked into GPT-SoVITS),
 #                                          faster-whisper-large-v3/, hf_range/ (Irodori, HF_HOME), piper-base/,
 #                                          and single archives (the kana recogniser's tar.bz2, nltk_data.zip)
 #    Every big read or write on the volume holds /w/locks/volume, so only one runs at a time.
 #  - the old paths on top: /w/job/{scripts,data,out}, /w/range/scripts, /workspace/{teacher,range_proto,models,...}.
 #
-# Idempotent and safe to re-run after a pod stop: her data comes back first (xfer_finish2.sh), then the uv cache
+# Idempotent and safe to re-run after a pod stop: her data comes back first (xfer_finish2.sh), then the work the
+# watchdog archived before it stopped the pod (range_v1_archive/{range_v1,range_build}.tar), then the uv cache
 # (uvcache.tar), and an env whose stamp (/w/stamps) is there is only checked again, not reinstalled.
+# A restore is not a new build: with the cache back from the tar, every install runs from the cache alone first
+# (UV_OFFLINE: the saved build's versions, nothing fetched, so unpinned packages cannot move), and goes online only
+# for what the cache does not hold (logged as OFFLINE-MISS). The envs are then compared with envs.freeze.txt.
+# At the end it installs /w/watchdog.sh (range/watchdog.sh) and starts it unless it runs or /w/NO_WATCHDOG is there.
 #
 # Inputs on the volume (uploaded from the workstation):
 #   /workspace/yume/setup/pod_scripts.tgz          voice/scripts/pod (generic scripts, no voice data)
@@ -38,7 +44,7 @@ if [ "${BISON_LOCAL:-0}" != 1 ]; then   # bash reads a script as it runs: run a 
 fi
 Y=/workspace/yume; M=$Y/models; ST=$Y/setup; CACHE=$Y/cache
 J=/w/job; STAMP=/w/stamps; ELOG=/w/logs; VLOCK=/w/locks/volume
-UVTAR=$CACHE/uvcache.tar
+UVTAR=$CACHE/uvcache.tar; FREEZE=$CACHE/envs.freeze.txt
 GSV_COMMIT=6d51ffc; PIPER_COMMIT=46c3c71; IRODORI_COMMIT=f01c08cd40c0afa62a862439a5de12f6dcf62054
 TORCH="torch==2.7.1 torchaudio==2.7.1"; CU128=https://download.pytorch.org/whl/cu128
 CMUDICT_SHA=81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22
@@ -77,6 +83,13 @@ gpu_check() {  # gpu_check <python>: torch sees the Blackwell card and runs a ke
 print('torch', torch.__version__, 'cuda', torch.version.cuda, torch.cuda.get_device_name(0), 'sm_%d%d' % torch.cuda.get_device_capability(0), \
 'archs', ','.join(torch.cuda.get_arch_list()), 'matmul ok' if y == y else 'matmul NaN'); assert y == y"
 }
+uvc() {  # uvc <uv arguments>: uv, from the restored cache alone first; online for what the cache does not hold
+  if done_ uvcache-from-tar; then
+    UV_OFFLINE=1 uv "$@" && return 0
+    echo "OFFLINE-MISS: the restored cache alone did not do: uv $*  (going online)"
+  fi
+  uv "$@"
+}
 hf_get() {  # hf_get <python> <repo> [local dir]: one repo, one file at a time (call through vol)
   $1 -c "import sys; from huggingface_hub import snapshot_download as s; \
 print(s(sys.argv[1], local_dir=(sys.argv[2] or None), max_workers=1))" "$2" "${3:-}"
@@ -97,6 +110,19 @@ if [ ! -s /w/yume/teacher/y52-e10.ckpt ] || [ ! -d /w/yume/range_proto/refs ]; t
 fi
 echo "her data: $(find /w/yume -type f | wc -l) files in /w/yume ($(du -sh /w/yume | cut -f1))"
 
+# --- the work the watchdog archived before it stopped the pod (range/watchdog.sh): back when the folder is empty ---
+# Not SETUP_OK: that is only true for the container the smoke tests ran in.
+for d in range_v1 range_build; do
+  a=$Y/range_v1_archive/$d.tar
+  if [ -s $a ] && [ -z "$(find /w/$d -type f -print -quit 2>/dev/null)" ]; then
+    if vol tar xf $a -C /w --skip-old-files --exclude=range_build/SETUP_OK; then
+      echo "restored /w/$d from $a: $(find /w/$d -type f | wc -l) files, $(du -sh /w/$d | cut -f1)"
+    else
+      echo "COULD NOT restore /w/$d from $a (left as it is)"
+    fi
+  fi
+done
+
 # --- system packages (setup.sh's list), only what the image lacks ---
 step apt
 need=""
@@ -112,9 +138,13 @@ step "uv cache"
 for old in /workspace/uvcache_range /w/uvcache; do   # an earlier draft linked these to /workspace/yume/uvcache
   if [ -L $old ] && [ "$(readlink $old)" != /w/uvcache ]; then rm $old; fi
 done
-if [ ! -d /w/uvcache ] && [ -s $UVTAR ]; then
+if [ ! -d /w/uvcache ] && [ -s $UVTAR ]; then   # whole or not at all: a restore that broke off leaves no half cache
   t0=$(date +%s)
-  vol tar xf $UVTAR -C /w
+  rm -rf /w/uvrestore.tmp /w/uvpython; mkdir -p /w/uvrestore.tmp
+  vol tar xf $UVTAR -C /w/uvrestore.tmp
+  [ ! -d /w/uvrestore.tmp/uvpython ] || mv /w/uvrestore.tmp/uvpython /w/uvpython
+  mv /w/uvrestore.tmp/uvcache /w/uvcache; rmdir /w/uvrestore.tmp
+  mark uvcache-from-tar   # the installs below: from this cache alone first (uvc)
   echo "restored $UVTAR in $(( $(date +%s) - t0 )) s: $(du -sh /w/uvcache | cut -f1) cache, $(du -sh /w/uvpython 2>/dev/null | cut -f1) Pythons"
 fi
 mkdir -p /w/uvcache
@@ -161,11 +191,11 @@ build_gsv() {  # setup.sh: GPT-SoVITS 6d51ffc and gsv-env; setup_lang.sh's gsv-e
   local GP=/w/gsv-env/bin/python
   if ! done_ gsv-env; then
     [ -x $GP ] || uv venv -q -p 3.11 /w/gsv-env
-    uv pip install -q --python $GP $TORCH --index-url $CU128
-    uv pip install -q --python $GP -r requirements.txt numpy==1.26.4 transformers==4.57.6 gradio==4.44.1 \
+    uvc pip install -q --python $GP $TORCH --index-url $CU128
+    uvc pip install -q --python $GP -r requirements.txt numpy==1.26.4 transformers==4.57.6 gradio==4.44.1 \
         $TORCH resampy pyworld soundfile sherpa-onnx
-    uv pip install -q --python $GP faster-whisper==1.1.1 requests   # as stage1_v2.sh (speak_checked.py)
-    uv pip install -q --python $GP praat-parselmouth==0.4.7         # measure.py
+    uvc pip install -q --python $GP faster-whisper==1.1.1 requests   # as stage1_v2.sh (speak_checked.py)
+    uvc pip install -q --python $GP praat-parselmouth==0.4.7         # measure.py
     mark gsv-env
   fi
   # Pretrained models: big files fetched once onto the volume, linked into the tree (fast_langdetect stays local:
@@ -204,14 +234,14 @@ build_piper() {  # setup.sh: piper1-gpl 46c3c71, piper-env, pyopenjtalk 0.4.1, i
   local PP=/w/piper-env/bin/python
   if ! done_ piper-env; then
     [ -x $PP ] || uv venv -q -p 3.11 /w/piper-env
-    uv pip install -q --python $PP $TORCH --index-url $CU128
-    uv pip install -q --python $PP 'scikit-build<1' 'cmake>=3.18,<4' cython
-    uv pip install -q --python $PP -e '.[train]' torch==2.7.1 pyopenjtalk==0.4.1 sherpa-onnx onnx onnxruntime soundfile \
+    uvc pip install -q --python $PP $TORCH --index-url $CU128
+    uvc pip install -q --python $PP 'scikit-build<1' 'cmake>=3.18,<4' cython
+    uvc pip install -q --python $PP -e '.[train]' torch==2.7.1 pyopenjtalk==0.4.1 sherpa-onnx onnx onnxruntime soundfile \
         'scikit-build<1' 'cmake>=3.18,<4'
     # README: the phone runs plain pyopenjtalk 0.4.1, so the voice trains on its labels, not pyopenjtalk-plus's.
     if $PP -c "import importlib.metadata as m; m.version('pyopenjtalk-plus')" 2>/dev/null; then
       uv pip uninstall -q --python $PP pyopenjtalk-plus
-      uv pip install -q --python $PP --reinstall pyopenjtalk==0.4.1
+      uvc pip install -q --python $PP --reinstall pyopenjtalk==0.4.1
     fi
     ( source /w/piper-env/bin/activate && ./build_monotonic_align.sh && python setup.py build_ext --inplace )
     mark piper-env
@@ -239,8 +269,8 @@ build_dfn() {  # setup_clean.sh: DeepFilterNet in its own env (its model in ~/.c
   local DP=/w/dfn-env/bin/python
   if ! done_ dfn-env; then
     [ -x $DP ] || uv venv -q -p 3.11 /w/dfn-env
-    uv pip install -q --python $DP $TORCH --index-url $CU128
-    uv pip install -q --python $DP deepfilternet soundfile numpy
+    uvc pip install -q --python $DP $TORCH --index-url $CU128
+    uvc pip install -q --python $DP deepfilternet soundfile numpy
     mark dfn-env
   fi
   $DP -c "from df.enhance import init_df; init_df(); print('dfn ok')"
@@ -252,9 +282,9 @@ build_asr() {  # setup_lang.sh: faster-whisper large-v3 in its own env, the mode
   local AP=/w/asr-env/bin/python
   if ! done_ asr-env; then
     [ -x $AP ] || uv venv -q -p 3.11 /w/asr-env
-    uv pip install -q --python $AP faster-whisper==1.1.1 requests 'nvidia-cublas-cu12' 'nvidia-cudnn-cu12==9.*' \
+    uvc pip install -q --python $AP faster-whisper==1.1.1 requests 'nvidia-cublas-cu12' 'nvidia-cudnn-cu12==9.*' \
         soundfile huggingface_hub
-    uv pip install -q --python $AP whisper-normalizer || echo "whisper-normalizer missing: check_lang.py falls back to its own normalizer"
+    uvc pip install -q --python $AP whisper-normalizer || echo "whisper-normalizer missing: check_lang.py falls back to its own normalizer"
     mark asr-env
   fi
   [ -s $M/faster-whisper-large-v3/model.bin ] || vol hf_get $AP Systran/faster-whisper-large-v3 $M/faster-whisper-large-v3
@@ -270,7 +300,7 @@ build_irodori() {  # the range trial's setup_irodori.sh: Irodori-TTS f01c08cd, i
   [ -d irodori/.git ] || git clone -q https://github.com/Aratako/Irodori-TTS.git irodori
   cd irodori && git checkout -q $IRODORI_COMMIT
   if ! done_ irodori-env; then
-    UV_PROJECT_ENVIRONMENT=/w/irodori-env uv sync --extra cu128 --frozen
+    UV_PROJECT_ENVIRONMENT=/w/irodori-env uvc sync --extra cu128 --frozen
     mark irodori-env
   fi
   # The range scripts read the models from HF_HOME=/workspace/models/hf_range (the hub cache: a few big blobs).
@@ -333,6 +363,24 @@ CMUDICT=$J/data/cmudict.dict PIPER_SRC=/w/piper1-gpl/src /w/piper-env/bin/python
   > $ELOG/bison_unittest.log 2>&1 || { grep -v "^WARNING" $ELOG/bison_unittest.log | tail -20; step BISON-SETUP-FAILED; exit 1; }
 grep -v "^WARNING" $ELOG/bison_unittest.log | tail -3
 
+# --- what the envs hold, against the saved build (a restore must give the same versions) ---
+step "env versions"
+for e in gsv piper dfn asr irodori; do
+  uv pip freeze --python /w/$e-env/bin/python 2>/dev/null | sed "s/^/$e\t/"
+done | LC_ALL=C sort > $ELOG/envs.freeze.txt
+miss=$(cat $ELOG/bison_setup_*.log 2>/dev/null | grep -c '^OFFLINE-MISS' || true)
+echo "$(wc -l < $ELOG/envs.freeze.txt) packages in the five envs ($ELOG/envs.freeze.txt); installs that went online after a cache miss: $miss"
+[ "$miss" = 0 ] || cat $ELOG/bison_setup_*.log | grep '^OFFLINE-MISS' | cut -c1-200
+if [ -s $FREEZE ]; then
+  if diff $FREEZE $ELOG/envs.freeze.txt > $ELOG/envs.freeze.diff; then
+    echo "envs: the same packages and versions as the saved build ($FREEZE)"
+  else
+    echo "ENVS-CHANGED against the saved build ($FREEZE; < saved, > now):"; grep '^[<>]' $ELOG/envs.freeze.diff | head -40
+  fi
+else
+  echo "no $FREEZE yet: nothing to compare with"
+fi
+
 # --- every env passed: the uv cache onto the volume as one tar (when it is new or this run added to it) ---
 # "Added to it" by the cache's entries (unpacked wheels, built sdists, git checkouts, Pythons), not by mtimes:
 # uv python install refreshes its version links on every run.
@@ -351,10 +399,31 @@ if [ "${CACHE_SAVE:-1}" = 1 ]; then
     vol tar cf $UVTAR.part -C /w --exclude='uvcache/.tmp*' --exclude='uvcache/builds-v0' uvcache uvpython \
       || { rm -f $UVTAR.part; echo "could not write $UVTAR (volume quota?)"; step BISON-SETUP-FAILED; exit 1; }
     mv -f $UVTAR.part $UVTAR && echo "$sig" > $UVTAR.sig
+    cp $ELOG/envs.freeze.txt $FREEZE   # the envs this tar gives
+    mark uvcache-from-tar              # the local cache is the tar's now
     echo "wrote $UVTAR: $(du -h $UVTAR | cut -f1) in $(( $(date +%s) - t0 )) s"
   else
     echo "uv cache unchanged since $UVTAR was written"
+    # the tar was written before envs.freeze.txt existed: the envs of this run are what it gives
+    if [ ! -s $FREEZE ]; then cp $ELOG/envs.freeze.txt $FREEZE; echo "wrote $FREEZE"; fi
   fi
+fi
+
+# --- the watchdog (range/watchdog.sh stops a pod nobody uses; a fresh container has none running) ---
+step watchdog
+if [ -s $J/scripts/range/watchdog.sh ]; then
+  cp $J/scripts/range/watchdog.sh /w/watchdog.sh
+  wpid=$(cat /w/watchdog/pid 2>/dev/null || true)
+  if [ -e /w/NO_WATCHDOG ]; then
+    echo "/w/NO_WATCHDOG is there: /w/watchdog.sh installed, not started"
+  elif [ -n "$wpid" ] && grep -qa watchdog.sh /proc/$wpid/cmdline 2>/dev/null; then
+    echo "running already (pid $wpid; it runs its own copy: stop that pid and start /w/watchdog.sh to take a new version)"
+  else
+    setsid nohup bash /w/watchdog.sh > /dev/null 2>&1 < /dev/null &
+    sleep 3; echo "started /w/watchdog.sh: pid $(cat /w/watchdog/pid 2>/dev/null), log /w/watchdog/watchdog.log"
+  fi
+else
+  echo "no range/watchdog.sh in pod_scripts.tgz: none installed"
 fi
 
 step "where things are"
@@ -371,7 +440,8 @@ cat <<EOF
   models (volume)         $M: gsv_pretrained (linked into GPT-SoVITS), faster-whisper-large-v3, hf_range (Irodori),
                           piper-base (/w/piper-base), wavlm-base-plus-sv (-> /w/yume), $SHERPA.tar.bz2, nltk_data.zip
   kana recogniser         /w/$SHERPA, also at /tmp/claude-0/voice/$SHERPA for asr_kana.py
-  logs                    /w/logs/bison_setup.log, /w/logs/bison_setup_<env>.log
+  logs                    /w/logs/bison_setup.log, /w/logs/bison_setup_<env>.log, /w/logs/envs.freeze.txt
+  watchdog                /w/watchdog.sh, its log and state in /w/watchdog/ (off with: touch /w/NO_WATCHDOG)
 EOF
 du -sh /w/uvcache /w/uvpython 2>/dev/null
 df -h / | tail -1
