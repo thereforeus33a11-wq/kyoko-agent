@@ -72,3 +72,28 @@ This page and checkpoint 04 on his Drive (the same text, with the app bundle and
 2. Restore the app from the bundle. Apply `g1-uncommitted.patch` on `g1` at `7362c30` if `g1` has not moved past it.
 3. Check the pod: is it stopped (`/workspace/yume/logs/watchdog_stopped.txt`), and where did training get to (`piper-styles-keep/`)?
 4. Re-run any job that did not finish from its script in `session-work.tgz` (`wfscripts/` and the top-level `.js` files). Each one says what it needs and what it writes.
+# Update, 24 Nov 12:55 UTC: the pod is stopped
+
+- The Runpod balance was $5.17 (prepaid). The pod costs $2.69 an hour, so it would have run the balance to zero by about 14:45 UTC. That leaves nothing for the six network volumes, and Runpod can delete volumes on an account with no money.
+- So the pod `k0a4mlqctehiv8` was stopped on purpose, after making sure nothing would be lost:
+  - Training reached a kept checkpoint at epoch 1124. Its full checkpoint is on the volume: `/workspace/yume/piper-styles-keep/keep-epoch=1124.ckpt`, with its `.sha256`.
+  - The small inference copies of every kept checkpoint (999 to 1124) are on the build machine: `/home/user/voicedata/piper-styles-keep/`.
+  - The training's plan, progress notes and log are on the volume: `/workspace/yume/range_v1_archive/styles_notes.tgz`.
+  - The four style sets, her sound bank (rounds 1 to 3, 367 takes) and her whole data pack were already on the volume.
+- **To go on** once the balance is topped up:
+  1. Start the pod.
+  2. Run `bison_setup.sh`.
+  3. Resume the run from `keep-epoch=1124.ckpt` with `stage2_styles.sh` (its PLAN.md is in `styles_notes.tgz`).
+  4. Score the candidates and check them (`phone_voice_styles.js`).
+- **His six network volumes, about 270 GB in all, roughly $1 a day:**
+
+  | Volume | Size | Where | Kind |
+  |---|---|---|---|
+  | `pzgwdzite9` | 60 GB | EUR-IS-1 | standard; all of her current data |
+  | `wdv8r69v0m` | 30 GB | EUR-IS-1 | standard |
+  | `vo2b5tpeq5` | 30 GB | US-CA-2 | high performance |
+  | `l4uuxm74x5` | 40 GB | US-CA-2 | high performance |
+  | `fy2orc959d` | 10 GB | US-CA-2 | high performance |
+  | `3q8qrphh8q` | 100 GB | CA-MTL-4 | high performance |
+
+  What is on the other five is not known. Reading them needs a small pod in each data centre. Once the balance allows: look inside each, move anything of hers into `pzgwdzite9` (made bigger), and only then remove the empty ones. He gave his word for this on 24 Nov.
