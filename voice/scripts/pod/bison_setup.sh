@@ -21,7 +21,7 @@
 #  - the old paths on top: /w/job/{scripts,data,out}, /w/range/scripts, /workspace/{teacher,range_proto,models,...}.
 #
 # Idempotent and safe to re-run after a pod stop: her data comes back first (xfer_finish2.sh), then the work the
-# watchdog archived before it stopped the pod (range_v1_archive/{range_v1,range_build}.tar), then the uv cache
+# watchdog archived before it stopped the pod (range_v1_archive/{range_v1,range_build}.tar, once), then the uv cache
 # (uvcache.tar), and an env whose stamp (/w/stamps) is there is only checked again, not reinstalled.
 # A restore is not a new build: with the cache back from the tar, every install runs from the cache alone first
 # (UV_OFFLINE: the saved build's versions, nothing fetched, so unpinned packages cannot move), and goes online only
@@ -110,17 +110,21 @@ if [ ! -s /w/yume/teacher/y52-e10.ckpt ] || [ ! -d /w/yume/range_proto/refs ]; t
 fi
 echo "her data: $(find /w/yume -type f | wc -l) files in /w/yume ($(du -sh /w/yume | cut -f1))"
 
-# --- the work the watchdog archived before it stopped the pod (range/watchdog.sh): back when the folder is empty ---
-# Not SETUP_OK: that is only true for the container the smoke tests ran in.
+# --- the work the watchdog archived before it stopped the pod (range/watchdog.sh): back once per container ---
+# Once (stamp restore-<folder>, set by the first run in a container whether or not there was an archive): a later
+# run must not bring back files deleted since. Never over a file that is there. Not SETUP_OK: that is only true for
+# the container the smoke tests ran in.
 for d in range_v1 range_build; do
   a=$Y/range_v1_archive/$d.tar
-  if [ -s $a ] && [ -z "$(find /w/$d -type f -print -quit 2>/dev/null)" ]; then
+  done_ restore-$d && continue
+  if [ -s $a ]; then
     if vol tar xf $a -C /w --skip-old-files --exclude=range_build/SETUP_OK; then
-      echo "restored /w/$d from $a: $(find /w/$d -type f | wc -l) files, $(du -sh /w/$d | cut -f1)"
+      echo "restored /w/$d from $a ($(date -u -r $a +%FT%TZ)): now $(find /w/$d ! -type d | wc -l) files, $(du -sh /w/$d | cut -f1)"
     else
-      echo "COULD NOT restore /w/$d from $a (left as it is)"
+      echo "COULD NOT restore /w/$d from $a (left as it is; tried again at the next run)"; continue
     fi
   fi
+  mark restore-$d
 done
 
 # --- system packages (setup.sh's list), only what the image lacks ---
@@ -382,14 +386,17 @@ else
 fi
 
 # --- every env passed: the uv cache onto the volume as one tar (when it is new or this run added to it) ---
-# "Added to it" by the cache's entries (unpacked wheels, built sdists, git checkouts, Pythons), not by mtimes:
-# uv python install refreshes its version links on every run.
+# "Added to it" by what the cache fetched or built (wheels and sdists by name and version, git checkouts, Pythons),
+# not by mtimes (uv python install refreshes its version links on every run) and not by what uv makes anew on every
+# restore: the editable build of the local piper tree (a new sdists-v*/editable/<id> and a new archive-v0 entry each
+# time; the first signature counted those, so every restore would have thrown the 20 GB tar away and written it again).
 cache_sig() {
-  (cd /w && find uvcache/archive-v0 uvpython -mindepth 1 -maxdepth 1; find uvcache/sdists-v* uvcache/git-v* -mindepth 1 -maxdepth 4) \
-    2>/dev/null | LC_ALL=C sort | sha256sum | cut -d' ' -f1
+  (cd /w && find uvpython -mindepth 1 -maxdepth 1
+   find uvcache/wheels-v* uvcache/sdists-v* -mindepth 1 -maxdepth 4 -not -path '*/editable' -not -path '*/editable/*' -not -name '*.lock' -not -name '.lock'
+   find uvcache/git-v*/db uvcache/git-v*/checkouts -mindepth 1 -maxdepth 2) 2>/dev/null | LC_ALL=C sort | sha256sum | cut -d' ' -f1
 }
 if [ "${CACHE_SAVE:-1}" = 1 ]; then
-  sig=$(cache_sig)
+  sig="v2 $(cache_sig)"
   if [ ! -s $UVTAR ] || [ "$(cat $UVTAR.sig 2>/dev/null)" != "$sig" ]; then
     # The volume's quota (about 50 GB: her pack, this tar, the models) has no room for a second copy: the stale
     # tar goes first (the cache it came from is on /w, so nothing is lost if the write fails).
@@ -416,8 +423,8 @@ if [ -s $J/scripts/range/watchdog.sh ]; then
   wpid=$(cat /w/watchdog/pid 2>/dev/null || true)
   if [ -e /w/NO_WATCHDOG ]; then
     echo "/w/NO_WATCHDOG is there: /w/watchdog.sh installed, not started"
-  elif [ -n "$wpid" ] && grep -qa watchdog.sh /proc/$wpid/cmdline 2>/dev/null; then
-    echo "running already (pid $wpid; it runs its own copy: stop that pid and start /w/watchdog.sh to take a new version)"
+  elif [ -n "$wpid" ] && grep -qa /w/watchdog/run.sh /proc/$wpid/cmdline 2>/dev/null; then   # it runs its own copy
+    echo "running already (pid $wpid)$(cmp -s /w/watchdog/run.sh /w/watchdog.sh || echo ", an OLDER version than /w/watchdog.sh: to change, kill $wpid and start /w/watchdog.sh")"
   else
     setsid nohup bash /w/watchdog.sh > /dev/null 2>&1 < /dev/null &
     sleep 3; echo "started /w/watchdog.sh: pid $(cat /w/watchdog/pid 2>/dev/null), log /w/watchdog/watchdog.log"
