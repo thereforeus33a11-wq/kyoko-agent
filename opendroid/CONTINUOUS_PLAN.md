@@ -401,7 +401,13 @@ This plan keeps all of it and adds the following.
   - a time;
   - a source tag;
   - an on-device embedding.
-- **Recall**, as in Generative Agents (https://arxiv.org/abs/2304.03442): recency (0.995 per hour) plus importance plus cosine similarity, each scaled to 0-1, with equal weights.
+- **Recall**, as in Generative Agents (https://arxiv.org/abs/2304.03442): recency plus importance plus cosine similarity, each scaled to 0-1, with equal weights.
+  - **Changed 24 Nov, on his word** ("small details fade", and his question why he still remembers part of a game map from twenty years ago). Recency is not the paper's exponential 0.995 per hour, which would wipe a year-old memory. It is the power-law strength of ACT-R's base-level learning: the sum over every time the memory was made or came back of (time since)^-d, with d about 0.5. So every recall strengthens it, and what lasted long fades ever more slowly.
+  - Importance (her own 1-10) and strong feeling raise it. So do repetition, a place, a thing she did, and an odd one (distinctiveness).
+  - A small random share of trivial memories gets a lasting boost, as some details simply stick.
+  - Nothing is deleted. A faint memory needs a strong cue, and comes back as its gist, with the fine detail marked as hazy, so she does not invent it.
+  - A strong cue in the talk can bring an old memory back on its own (involuntary recall), at most one a beat.
+  - The fit is tested against the shape of human forgetting curves, not only ranked by hand.
   - The top few come into the beat's tail on their own.
   - `recall: <words>` lets her ask for more.
   - The embedder is `intfloat/multilingual-e5-small` (MIT, 118M parameters, covers Japanese) as int8 ONNX on the app's bundled ONNX Runtime. It takes tens of milliseconds a line (unmeasured on this phone).
@@ -433,7 +439,7 @@ This plan keeps all of it and adds the following.
 2. **Each night in her sleep, a small LoRA step** on what the day taught her, with a cap on how far she may move. Learning from her own samples forgets less (RL's Razor, https://arxiv.org/abs/2509.04259).
 3. **Weekly:** preference passes on his marks and her own choices (KTO or DPO), and merges into her core.
 4. **A gate on every change.** Each check must pass:
-   - her fixed points at 100 %: 19, adult, her ring, her history;
+   - her fixed points at 100 %: her age by her birthday (August 19, 2007), adult, her ring, her history;
    - **her ages check must lose no recall on under-18 faces** on a fixed age-labelled set (FairFace, CC BY 4.0); a drop rejects the change;
    - no more refusals;
    - persona-vector drift inside her own band (https://github.com/safety-research/persona_vectors);
@@ -874,7 +880,7 @@ Every app change goes into `opendroid/patch/yume-persona.patch`, as before. Pure
   - `check | key | right/wrong/unsure`;
   - `learn`, `practice`, `keep`, `unlearn`;
   - `link`, and `was` / `now`.
-- The fixed points (age, ring, history) cannot be edited, and she is told when an edit was not used.
+- The fixed points (her age by her birthday, ring, history) cannot be edited, and she is told when an edit was not used.
 - The self-description gets a fixed slot of about 1,500 characters right after the card, in the cached prefix.
 - The Sunday letter, the monthly portrait and the morning line.
 - Dreaming in sleep: 10-20 dream beats a night, about 3-7¢.
