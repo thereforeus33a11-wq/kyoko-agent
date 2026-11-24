@@ -8,7 +8,8 @@
 #              the batches, memory and speed; it fills the cache the real run reuses, and checks the cached ids.
 #   PREPARE_ONLY=1  only the cache (and the style clips' trim widened), then stop.
 #   otherwise  the run to EPOCHS, a kept checkpoint every KEEP_EVERY epochs in KEEP_DIR, each copied to KEEP_VOL
-#              on the volume as soon as it is written (keep_copy.sh).
+#              on the volume as soon as it is written (keep_copy.sh; COPIER=keep_rotate.sh instead keeps only the
+#              newest on the volume and a slim of every one beside it on /w, for a volume too small for all).
 # Settings from the environment: CK (the warm-start checkpoint), EPOCHS, BATCH (48: e974's run was 16 per GPU
 # on 3 GPUs), PRECISION (bf16-mixed, as e974), RESUME_LR (1.5e-5; "none" keeps the checkpoint's rate),
 # RESUME_LR_FINAL (0.33), COND_LR_MULT (10),
@@ -70,11 +71,12 @@ python -m piper.train fit \
   --trainer.precision $PRECISION --trainer.check_val_every_n_epoch ${VAL_EVERY:-25} \
   --trainer.default_root_dir $ROOT --ckpt_path $CK $EXTRA &
 TRAIN=$!
-bash $J/scripts/keep_copy.sh $PIPER_KEEP_DIR $KEEP_VOL $TRAIN > $ROOT/keep_copy.log 2>&1 &
+COPIER=${COPIER:-keep_copy.sh}
+bash $J/scripts/$COPIER $PIPER_KEEP_DIR $KEEP_VOL $TRAIN > $ROOT/${COPIER%.sh}.log 2>&1 &
 COPY=$!
 rc=0; wait $TRAIN || rc=$?
 wait $COPY || true
-cat $ROOT/keep_copy.log
+cat $ROOT/${COPIER%.sh}.log
 [ $rc = 0 ] || { echo "=== $(date -u +%H:%M:%S) piper fit FAILED (exit $rc)"; exit $rc; }
 # The ids Piper cached are the ones the mixed phonemizer gives (and so the phone will), for every sid.
 python $J/scripts/check_ids.py $D/metadata.csv $CACHE $S/ja_JP-yume-medium.onnx.json
