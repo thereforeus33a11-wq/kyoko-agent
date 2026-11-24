@@ -1,8 +1,10 @@
 """Speak lines with a phone voice the way the phone does: text -> phoneme codepoints -> sherpa-onnx.
   --route mixed  the new route: English to IPA from en_ipa_table.json, Japanese through Open JTalk
   --route kana   today's route: every Latin word to katakana (KanaText) and all of it through Open JTalk
-Usage: python phone_test_lang.py <sherpa dir> <lines> <out dir> [--route mixed|kana]
+Usage: python phone_test_lang.py <sherpa dir> <lines> <out dir> [--route mixed|kana] [--sid N]
 <lines>: lines_lang.tsv-style TSV (n, text columns) or one "lang|text" / text per line.
+--sid: the speaker id every line is spoken with (a multi-speaker voice: her style), as the phone passes it.
+--float: write the samples sherpa returns as 32-bit float (default 16-bit PCM), for exact comparisons.
 Each line n becomes <out>/NNNN.wav; <out>/phone_test.tsv has n, seconds, RTF, phonemes, text.
 """
 import argparse
@@ -34,6 +36,8 @@ def main():
     ap.add_argument("sherpa"); ap.add_argument("lines"); ap.add_argument("out")
     ap.add_argument("--route", choices=["mixed", "kana"], default="mixed")
     ap.add_argument("--threads", type=int, default=2)
+    ap.add_argument("--sid", type=int, default=0)
+    ap.add_argument("--float", action="store_true")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     tts = sherpa_onnx.OfflineTts(sherpa_onnx.OfflineTtsConfig(model=sherpa_onnx.OfflineTtsModelConfig(
@@ -54,13 +58,13 @@ def main():
         missing = sorted({p for s in sents for p in s if p not in known})
         if missing:
             print(f"{n}: phonemes without an id {missing}", file=sys.stderr)
-        g = sherpa_onnx.GenerationConfig(); g.sid = 0; g.speed = 1.0
+        g = sherpa_onnx.GenerationConfig(); g.sid = a.sid; g.speed = 1.0
         g.phoneme_codepoints = [[ord(c) for c in s if c in known] for s in sents]
         t0 = time.time()
         r = tts.generate("", g)
         took = time.time() - t0
         x = np.asarray(r.samples, dtype=np.float32)
-        sf.write(os.path.join(a.out, f"{n:04d}.wav"), x, r.sample_rate)
+        sf.write(os.path.join(a.out, f"{n:04d}.wav"), x, r.sample_rate, subtype="FLOAT" if a.float else "PCM_16")
         dur = len(x) / r.sample_rate
         log.write(f"{n}\t{dur:.2f}\t{took / max(0.01, dur):.3f}\t{' / '.join(''.join(s) for s in sents)}\t{text}\n")
         log.flush()
