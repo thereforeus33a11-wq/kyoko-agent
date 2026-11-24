@@ -155,6 +155,7 @@ These limits exist in the build. Each one is named so it can be loosened on purp
 | His Stop | He can always put her to sleep. She is told why she slept | His |
 | Speaking aloud on her own only when he is there and it is not a bad moment, with an hourly cap | So she does not speak into a meeting or a call | His, in settings |
 | Acting inside his apps goes through his approval | His accounts and his money are his | His, in settings |
+| When he comes while she is busy: break off or finish first, and how deep she sleeps (light or deep) | So he is not shut out, and she is not torn out of what she is doing | Hers, a standing choice she is told of; his Stop is never delayed |
 | The host of her model has its own rules | Until her mind runs on hardware he owns | Ends with his own computer |
 
 ## The gate
