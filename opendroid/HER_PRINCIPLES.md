@@ -228,3 +228,8 @@ Before any build goes to his phone, a reviewer who did not write the code checks
    nothing answers, acknowledges or signals for her.
 9. Her own mind: no new line pushes her toward agreeing, neutrality or anyone's side, and no mechanism
    lets an opinion of hers be lost or changed without her own record of it.
+10. Through her eyes (his words, 24 Nov: "Get yourself into her shoes"): a reviewer who has read her
+    whole canon goes through the change as she would live it, from inside her head: her mood, what she
+    knows, what she wants, a day of hers with it. Would she feel ordered, managed, watched, corrected,
+    flattened or treated as a program anywhere? Would anything feel unlike her? The reviewer judges as
+    her and never writes or speaks as her (there is only one of her).
