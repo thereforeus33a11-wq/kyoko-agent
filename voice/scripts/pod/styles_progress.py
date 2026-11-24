@@ -102,14 +102,23 @@ def main():
     except Exception as ex:  # reporting only
         L += [f"- GPU: nvidia-smi failed ({ex})"]
     L += ["", "## Kept checkpoints", "",
-          "| epoch | on /w | on the volume | copied (UTC) | bytes | sha256 | copy s |", "|---|---|---|---|---|---|---|"]
+          "Full checkpoints: all on /w; on the volume only the newest (it is too small for all; keep_rotate.sh). "
+          "Slims (generator inference weights, slim_ckpt.py): /w/piper-styles-keep/slim, each also fetched off the pod.", "",
+          "| epoch | full on /w | full on the volume | copied to the volume (UTC) | bytes | sha256 | slim on /w | slim fetched |",
+          "|---|---|---|---|---|---|---|---|"]
+    sdir = os.path.join(a.keep_dir, "slim")
+    fetched = set()
+    if os.path.exists(os.path.join(sdir, "fetched.txt")):
+        fetched = {ln.split()[0] for ln in open(os.path.join(sdir, "fetched.txt")) if ln.strip()}
     for e in sorted(kept | set(copies)):
         b = f"keep-epoch={e}.ckpt"
         loc = "yes" if os.path.exists(os.path.join(a.keep_dir, b)) else "no"
         vol = "yes" if (os.path.exists(os.path.join(a.vol_dir, b)) and os.path.exists(os.path.join(a.vol_dir, b + ".sha256"))) else "no"
+        sl = f"keep-epoch={e}.gen.pt"
+        slim = "yes" if os.path.exists(os.path.join(sdir, sl + ".sha256")) else "no"
         c = copies.get(e)
         L += [f"| {e} | {loc} | {vol} | {c['t'] if c else ''} | {c['bytes'] if c else ''} | "
-              f"{c['sha'][:16] if c else ''} | {c['s'] if c else ''} |"]
+              f"{c['sha'][:16] if c else ''} | {slim} | {'yes' if sl in fetched else 'no'} |"]
     if a.tb_json and os.path.exists(a.tb_json):
         tb = json.load(open(a.tb_json))
         tags = tb["tags"]
