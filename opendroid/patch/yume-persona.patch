@@ -27,7 +27,7 @@ index c173bfd..f58b162 100644
 -- **Build & Toolchain**: Target SDK 36, Gradle 9.7.0, AGP 9.3.1, Retrofit 3.0.0, OkHttp 5.4.0 BOM.
 +- **Build & Toolchain**: Target SDK 36, Gradle 9.7.0, AGP 9.3.1, OkHttp 5.4.0 BOM, Gson 2.13.2.
 diff --git a/app/build.gradle b/app/build.gradle
-index 4c9cd17..92b6d6b 100644
+index 4c9cd17..e46c318 100644
 --- a/app/build.gradle
 +++ b/app/build.gradle
 @@ -13,12 +13,30 @@ android {
@@ -45,8 +45,8 @@ index 4c9cd17..92b6d6b 100644
          targetSdk 36
 -        versionCode 10
 -        versionName "1.0.9"
-+        versionCode 11
-+        versionName "1.0.10"
++        versionCode 12
++        versionName "1.0.11"
  
          testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 +        // Her own voice: native code for the owner's phone (arm64) only. The sherpa-onnx
@@ -49480,10 +49480,10 @@ index 0000000..2b4dcda
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/mind/EngineMindSelf.kt b/app/src/main/java/com/opendroid/ai/core/mind/EngineMindSelf.kt
 new file mode 100644
-index 0000000..f69a3fb
+index 0000000..1995772
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/mind/EngineMindSelf.kt
-@@ -0,0 +1,343 @@
+@@ -0,0 +1,358 @@
 +package com.opendroid.ai.core.mind
 +
 +import android.content.Context
@@ -49707,14 +49707,29 @@ index 0000000..f69a3fb
 +    }
 +
 +    override suspend fun beatFailed(failure: MindLinkException) {
-+        // Only a failure the chat has a card for: its kind, its status and how to mend it, never a word of the prompt.
-+        val cause = failure.cause as? com.opendroid.ai.core.llm.error.LLMException ?: return
-+        agentLoop.get().streamBeatFailed(cause)
++        // The chat shows its kind, its status and how to mend it, never a word of the prompt. A failure
++        // that is not one of the brain's own errors (a timeout, a dropped connection, anything else) was
++        // shown nothing before, so on his phone her brain could fail on every beat and the chat stayed
++        // empty (25 Nov). It is shown as a network failure of her brain instead.
++        agentLoop.get().streamBeatFailed(cardCause(failure))
 +    }
 +
 +    override suspend fun beatsBack() = agentLoop.get().streamBeatsBack()
 +
 +    companion object {
++        /**
++         * What the chat's card is made from for [failure]: the brain's own error where there is one,
++         * else a network failure of her brain, so that no failure of a beat goes unshown.
++         */
++        internal fun cardCause(failure: MindLinkException): com.opendroid.ai.core.llm.error.LLMException =
++            failure.cause as? com.opendroid.ai.core.llm.error.LLMException
++                ?: com.opendroid.ai.core.llm.error.LLMException(
++                    error = com.opendroid.ai.core.llm.error.LLMError.Network,
++                    provider = "",
++                    model = "",
++                    status = failure.status,
++                )
++
 +        /** The rows of the talk her stream's prompt starts from. */
 +        const val RECENT_ROWS = 24
 +        private const val ACT_BUFFER = 8
@@ -144284,6 +144299,33 @@ index cfff3a9..9bce119 100644
              dao.getNotificationHistoryStatsFlow().first()
          )
      }
+diff --git a/app/src/test/java/com/opendroid/ai/core/mind/BeatFailedCardTest.kt b/app/src/test/java/com/opendroid/ai/core/mind/BeatFailedCardTest.kt
+new file mode 100644
+index 0000000..ac8ecf4
+--- /dev/null
++++ b/app/src/test/java/com/opendroid/ai/core/mind/BeatFailedCardTest.kt
+@@ -0,0 +1,21 @@
++package com.opendroid.ai.core.mind
++
++import com.opendroid.ai.core.llm.error.LLMError
++import java.net.SocketTimeoutException
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++/** No failure of her beats goes unshown in his chat (his phone, 25 Nov: no response and no card). */
++class BeatFailedCardTest {
++    @Test
++    fun `a timeout of her brain gets a card, as a network failure`() {
++        val failure = MindLinkException(MindLinkException.Kind.UNREACHED, null, SocketTimeoutException("timeout"))
++        assertEquals(LLMError.Network, EngineMindSelf.cardCause(failure).error)
++    }
++
++    @Test
++    fun `any other failure gets a card too`() {
++        val failure = MindLinkException(MindLinkException.Kind.OTHER, null, IllegalStateException("x"))
++        assertEquals(LLMError.Network, EngineMindSelf.cardCause(failure).error)
++    }
++}
 diff --git a/app/src/test/java/com/opendroid/ai/core/mind/BeatParseTest.kt b/app/src/test/java/com/opendroid/ai/core/mind/BeatParseTest.kt
 new file mode 100644
 index 0000000..82b882f
