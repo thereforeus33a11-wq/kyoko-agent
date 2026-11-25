@@ -5,6 +5,9 @@ Usage: python phone_test_lang.py <sherpa dir> <lines> <out dir> [--route mixed|k
 <lines>: lines_lang.tsv-style TSV (n, text columns) or one "lang|text" / text per line.
 --sid: the speaker id every line is spoken with (a multi-speaker voice: her style), as the phone passes it.
 --float: write the samples sherpa returns as 32-bit float (default 16-bit PCM), for exact comparisons.
+--noise-scale, --noise-scale-w, --length-scale: the voice's inference settings (sherpa-onnx's VITS model config, one
+value for every speaker of the loaded model, as the app's OfflineTtsVitsModelConfig); left out, sherpa's defaults
+(0.667, 0.8, 1.0: Piper's), exactly as before.
 Each line n becomes <out>/NNNN.wav; <out>/phone_test.tsv has n, seconds, RTF, phonemes, text.
 """
 import argparse
@@ -38,11 +41,18 @@ def main():
     ap.add_argument("--threads", type=int, default=2)
     ap.add_argument("--sid", type=int, default=0)
     ap.add_argument("--float", action="store_true")
+    ap.add_argument("--noise-scale", type=float)
+    ap.add_argument("--noise-scale-w", type=float)
+    ap.add_argument("--length-scale", type=float)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
+    knobs = {k: v for k, v in (("noise_scale", a.noise_scale), ("noise_scale_w", a.noise_scale_w),
+                               ("length_scale", a.length_scale)) if v is not None}
     tts = sherpa_onnx.OfflineTts(sherpa_onnx.OfflineTtsConfig(model=sherpa_onnx.OfflineTtsModelConfig(
-        vits=sherpa_onnx.OfflineTtsVitsModelConfig(model=f"{a.sherpa}/model.onnx", tokens=f"{a.sherpa}/tokens.txt"),
+        vits=sherpa_onnx.OfflineTtsVitsModelConfig(model=f"{a.sherpa}/model.onnx", tokens=f"{a.sherpa}/tokens.txt", **knobs),
         num_threads=a.threads)))
+    if knobs:
+        print("inference settings", knobs)
     known = {l.rsplit(" ", 1)[0] for l in open(f"{a.sherpa}/tokens.txt", encoding="utf-8") if l.strip()}
     mp = MixedPhonemizer()
     kana = None
