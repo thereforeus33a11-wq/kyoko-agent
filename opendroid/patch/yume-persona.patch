@@ -27,7 +27,7 @@ index c173bfd..f58b162 100644
 -- **Build & Toolchain**: Target SDK 36, Gradle 9.7.0, AGP 9.3.1, Retrofit 3.0.0, OkHttp 5.4.0 BOM.
 +- **Build & Toolchain**: Target SDK 36, Gradle 9.7.0, AGP 9.3.1, OkHttp 5.4.0 BOM, Gson 2.13.2.
 diff --git a/app/build.gradle b/app/build.gradle
-index 4c9cd17..25343ac 100644
+index 4c9cd17..92b6d6b 100644
 --- a/app/build.gradle
 +++ b/app/build.gradle
 @@ -13,12 +13,30 @@ android {
@@ -43,8 +43,10 @@ index 4c9cd17..25343ac 100644
 +        buildConfigField "String", "SETTINGS_LABEL", '"Yume"'
          minSdk 26
          targetSdk 36
-         versionCode 10
-         versionName "1.0.9"
+-        versionCode 10
+-        versionName "1.0.9"
++        versionCode 11
++        versionName "1.0.10"
  
          testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 +        // Her own voice: native code for the owner's phone (arm64) only. The sherpa-onnx
@@ -26025,10 +26027,10 @@ index 0000000..0758845
 +}
 diff --git a/app/src/main/java/com/opendroid/ai/core/life/ears/HerEars.kt b/app/src/main/java/com/opendroid/ai/core/life/ears/HerEars.kt
 new file mode 100644
-index 0000000..031319f
+index 0000000..9d9a7be
 --- /dev/null
 +++ b/app/src/main/java/com/opendroid/ai/core/life/ears/HerEars.kt
-@@ -0,0 +1,944 @@
+@@ -0,0 +1,950 @@
 +package com.opendroid.ai.core.life.ears
 +
 +import android.content.Context
@@ -26078,17 +26080,23 @@ index 0000000..031319f
 +    enum class Choice { SHERPA, ANDROID_ON_DEVICE, NONE }
 +
 +    companion object {
-+        /** The engine order, pure: sherpa with its models, else Android's only when it stays on the phone. */
++        /**
++         * The engine order, pure: sherpa with its models, else none. Android's own recogniser is
++         * never her ears: the phone's speech service plays its start chime each time it starts
++         * listening, and continuous ears start it again after every few seconds of sound, so a
++         * chime went off every few seconds on his phone (25 Nov). Her ears hear only through the
++         * app's own capture; [onDeviceAvailable] no longer changes the answer.
++         */
++        @Suppress("UNUSED_PARAMETER")
 +        fun choose(modelsReady: Boolean, onDeviceAvailable: Boolean): Choice = when {
 +            modelsReady -> Choice.SHERPA
-+            onDeviceAvailable -> Choice.ANDROID_ON_DEVICE
 +            else -> Choice.NONE
 +        }
 +
 +        /** Why the ears are closed when no engine can be had. */
 +        val NO_ENGINE: String =
-+            "no models for her ears yet (download them under Her ears), and this phone has no recogniser that stays on " +
-+                "the phone. ${PreferredRecognizer.OFFLINE_REMEDY}"
++            "no models for her ears yet (download them under Her ears): without them the phone cannot hear for her " +
++                "without its chime."
 +    }
 +}
 +
@@ -81905,7 +81913,7 @@ index c402e3b..1db113a 100644
  }
 -
 diff --git a/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt b/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt
-index 23a33d8..c87ad76 100644
+index 23a33d8..d7b8330 100644
 --- a/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt
 +++ b/app/src/main/java/com/opendroid/ai/core/service/OpenDroidService.kt
 @@ -12,12 +12,16 @@ import com.opendroid.ai.core.agent.AgentLoop
@@ -82263,11 +82271,11 @@ index 23a33d8..c87ad76 100644
 +                com.opendroid.ai.core.alive.HerStart.mayStart(context, com.opendroid.ai.core.alive.StartGate.Path.SERVICE)
 +            }
 +            if (decision != com.opendroid.ai.core.alive.StartGate.Decision.GO) return
-             val intent = Intent(context, OpenDroidService::class.java)
++            val intent = Intent(context, OpenDroidService::class.java)
 +            if (fromForeground) intent.putExtra(EXTRA_FROM_FOREGROUND, true)
-             context.startForegroundService(intent)
-         }
- 
++            context.startForegroundService(intent)
++        }
++
 +        /** "Eyes and ears", from the front: the service holds the camera and the microphone again. */
 +        fun rearm(context: Context) {
 +            if (com.opendroid.ai.core.alive.HerStart.heCalls(context, com.opendroid.ai.core.alive.WokeBy.OPENED_THE_APP) !=
@@ -82275,12 +82283,12 @@ index 23a33d8..c87ad76 100644
 +            ) {
 +                return
 +            }
-+            val intent = Intent(context, OpenDroidService::class.java)
+             val intent = Intent(context, OpenDroidService::class.java)
 +                .setAction(ACTION_EYES_AND_EARS)
 +                .putExtra(EXTRA_FROM_FOREGROUND, true)
-+            context.startForegroundService(intent)
-+        }
-+
+             context.startForegroundService(intent)
+         }
+ 
 +        /**
 +         * Her Stop in the app (I17): she sleeps from now until he opens her app or calls her up.
 +         * Her service stops, her heartbeat and the backstop of her own time are taken off, and
@@ -82397,10 +82405,7 @@ index 23a33d8..c87ad76 100644
 +            override fun forThePhone(text: String, aloud: com.opendroid.ai.core.life.ears.HeardAloud) {
 +                mainHandler.post { onEarsHeardForThePhone(text, aloud) }
 +            }
- 
--        // Initialize engines
--        wakeWordDetector = WakeWordDetector(this)
--        speechRecognitionEngine = SpeechRecognitionEngine(this)
++
 +            override fun overHer() {
 +                mainHandler.post { herVoiceCutOff() }
 +            }
@@ -82421,7 +82426,10 @@ index 23a33d8..c87ad76 100644
 +                mainHandler.post { earsChanged() }
 +            }
 +        }
-+
+ 
+-        // Initialize engines
+-        wakeWordDetector = WakeWordDetector(this)
+-        speechRecognitionEngine = SpeechRecognitionEngine(this)
 +        // Initialize engines. Neither recogniser goes on to the online speech service
 +        // when the phone cannot do it offline, unless plain hosted models are allowed.
 +        val cloudSpeechAllowed = { PreferredRecognizer.cloudAllowed(lastConfig) }
@@ -82448,13 +82456,13 @@ index 23a33d8..c87ad76 100644
 +        // while she writes it belongs to the speech from its start (since).
 +        agentLoop.onPersonaSpeakCallback = { text, since ->
 +            if (agentLoop.quietForOwnTime) speechEnded() else textToSpeechEngine.speak(text, personaVoice = true, since = since)
-         }
--        // Stop and Clear cancel the task; speech already playing or still being fetched
--        // must stop with it.
++        }
 +        // Her own words go to her live voice: one track, clause by clause, able to trail off at a word.
 +        agentLoop.onHerWordsCallback = { text, since ->
 +            if (agentLoop.quietForOwnTime) speechEnded() else textToSpeechEngine.speakHers(text, since = since)
-+        }
+         }
+-        // Stop and Clear cancel the task; speech already playing or still being fetched
+-        // must stop with it.
 +        agentLoop.speechGenerationCallback = { textToSpeechEngine.speechGeneration() }
 +        // Stop and Clear cancel the task, and a new message of his moves on from whatever
 +        // was being said; speech already playing, waiting or still being fetched stops
@@ -82549,7 +82557,7 @@ index 23a33d8..c87ad76 100644
              }
          }
  
-@@ -130,110 +644,775 @@ class OpenDroidService : Service() {
+@@ -130,110 +644,777 @@ class OpenDroidService : Service() {
          // and that second proposal must not wait in silence.
          serviceScope.launch {
              var promptedPlan: Plan? = null
@@ -82859,18 +82867,20 @@ index 23a33d8..c87ad76 100644
 +        }
      }
  
++    /**
++     * The wake phrase listener of the phone's own recogniser does not run. It restarted the
++     * recogniser about a second after every round, and the phone's speech service plays its
++     * start chime on every start, so on his phone a chime went off every few seconds whenever
++     * it ran (25 Nov). Her name is heard through her ears, which use the app's own capture
++     * and make no sound; the side key, the floating button and opening the app still call her
++     * up. A quiet wake listener on the app's own capture replaces this one when it is built.
++     */
      private fun startWakeWordDetection() {
 -        wakeWordDetector.startListening {
 -            // Wake word detected! Prompt user with a sound or greeting and start listing for query
 -            textToSpeechEngine.speak("OpenDroid online.")
 -            startListeningForQuery()
-+        // While her ears are open (or only paused) they take the wake phrase listener's place.
-+        if (herEars.holdsTheMic) return
-+        // Without the microphone nothing can hear the wake phrase, and a listener started
-+        // anyway would make and drop a recogniser every second. It starts once he grants it
-+        // and the app is opened (onStartCommand).
-+        if (!granted(android.Manifest.permission.RECORD_AUDIO)) return
-+        wakeWordDetector.startListening { heard -> onWakePhrase(heard) }
++        wakeWordDetector.stopListening()
 +    }
 +
 +    // ── Her ears ────────────────────────────────────────────────────────────────────
@@ -82948,9 +82958,10 @@ index 23a33d8..c87ad76 100644
 +            // A command for the phone in his enrolled voice goes through the planner and his approval
 +            // wall, as always (CONTINUOUS_PLAN §2.5). Talk to her is hers already: nothing is done there.
 +            HeardForThePhone.Does.MAYBE_COMMAND -> agentLoop.commandHeard(text, aloud, this)
-+        }
-+    }
-+
+         }
+     }
+ 
+-    private fun startListeningForQuery() {
 +    /**
 +     * Something was said out loud to her and her ears heard it. His enrolled voice, with the
 +     * phone unlocked, goes the way his voice messages go: while a plan he was asked about
@@ -82981,7 +82992,7 @@ index 23a33d8..c87ad76 100644
 +                VoiceApprovalIntent.NONE -> agentLoop.processHeard(text, aloud, this)
 +            }
 +            return
-         }
++        }
 +        agentLoop.processHeard(text, aloud, this)
 +    }
 +
@@ -83111,9 +83122,8 @@ index 23a33d8..c87ad76 100644
 +        return com.opendroid.ai.core.life.ears.HearingRules.soundsLikeThePhone(
 +            transcript, now, com.opendroid.ai.core.voice.VoiceOut.since(now - com.opendroid.ai.core.life.ears.HearingRules.ECHO_TEXT_MILLIS)
 +        )
-     }
- 
--    private fun startListeningForQuery() {
++    }
++
 +    /**
 +     * True when [transcript] is only the phone's own answer to the wake phrase, picked up by the
 +     * microphone: the line it just said. That is not something he said and is not run or stored as
@@ -83361,7 +83371,7 @@ index 23a33d8..c87ad76 100644
          }
          return START_STICKY
      }
-@@ -242,35 +1421,250 @@ class OpenDroidService : Service() {
+@@ -242,35 +1423,250 @@ class OpenDroidService : Service() {
          return null
      }
  
@@ -125095,10 +125105,10 @@ index 0000000..98501f2
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/life/ears/EarsEnginesTest.kt b/app/src/test/java/com/opendroid/ai/core/life/ears/EarsEnginesTest.kt
 new file mode 100644
-index 0000000..129cac6
+index 0000000..26dc105
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/life/ears/EarsEnginesTest.kt
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,68 @@
 +package com.opendroid.ai.core.life.ears
 +
 +import android.Manifest
@@ -125151,12 +125161,13 @@ index 0000000..129cac6
 +    }
 +
 +    @Test
-+    fun `with the on-device recogniser and no models it is the one`() {
++    fun `with the on-device recogniser and no models no engine starts, so nothing chimes`() {
++        // The phone's speech service chimes on every start; continuous ears on it chimed every few seconds.
 +        shadowOf(context).grantPermissions(Manifest.permission.RECORD_AUDIO)
 +        ShadowSpeechRecognizer.setIsOnDeviceRecognitionAvailable(true)
 +        val pick = engines.pick(LLMConfig(personaOpenMic = true)) { false }
-+        assertTrue(pick is EarsEngines.Pick.Engine)
-+        assertTrue((pick as EarsEngines.Pick.Engine).engine === android)
++        assertTrue(pick is EarsEngines.Pick.None)
++        assertEquals(EarsEngines.NO_ENGINE, (pick as EarsEngines.Pick.None).why)
 +    }
 +
 +    @Test
@@ -126109,10 +126120,10 @@ index 0000000..287b2aa
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/life/ears/EarsWiringTest.kt b/app/src/test/java/com/opendroid/ai/core/life/ears/EarsWiringTest.kt
 new file mode 100644
-index 0000000..e5671e5
+index 0000000..db4fa1a
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/life/ears/EarsWiringTest.kt
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,163 @@
 +package com.opendroid.ai.core.life.ears
 +
 +import com.opendroid.ai.core.life.HerLog
@@ -126137,8 +126148,10 @@ index 0000000..e5671e5
 +    private val loop = File("src/main/java/com/opendroid/ai/core/agent/AgentLoop.kt").readText()
 +
 +    @Test
-+    fun `while her ears hold the microphone the wake phrase listener stays off, and comes back when they close`() {
-+        assertTrue(service.contains("private fun startWakeWordDetection() {\n        // While her ears are open (or only paused) they take the wake phrase listener's place.\n        if (herEars.holdsTheMic) return"))
++    fun `the phone's recogniser is never started in a loop for the wake phrase, so nothing chimes every few seconds`() {
++        // It played the speech service's start chime on every round (his phone, 25 Nov).
++        assertTrue(service.contains("private fun startWakeWordDetection() {\n        wakeWordDetector.stopListening()\n    }"))
++        assertFalse(service.contains("wakeWordDetector.startListening"))
 +        assertTrue(service.contains("if (herEars.holdsTheMic) {\n            wakeWordDetector.stopListening()\n        } else if (!showFloatingButton && !hearingHim) {\n            startWakeWordDetection()\n        }"))
 +        // Before they open, the wake phrase listener lets go of the microphone.
 +        assertTrue(service.contains("== com.opendroid.ai.core.life.ears.EarsGate.Want.Open && !herEars.holdsTheMic) {\n                kotlinx.coroutines.withContext(Dispatchers.Main) { wakeWordDetector.stopListening() }"))
@@ -127357,10 +127370,10 @@ index 0000000..e81fff0
 +}
 diff --git a/app/src/test/java/com/opendroid/ai/core/life/ears/HerEarsTest.kt b/app/src/test/java/com/opendroid/ai/core/life/ears/HerEarsTest.kt
 new file mode 100644
-index 0000000..8e2f777
+index 0000000..ba21066
 --- /dev/null
 +++ b/app/src/test/java/com/opendroid/ai/core/life/ears/HerEarsTest.kt
-@@ -0,0 +1,427 @@
+@@ -0,0 +1,428 @@
 +package com.opendroid.ai.core.life.ears
 +
 +import com.opendroid.ai.core.life.HerLog
@@ -127736,7 +127749,8 @@ index 0000000..8e2f777
 +    fun `the engine order is sherpa with its models, else only a recogniser that stays on the phone`() {
 +        assertEquals(EarsEngines.Choice.SHERPA, EarsEngines.choose(modelsReady = true, onDeviceAvailable = false))
 +        assertEquals(EarsEngines.Choice.SHERPA, EarsEngines.choose(modelsReady = true, onDeviceAvailable = true))
-+        assertEquals(EarsEngines.Choice.ANDROID_ON_DEVICE, EarsEngines.choose(modelsReady = false, onDeviceAvailable = true))
++        // The phone's own recogniser chimes on every start: never her ears, even where it stays on the phone.
++        assertEquals(EarsEngines.Choice.NONE, EarsEngines.choose(modelsReady = false, onDeviceAvailable = true))
 +        assertEquals(EarsEngines.Choice.NONE, EarsEngines.choose(modelsReady = false, onDeviceAvailable = false))
 +    }
 +
